@@ -1,3 +1,27 @@
+# Backend ingress — strips /api prefix before forwarding to FastAPI
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: perfstack-ingress-api
+  namespace: perfstack
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+---
+# Frontend + Grafana ingress — no rewrite needed
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -18,13 +42,6 @@ spec:
                 name: grafana
                 port:
                   number: 3000
-          - path: /api
-            pathType: Prefix
-            backend:
-              service:
-                name: backend
-                port:
-                  number: 8000
           - path: /
             pathType: Prefix
             backend:
