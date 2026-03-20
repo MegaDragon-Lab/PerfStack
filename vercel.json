@@ -1,9 +1,8 @@
 {
   "outputDirectory": "public",
   "rewrites": [
-    { "source": "/workshop",    "destination": "/index.html" },
-    { "source": "/local-setup", "destination": "/local-setup.html" },
-    { "source": "/(.*)",        "destination": "/local-setup.html" }
+    { "source": "/workshop",    "destination": "/workshop.html" },
+    { "source": "/local-setup", "destination": "/index.html" }
   ],
   "headers": [
     {
