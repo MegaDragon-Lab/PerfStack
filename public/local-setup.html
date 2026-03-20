@@ -40,6 +40,45 @@
   a { color: var(--blue); text-decoration: none; }
   a:hover { text-decoration: underline; }
 
+  /* ── OS PICKER SCREEN ── */
+  .os-picker-screen {
+    position: fixed; inset: 0; z-index: 8000;
+    background: var(--ink);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 40px;
+  }
+  .os-picker-screen.hidden { display: none; }
+  .os-picker-title {
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: #5a5650;
+  }
+  .os-picker-brand {
+    font-size: clamp(22px, 4vw, 36px); font-weight: 700;
+    letter-spacing: -.02em; color: var(--red);
+  }
+  .os-picker-sub {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 13px; color: #4a4840; font-weight: 300;
+    margin-top: -28px;
+  }
+  .os-cards {
+    display: flex; gap: 18px; flex-wrap: wrap; justify-content: center;
+  }
+  .os-card {
+    width: 200px; padding: 28px 24px;
+    background: #161b22; border: 1px solid #2e2c28;
+    border-radius: 8px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    transition: border-color .15s, background .15s;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .os-card:hover { border-color: var(--red); background: #1c2128; }
+  .os-card-icon { font-size: 36px; }
+  .os-card-name { font-size: 15px; font-weight: 700; color: #e0dcd8; letter-spacing: .02em; }
+  .os-card-sub  { font-size: 10px; color: #5a5650; letter-spacing: .06em; text-align: center; line-height: 1.6; }
+  .os-card.mac:hover .os-card-name { color: #a8d8ff; }
+  .os-card.win:hover .os-card-name { color: #7ec8ff; }
+
   /* ── TOPBAR ── */
   .topbar {
     position: sticky; top: 0; z-index: 200;
@@ -52,13 +91,28 @@
   .t-brand { color: var(--red); font-weight: 700; font-size: 12px; letter-spacing: .08em; }
   .t-sep   { color: #2e2c28; }
   .t-path  { color: #5a5650; }
-  .tr { display: flex; align-items: center; gap: 12px; }
+  .tr { display: flex; align-items: center; gap: 10px; }
   .t-badge {
     background: rgba(0,112,64,.2); border: 1px solid rgba(0,112,64,.4);
     color: #3dffc0; border-radius: 3px; padding: 2px 7px;
     font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
   }
   .t-dim { color: #3a3830; font-size: 10px; }
+
+  /* OS toggle pill in topbar */
+  .os-toggle {
+    display: flex; border: 1px solid #2e2c28; border-radius: 4px; overflow: hidden;
+  }
+  .os-toggle button {
+    padding: 4px 11px; font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px; letter-spacing: .05em; font-weight: 600;
+    border: none; background: transparent; color: #5a5650; cursor: pointer;
+    border-right: 1px solid #2e2c28; transition: background .12s, color .12s;
+  }
+  .os-toggle button:last-child { border-right: none; }
+  .os-toggle button.active { background: #1c2128; color: #e0dcd8; }
+  .os-toggle button.active.mac-btn { color: #a8d8ff; }
+  .os-toggle button.active.win-btn { color: #7ec8ff; }
 
   /* ── NAV ── */
   .nav {
@@ -86,7 +140,7 @@
   /* ── HERO ── */
   .hero {
     padding: 52px 0 40px; border-bottom: 1px solid var(--border);
-    display: grid; grid-template-columns: 1fr 190px; gap: 32px; align-items: start;
+    display: grid; grid-template-columns: 1fr 200px; gap: 32px; align-items: start;
   }
   .eyebrow {
     font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
@@ -133,28 +187,13 @@
   p.body { font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; color: var(--muted); font-weight: 300; line-height: 1.7; }
   hr.div { border: none; border-top: 1px solid var(--border); margin: 40px 0 0; }
 
-  /* ── OS SWITCHER ── */
-  .os-switch {
-    display: flex; gap: 0; margin-bottom: 20px;
-    border: 1px solid var(--border); border-radius: 5px; overflow: hidden;
-    width: fit-content;
-  }
-  .os-btn {
-    display: flex; align-items: center; gap: 7px;
-    padding: 9px 18px; font-family: 'IBM Plex Mono', monospace;
-    font-size: 11px; letter-spacing: .04em; font-weight: 600;
-    cursor: pointer; border: none; background: var(--surface);
-    color: var(--muted); transition: background .12s, color .12s;
-    border-right: 1px solid var(--border);
-  }
-  .os-btn:last-child { border-right: none; }
-  .os-btn.active { background: var(--ink); color: #e0dcd8; }
-  .os-btn.active.mac  { color: #a8d8ff; }
-  .os-btn.active.win  { color: #7ec8ff; }
-  .os-icon { font-size: 14px; }
-
-  .os-panel { display: none; }
-  .os-panel.active { display: block; }
+  /* ── OS CONTENT VISIBILITY ── */
+  .mac-only, .win-only { display: none; }
+  body.os-mac .mac-only { display: block; }
+  body.os-win .win-only { display: block; }
+  /* for flex containers */
+  body.os-mac .mac-flex { display: flex; }
+  body.os-win .win-flex { display: flex; }
 
   /* ── STEP BLOCKS ── */
   .steps { display: flex; flex-direction: column; }
@@ -191,14 +230,11 @@
     padding: 13px 16px; font-family: 'IBM Plex Mono', monospace;
     font-size: 11.5px; line-height: 1.75; overflow-x: auto; color: #c9d1d9;
   }
-  .c1 { color: #3a3830; } /* dim/comment */
-  .c2 { color: #3dffc0; } /* green prompt/ok */
-  .c3 { color: #79c0ff; } /* blue command */
-  .c4 { color: #ffa657; } /* orange string */
-  .c5 { color: #ff7b72; } /* red keyword */
-  .c6 { color: #a5d6ff; } /* light blue value */
-  .c7 { color: #febc2e; } /* amber */
-  .c8 { color: #d2a8ff; } /* purple */
+  .c1 { color: #3a3830; }
+  .c2 { color: #3dffc0; }
+  .c3 { color: #79c0ff; }
+  .c4 { color: #ffa657; }
+  .c5 { color: #ff7b72; }
 
   /* ── CALLOUTS ── */
   .tip {
@@ -236,42 +272,6 @@
   .chk li strong { color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; }
   .chk li code { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--blue); background: #eef1ff; padding: 1px 5px; border-radius: 3px; }
 
-  /* ── GRID CARDS ── */
-  .grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(155px,1fr));
-    border: 1px solid var(--border); border-radius: 5px; overflow: hidden;
-  }
-  .gc {
-    background: var(--surface); padding: 18px 16px;
-    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
-    transition: background .12s;
-  }
-  .gc:hover { background: var(--s2); }
-  .gc .gi { font-size: 18px; margin-bottom: 9px; display: block; }
-  .gc h3 { font-size: 10px; margin-bottom: 4px; }
-  .gc p  { font-size: 11px; color: var(--muted); font-family: 'IBM Plex Sans', sans-serif; font-weight: 300; line-height: 1.5; }
-
-  /* ── COMPARE TABLE ── */
-  .comp { border: 1px solid var(--border); border-radius: 5px; overflow: hidden; margin-top: 18px; }
-  table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
-  th { text-align: left; font-size: 8px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 9px 13px; border-bottom: 2px solid var(--border); background: var(--s2); }
-  td { padding: 9px 13px; border-bottom: 1px solid var(--border); font-family: 'IBM Plex Mono', monospace; vertical-align: top; font-size: 11px; }
-  td.m { color: var(--muted); font-family: 'IBM Plex Sans', sans-serif; font-weight: 300; font-size: 11px; }
-  td.r { color: var(--red); font-weight: 600; }
-  td.g { color: var(--green); font-weight: 600; }
-  td.b { color: var(--blue); }
-  tr:hover td { background: var(--s2); }
-
-  .badge {
-    display: inline-block; font-size: 8px; letter-spacing: .1em; text-transform: uppercase;
-    border-radius: 3px; padding: 2px 6px; margin-left: 5px;
-    font-family: 'IBM Plex Mono', monospace; font-weight: 600;
-  }
-  .badge-mac  { background: rgba(23,71,200,.1); border: 1px solid rgba(23,71,200,.3); color: var(--blue); }
-  .badge-win  { background: rgba(0,112,64,.1);  border: 1px solid rgba(0,112,64,.3);  color: var(--green); }
-  .badge-both { background: rgba(105,48,195,.1);border: 1px solid rgba(105,48,195,.3);color: var(--purple); }
-  .badge-rec  { background: rgba(199,48,0,.1);  border: 1px solid rgba(199,48,0,.3);  color: var(--red); }
-
   /* ── VERIFY BOX ── */
   .verify {
     background: #f0faf5; border: 1px solid var(--border);
@@ -299,18 +299,45 @@
   @media(max-width:660px) {
     .hero { grid-template-columns: 1fr; }
     .meta-box { display: none; }
+    .os-cards { flex-direction: column; }
+    .os-card { width: 100%; max-width: 280px; }
     .page, .topbar, .nav { padding-left: 16px; padding-right: 16px; }
     footer { padding: 18px 16px; }
   }
 </style>
 </head>
 <body>
+
+<!-- ══════════════════════════════════════ OS PICKER SCREEN -->
+<div class="os-picker-screen" id="os-picker">
+  <div style="text-align:center">
+    <div class="os-picker-title">Post-Workshop · Local Setup Guide</div>
+    <div class="os-picker-brand">PerfStack</div>
+  </div>
+  <div class="os-picker-sub">Select your operating system to get started</div>
+  <div class="os-cards">
+    <button class="os-card mac" onclick="pickOS('mac')">
+      <span class="os-card-icon">🍎</span>
+      <span class="os-card-name">macOS</span>
+      <span class="os-card-sub">Homebrew<br>Terminal / iTerm2</span>
+    </button>
+    <button class="os-card win" onclick="pickOS('win')">
+      <span class="os-card-icon">🪟</span>
+      <span class="os-card-name">Windows</span>
+      <span class="os-card-sub">WSL2 + PowerShell<br>Windows 10 / 11</span>
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ MAIN CONTENT -->
+<div id="main-content" style="display:none">
+
 <!-- Sister-page banner -->
 <div style="background:#1a4fd6;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.05em;padding:7px 28px;display:flex;justify-content:space-between;align-items:center;">
   <span>📖 PerfStack Documentation</span>
   <span>
     <a href="/index.html" style="color:#a8d4ff;text-decoration:none;font-weight:700">← Workshop Guide</a>
-    <span style="opacity:.5;margin-left:12px">Local Setup (Windows &amp; Mac)</span>
+    <span style="opacity:.5;margin-left:12px">Local Setup</span>
   </span>
 </div>
 
@@ -321,24 +348,25 @@
     <span class="t-sep">/</span>
     <span class="t-path">local-setup</span>
     <span class="t-sep">/</span>
-    <span class="t-path">windows-&amp;-mac</span>
+    <span class="t-path" id="topbar-os-label">—</span>
   </div>
   <div class="tr">
+    <div class="os-toggle">
+      <button class="mac-btn" onclick="pickOS('mac')">🍎 macOS</button>
+      <button class="win-btn" onclick="pickOS('win')">🪟 Windows</button>
+    </div>
     <span class="t-badge">Post-Workshop</span>
-    <span class="t-dim">take-home guide</span>
   </div>
 </div>
 
 <!-- NAV -->
 <nav class="nav">
   <a class="ntab active" href="#overview"><span class="n">00</span> Overview</a>
-  <a class="ntab" href="#tools"><span class="n">01</span> Required Tools</a>
-  <a class="ntab" href="#mac"><span class="n">02</span> macOS Setup</a>
-  <a class="ntab" href="#windows"><span class="n">03</span> Windows Setup</a>
-  <a class="ntab" href="#getcode"><span class="n">04</span> Get the Code</a>
-  <a class="ntab" href="#deploy"><span class="n">05</span> Deploy</a>
-  <a class="ntab" href="#verify"><span class="n">06</span> Verify &amp; Run</a>
-  <a class="ntab" href="#troubleshoot"><span class="n">07</span> Troubleshooting</a>
+  <a class="ntab" href="#tools"><span class="n">01</span> Install Tools</a>
+  <a class="ntab" href="#getcode"><span class="n">02</span> Get the Code</a>
+  <a class="ntab" href="#deploy"><span class="n">03</span> Deploy</a>
+  <a class="ntab" href="#verify"><span class="n">04</span> Verify</a>
+  <a class="ntab" href="#troubleshoot"><span class="n">05</span> Troubleshooting</a>
 </nav>
 
 <div class="page">
@@ -352,14 +380,13 @@
         on your <span class="g">laptop</span>
       </h1>
       <p class="hero-desc">
-        This guide walks you through installing PerfStack locally on your own machine —
-        Windows or macOS. One script does everything: creates the k3d cluster, builds
-        both Docker images, pushes them to a local registry, and deploys all services.
-        No cloud dependency, no tunnel, no admin rights needed.
+        Install PerfStack locally on your own machine. One script does everything —
+        creates the k3d cluster, builds Docker images, sets up a local registry,
+        and deploys all services. Available at <strong>http://localhost</strong> with no tunnel,
+        no cloud dependency, and no admin rights needed.
       </p>
       <div class="tags">
-        <span class="tag">Windows 10/11</span>
-        <span class="tag">macOS 12+</span>
+        <span class="tag" id="hero-os-tag">—</span>
         <span class="tag">Docker Desktop</span>
         <span class="tag">k3d</span>
         <span class="tag">K6 + Grafana</span>
@@ -369,247 +396,154 @@
     <div class="meta-box">
       <div class="mr"><div class="ml">Setup time</div><div class="mv r">~20 min</div></div>
       <div class="mr"><div class="ml">First-time only</div><div class="mv">Yes</div></div>
-      <div class="mr"><div class="ml">macOS</div><div class="mv g">Homebrew</div></div>
-      <div class="mr"><div class="ml">Windows</div><div class="mv b">WSL2 / winget</div></div>
+      <div class="mr mac-only"><div class="ml">Package manager</div><div class="mv g">Homebrew</div></div>
+      <div class="mr win-only"><div class="ml">Package manager</div><div class="mv b">winget / WSL2</div></div>
       <div class="mr"><div class="ml">RAM required</div><div class="mv">8 GB min</div></div>
       <div class="mr"><div class="ml">Access URL</div><div class="mv">localhost</div></div>
     </div>
   </div>
 
-  <!-- ══════════════════════════════════════ REQUIRED TOOLS -->
+  <!-- ══════════════════════════════════════ INSTALL TOOLS -->
   <div class="section" id="tools">
-    <div class="sec-hdr"><span class="sec-n">01</span><h2>Required Tools</h2></div>
+    <div class="sec-hdr"><span class="sec-n">01</span><h2>Install Required Tools</h2></div>
 
-    <p class="body" style="margin-bottom:18px">
-      Only three tools are needed on your laptop. Everything else (Python, Node.js, k6, InfluxDB, Grafana) runs inside the cluster — the deploy script handles it automatically.
+    <p class="body" style="margin-bottom:20px">
+      Only three tools needed. Everything else (Python, Node.js, k6, Grafana, InfluxDB) runs inside the cluster — the deploy script handles it.
     </p>
 
-    <div class="comp">
-      <table>
-        <thead>
-          <tr>
-            <th>Tool</th>
-            <th>Purpose</th>
-            <th>macOS</th>
-            <th>Windows</th>
-            <th>Version</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>Docker Desktop</strong></td>
-            <td class="m">Container runtime (host + cluster)</td>
-            <td><span class="badge badge-mac">Homebrew</span></td>
-            <td><span class="badge badge-win">Winget</span></td>
-            <td class="b">4.x+</td>
-          </tr>
-          <tr>
-            <td><strong>k3d</strong></td>
-            <td class="m">k3s Kubernetes cluster in Docker</td>
-            <td><span class="badge badge-mac">Homebrew</span></td>
-            <td><span class="badge badge-win">Winget / WSL2</span></td>
-            <td class="b">5.x+</td>
-          </tr>
-          <tr>
-            <td><strong>kubectl</strong></td>
-            <td class="m">Kubernetes CLI</td>
-            <td><span class="badge badge-mac">Homebrew</span></td>
-            <td><span class="badge badge-win">Winget</span></td>
-            <td class="b">1.28+</td>
-          </tr>
-          <tr>
-            <td><strong>Git</strong></td>
-            <td class="m">Clone the repo</td>
-            <td><span class="badge badge-mac">Xcode / Homebrew</span></td>
-            <td><span class="badge badge-win">git-scm.com</span></td>
-            <td class="b">any</td>
-          </tr>
-          <tr>
-            <td><strong>zscaler.pem</strong></td>
-            <td class="m">Corporate proxy cert (FICO network)</td>
-            <td colspan="2" style="text-align:center;color:var(--amber);font-weight:600">Copy manually to project root</td>
-            <td class="b">—</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- macOS steps -->
+    <div class="mac-only">
+      <p class="body" style="margin-bottom:16px">All commands run in <strong>Terminal.app</strong> or iTerm2.</p>
+      <div class="steps">
 
-    <div class="info" style="margin-top:14px">
-      k3d runs k3s (a lightweight Kubernetes distribution) entirely inside Docker containers, so it uses your existing Docker Desktop — no separate VM or hypervisor needed. The deploy script creates the cluster, a local image registry, builds your images, and deploys everything. <strong>No manual kubectl commands required.</strong>
-    </div>
-  </div>
-
-  <hr class="div">
-
-  <!-- ══════════════════════════════════════ MAC SETUP -->
-  <div class="section" id="mac">
-    <div class="sec-hdr"><span class="sec-n">02</span><h2>macOS Setup</h2></div>
-
-    <p class="body" style="margin-bottom:18px">
-      We use <strong>Homebrew</strong> as the package manager. All commands run in <strong>Terminal.app</strong> or iTerm2.
-    </p>
-
-    <div class="steps">
-
-      <div class="step">
-        <div class="sn">01</div>
-        <div class="sb">
-          <h3>Install Homebrew</h3>
-          <p class="sd">Skip if already installed.</p>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
-            <pre><span class="c2">$</span> <span class="c3">/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</span>
-
-<span class="c1"># Verify</span>
-<span class="c2">$</span> <span class="c3">brew --version</span>
-<span class="c2">Homebrew 4.x.x</span></pre>
+        <div class="step">
+          <div class="sn">01</div>
+          <div class="sb">
+            <h3>Install Homebrew</h3>
+            <p class="sd">The macOS package manager. Skip if already installed.</p>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+              <pre><span class="c2">$</span> <span class="c3">/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</span>
+<span class="c2">$</span> <span class="c3">brew --version</span>   <span class="c1"># → Homebrew 4.x.x</span></pre>
+            </div>
+            <div class="tip">Apple Silicon (M1/M2/M3/M4): add to PATH after install — <code style="font-family:monospace;font-size:10.5px">echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile && source ~/.zprofile</code></div>
           </div>
-          <div class="tip">On Apple Silicon (M1/M2/M3/M4) add Homebrew to PATH after install: <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile && source ~/.zprofile</code></div>
         </div>
-      </div>
 
-      <div class="step">
-        <div class="sn">02</div>
-        <div class="sb">
-          <h3>Install Docker Desktop</h3>
-          <p class="sd">Docker Desktop provides the container runtime that k3d uses. Must be running before deploy.</p>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
-            <pre><span class="c2">$</span> <span class="c3">brew install --cask docker</span>
-
+        <div class="step">
+          <div class="sn">02</div>
+          <div class="sb">
+            <h3>Install Docker Desktop</h3>
+            <p class="sd">Provides the container runtime k3d uses. Must be running before deploy.</p>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+              <pre><span class="c2">$</span> <span class="c3">brew install --cask docker</span>
 <span class="c1"># Open Docker Desktop from Applications and complete the setup wizard</span>
-<span class="c1"># Wait until the Docker icon in the menu bar is steady (not animated)</span>
-
-<span class="c1"># Verify</span>
-<span class="c2">$</span> <span class="c3">docker --version</span>
-<span class="c2">Docker version 26.x.x</span></pre>
-          </div>
-          <div class="warn">Docker Desktop must be <strong>running</strong> before you run deploy.sh. Check the whale icon in the menu bar.</div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="sn">03</div>
-        <div class="sb">
-          <h3>Install k3d + kubectl</h3>
-          <p class="sd">k3d creates a full Kubernetes cluster inside Docker containers. kubectl is the CLI to interact with it.</p>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
-            <pre><span class="c2">$</span> <span class="c3">brew install k3d kubectl</span>
-
-<span class="c1"># Verify</span>
-<span class="c2">$</span> <span class="c3">k3d version</span>
-<span class="c2">k3d version v5.x.x</span>
-
-<span class="c2">$</span> <span class="c3">kubectl version --client</span>
-<span class="c2">Client Version: v1.28.x</span></pre>
+<span class="c1"># Wait until the whale icon in the menu bar is steady (not animated)</span>
+<span class="c2">$</span> <span class="c3">docker --version</span>   <span class="c1"># → Docker version 26.x.x</span></pre>
+            </div>
+            <div class="warn">Docker Desktop must be <strong>running</strong> before you run deploy.sh.</div>
           </div>
         </div>
+
+        <div class="step">
+          <div class="sn">03</div>
+          <div class="sb">
+            <h3>Install k3d + kubectl</h3>
+            <p class="sd">k3d runs a full Kubernetes cluster inside Docker containers. kubectl is the CLI.</p>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+              <pre><span class="c2">$</span> <span class="c3">brew install k3d kubectl</span>
+<span class="c2">$</span> <span class="c3">k3d version</span>          <span class="c1"># → k3d version v5.x.x</span>
+<span class="c2">$</span> <span class="c3">kubectl version --client</span> <span class="c1"># → Client Version: v1.28.x</span></pre>
+            </div>
+          </div>
+        </div>
+
       </div>
 
+      <div class="verify" style="margin-top:16px">
+        <div class="verify-title">macOS ready checklist</div>
+        <ul class="chk">
+          <li><strong>docker ps</strong> returns an empty table (no error)</li>
+          <li><strong>k3d version</strong> returns v5.x or higher</li>
+          <li><strong>kubectl version --client</strong> returns a version number</li>
+        </ul>
+      </div>
     </div>
 
-    <div class="verify">
-      <div class="verify-title">macOS ready checklist</div>
-      <ul class="chk">
-        <li><strong>docker ps</strong> returns an empty table (no error)</li>
-        <li><strong>k3d version</strong> returns v5.x or higher</li>
-        <li><strong>kubectl version --client</strong> returns a version number</li>
-      </ul>
-    </div>
-  </div>
+    <!-- Windows steps -->
+    <div class="win-only">
+      <p class="body" style="margin-bottom:10px">Run PowerShell as <strong>Administrator</strong> where noted.</p>
+      <div class="warn" style="margin-bottom:16px">WSL2 is required for Docker Desktop's Linux container support. One-time setup, ~5 minutes.</div>
+      <div class="steps">
 
-  <hr class="div">
-
-  <!-- ══════════════════════════════════════ WINDOWS SETUP -->
-  <div class="section" id="windows">
-    <div class="sec-hdr"><span class="sec-n">03</span><h2>Windows Setup</h2></div>
-
-    <p class="body" style="margin-bottom:18px">
-      We use <strong>WSL2</strong> + <strong>winget</strong>. Run PowerShell commands as Administrator where noted. The deploy script runs from either WSL2 (bash) or native PowerShell.
-    </p>
-
-    <div class="warn" style="margin-bottom:18px">
-      Windows requires <strong>WSL2</strong> for Docker Desktop's Linux container support. This is a one-time setup (~5 min).
-    </div>
-
-    <div class="steps">
-
-      <div class="step">
-        <div class="sn">01</div>
-        <div class="sb">
-          <h3>Enable WSL2</h3>
-          <p class="sd">Open PowerShell as Administrator (right-click Start → Windows PowerShell (Admin)).</p>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell (Administrator)</span></div><span class="flang">powershell</span></div>
-            <pre><span class="c1"># Install WSL2 with Ubuntu — requires a restart</span>
+        <div class="step">
+          <div class="sn">01</div>
+          <div class="sb">
+            <h3>Enable WSL2</h3>
+            <p class="sd">Open PowerShell as Administrator (right-click Start → Windows PowerShell (Admin)).</p>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell (Administrator)</span></div><span class="flang">powershell</span></div>
+              <pre><span class="c1"># Installs WSL2 with Ubuntu — requires a restart</span>
 <span class="c2">PS></span> <span class="c3">wsl --install</span>
-
-<span class="c1"># After restart, set WSL2 as default</span>
+<span class="c1"># After restart:</span>
 <span class="c2">PS></span> <span class="c3">wsl --set-default-version 2</span>
-<span class="c2">PS></span> <span class="c3">wsl --list --verbose</span>
-<span class="c2">  NAME      STATE   VERSION</span>
-<span class="c2">* Ubuntu    Running 2</span></pre>
+<span class="c2">PS></span> <span class="c3">wsl --list --verbose</span>   <span class="c1"># Ubuntu should show VERSION 2</span></pre>
+            </div>
+            <div class="tip">After the restart, Ubuntu will ask you to create a Linux username and password. Use something simple — you will need it for sudo inside WSL.</div>
           </div>
-          <div class="tip">After the restart Windows will prompt you to create a Linux username and password for Ubuntu. Use something simple — you will need it for sudo inside WSL.</div>
         </div>
-      </div>
 
-      <div class="step">
-        <div class="sn">02</div>
-        <div class="sb">
-          <h3>Install Docker Desktop</h3>
-          <p class="sd">Uses the WSL2 backend automatically.</p>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
-            <pre><span class="c2">PS></span> <span class="c3">winget install Docker.DockerDesktop</span>
-
+        <div class="step">
+          <div class="sn">02</div>
+          <div class="sb">
+            <h3>Install Docker Desktop</h3>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
+              <pre><span class="c2">PS></span> <span class="c3">winget install Docker.DockerDesktop</span>
 <span class="c1"># Open Docker Desktop after install</span>
 <span class="c1"># Settings → General → ✓ "Use WSL 2 based engine"</span>
 <span class="c1"># Settings → Resources → WSL Integration → Enable for Ubuntu</span>
-
-<span class="c2">PS></span> <span class="c3">docker --version</span>
-<span class="c2">Docker version 26.x.x</span></pre>
+<span class="c2">PS></span> <span class="c3">docker --version</span>   <span class="c1"># → Docker version 26.x.x</span></pre>
+            </div>
+            <div class="warn">Docker Desktop must be <strong>running</strong> before you run the deploy script.</div>
           </div>
         </div>
-      </div>
 
-      <div class="step">
-        <div class="sn">03</div>
-        <div class="sb">
-          <h3>Install k3d + kubectl</h3>
-          <p class="sd">Install natively via winget, or inside WSL2 via the bash script. Both work.</p>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell — native Windows</span></div><span class="flang">powershell</span></div>
-            <pre><span class="c2">PS></span> <span class="c3">winget install k3d</span>
+        <div class="step">
+          <div class="sn">03</div>
+          <div class="sb">
+            <h3>Install k3d + kubectl</h3>
+            <p class="sd">Option A: native Windows via winget. Option B: inside WSL2 (recommended for bash deploy.sh).</p>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell — Option A (native)</span></div><span class="flang">powershell</span></div>
+              <pre><span class="c2">PS></span> <span class="c3">winget install k3d</span>
 <span class="c2">PS></span> <span class="c3">winget install Kubernetes.kubectl</span>
-
-<span class="c1"># Reopen PowerShell, then verify</span>
-<span class="c2">PS></span> <span class="c3">k3d version</span>
-<span class="c2">k3d version v5.x.x</span></pre>
-          </div>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">WSL2 Ubuntu — alternative</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Inside WSL2 terminal</span>
-<span class="c2">$</span> <span class="c3">curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash</span>
-<span class="c2">$</span> <span class="c3">sudo apt-get install -y kubectl</span></pre>
-          </div>
-          <div class="tip">Running the bash <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">deploy.sh</code> inside WSL2 is the easiest path on Windows — Docker Desktop exposes its socket to WSL2 automatically.</div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="sn">04</div>
-        <div class="sb">
-          <h3>Allow PowerShell scripts (if using deploy.ps1)</h3>
-          <p class="sd">Windows blocks unsigned scripts by default. Run once as Administrator.</p>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell (Administrator)</span></div><span class="flang">powershell</span></div>
-            <pre><span class="c2">PS></span> <span class="c3">Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser</span></pre>
+<span class="c1"># Reopen PowerShell, then:</span>
+<span class="c2">PS></span> <span class="c3">k3d version</span>   <span class="c1"># → k3d version v5.x.x</span></pre>
+            </div>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">WSL2 Ubuntu — Option B (for deploy.sh)</span></div><span class="flang">bash</span></div>
+              <pre><span class="c2">$</span> <span class="c3">curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash</span>
+<span class="c2">$</span> <span class="c3">sudo apt-get install -y kubectl</span>
+<span class="c2">$</span> <span class="c3">k3d version</span>   <span class="c1"># → k3d version v5.x.x</span></pre>
+            </div>
           </div>
         </div>
-      </div>
 
+        <div class="step">
+          <div class="sn">04</div>
+          <div class="sb">
+            <h3>Allow PowerShell scripts (if using deploy.ps1)</h3>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell (Administrator)</span></div><span class="flang">powershell</span></div>
+              <pre><span class="c2">PS></span> <span class="c3">Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser</span></pre>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
   </div>
 
@@ -617,22 +551,29 @@
 
   <!-- ══════════════════════════════════════ GET THE CODE -->
   <div class="section" id="getcode">
-    <div class="sec-hdr"><span class="sec-n">04</span><h2>Get the Code + Zscaler Certificate</h2></div>
+    <div class="sec-hdr"><span class="sec-n">02</span><h2>Get the Code + Zscaler Certificate</h2></div>
 
     <div class="steps">
 
       <div class="step">
         <div class="sn">01</div>
         <div class="sb">
-          <h3>Clone the PerfStack repository</h3>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / WSL2 / PowerShell</span></div><span class="flang">bash</span></div>
-            <pre><span class="c2">$</span> <span class="c3">git clone https://github.com/your-org/perfstack.git</span>
-<span class="c2">$</span> <span class="c3">cd perfstack</span>
-
-<span class="c1"># Confirm the deploy script is present</span>
-<span class="c2">$</span> <span class="c3">ls deploy.sh deploy.ps1</span>
-<span class="c2">deploy.sh   deploy.ps1</span></pre>
+          <h3>Clone the repository</h3>
+          <div class="mac-only">
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+              <pre><span class="c2">$</span> <span class="c3">git clone https://github.com/MegaDragon-Lab/PerfStack.git</span>
+<span class="c2">$</span> <span class="c3">cd PerfStack</span>
+<span class="c2">$</span> <span class="c3">ls deploy.sh</span>   <span class="c1"># confirm it's there</span></pre>
+            </div>
+          </div>
+          <div class="win-only">
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell or WSL2</span></div><span class="flang">bash</span></div>
+              <pre><span class="c2">$</span> <span class="c3">git clone https://github.com/MegaDragon-Lab/PerfStack.git</span>
+<span class="c2">$</span> <span class="c3">cd PerfStack</span>
+<span class="c1"># In WSL2, Windows drives are at /mnt/c/Users/YourName/...</span></pre>
+            </div>
           </div>
         </div>
       </div>
@@ -640,26 +581,31 @@
       <div class="step">
         <div class="sn">02</div>
         <div class="sb">
-          <h3>Copy the Zscaler certificate into the project root</h3>
-          <p class="sd">Required on any machine behind the FICO corporate proxy. The deploy script uses it when pulling images and building Docker images.</p>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">macOS / Linux</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Copy the cert into the project root — exact filename matters</span>
+          <h3>Copy the Zscaler certificate</h3>
+          <p class="sd">Required on FICO network. The deploy script uses it when pulling images and building containers.</p>
+          <div class="mac-only">
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+              <pre><span class="c1"># Copy the cert into the project root — exact filename matters</span>
 <span class="c2">$</span> <span class="c3">cp /path/to/ZscalerRootCA.pem ./zscaler.pem</span>
 
-<span class="c1"># Verify it is a PEM file</span>
+<span class="c1"># Verify it looks right</span>
 <span class="c2">$</span> <span class="c3">head -1 zscaler.pem</span>
 <span class="c2">-----BEGIN CERTIFICATE-----</span></pre>
+            </div>
           </div>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Windows — where to export the cert</span></div><span class="flang">text</span></div>
-            <pre><span class="c1"># Open certmgr.msc  →  Trusted Root Certification Authorities</span>
-<span class="c1">#   → Certificates → find "Zscaler Root CA"</span>
+          <div class="win-only">
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">How to export from Windows</span></div><span class="flang">steps</span></div>
+              <pre><span class="c1"># Open certmgr.msc</span>
+<span class="c1">#   → Trusted Root Certification Authorities → Certificates</span>
+<span class="c1">#   → find "Zscaler Root CA"</span>
 <span class="c1">#   → Right-click → All Tasks → Export...</span>
 <span class="c1">#   → Base-64 encoded X.509 (.CER)</span>
-<span class="c1">#   → Save as zscaler.pem in the project root</span></pre>
+<span class="c1">#   → Save as  zscaler.pem  in the PerfStack project folder</span></pre>
+            </div>
           </div>
-          <div class="warn">If <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">zscaler.pem</code> is missing the deploy script will warn and continue, but Docker image pulls may fail on a Zscaler-intercepted network. The cert is <strong>never committed to the repo</strong>.</div>
+          <div class="warn">If <code style="font-family:monospace;font-size:10.5px">zscaler.pem</code> is missing the script will warn and continue, but Docker pulls may fail on a Zscaler-intercepted network. The cert is never committed to the repo.</div>
         </div>
       </div>
 
@@ -670,22 +616,24 @@
 
   <!-- ══════════════════════════════════════ DEPLOY -->
   <div class="section" id="deploy">
-    <div class="sec-hdr"><span class="sec-n">05</span><h2>Deploy — One Command</h2></div>
+    <div class="sec-hdr"><span class="sec-n">03</span><h2>Deploy — One Command</h2></div>
 
-    <p class="body" style="margin-bottom:18px">
-      A single script does everything: creates the k3d cluster, sets up a local image registry, pre-pulls all infra images, builds the backend and frontend Docker images, pushes them to the registry, applies all Kubernetes manifests, and waits for every pod to be healthy.
+    <p class="body" style="margin-bottom:20px">
+      The script creates the k3d cluster, local registry, pre-pulls all infra images, builds your app images, pushes them to the registry, applies all Kubernetes manifests, and waits for every pod to be healthy.
     </p>
 
-    <div class="steps">
+    <!-- macOS deploy -->
+    <div class="mac-only">
+      <div class="steps">
 
-      <div class="step">
-        <div class="sn">01</div>
-        <div class="sb">
-          <h3>macOS / Linux</h3>
-          <p class="sd">Make sure Docker Desktop is running, then:</p>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
-            <pre><span class="c2">$</span> <span class="c3">chmod +x deploy.sh && ./deploy.sh</span>
+        <div class="step">
+          <div class="sn">01</div>
+          <div class="sb">
+            <h3>Run deploy.sh</h3>
+            <p class="sd">Make sure Docker Desktop is running first.</p>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+              <pre><span class="c2">$</span> <span class="c3">chmod +x deploy.sh && ./deploy.sh</span>
 
 <span class="c1">▶ Running preflight checks...</span>
 <span class="c2">✓ Preflight checks passed</span>
@@ -706,56 +654,79 @@
 <span class="c2">✓ frontend is ready</span>
 
 <span class="c2">  🚀 PerfStack is up!</span>
-<span class="c4">  Frontend UI  →  http://localhost</span>
-<span class="c4">  Grafana      →  http://localhost/grafana</span>
-<span class="c4">  Backend API  →  http://localhost/api/docs</span></pre>
-          </div>
-          <div class="tip">The first run downloads ~1.5 GB of Docker images. Subsequent runs skip already-cached images and complete in ~2 minutes.</div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="sn">02</div>
-        <div class="sb">
-          <h3>Windows — Option A: WSL2 (recommended)</h3>
-          <p class="sd">Open the WSL2 Ubuntu terminal, navigate to the project, run the bash script.</p>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">WSL2 Ubuntu Terminal</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Navigate to the cloned repo (Windows paths accessible via /mnt/c/...)</span>
-<span class="c2">$</span> <span class="c3">cd /mnt/c/Users/YourName/perfstack</span>
-<span class="c2">$</span> <span class="c3">chmod +x deploy.sh && ./deploy.sh</span></pre>
+<span class="c4">  Frontend  →  http://localhost</span>
+<span class="c4">  Grafana   →  http://localhost/grafana</span>
+<span class="c4">  API Docs  →  http://localhost/api/docs</span></pre>
+            </div>
+            <div class="tip">First run downloads ~1.5 GB of images. Subsequent runs skip cached images and finish in ~2 minutes.</div>
           </div>
         </div>
-      </div>
 
-      <div class="step">
-        <div class="sn">03</div>
-        <div class="sb">
-          <h3>Windows — Option B: Native PowerShell</h3>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
-            <pre><span class="c2">PS></span> <span class="c3">cd C:\Users\YourName\perfstack</span>
-<span class="c2">PS></span> <span class="c3">.\deploy.ps1</span></pre>
-          </div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="sn">04</div>
-        <div class="sb">
-          <h3>Re-deploy after code changes</h3>
-          <p class="sd">The script is fully idempotent — it skips the cluster and registry if they already exist, rebuilds only the app images, and restarts affected deployments.</p>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Edit backend/ or frontend/ source code, then:</span>
+        <div class="step">
+          <div class="sn">02</div>
+          <div class="sb">
+            <h3>Re-deploy after code changes</h3>
+            <p class="sd">The script is fully idempotent — skips existing cluster and registry, rebuilds only the app images.</p>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+              <pre><span class="c1"># After editing backend/ or frontend/ source:</span>
 <span class="c2">$</span> <span class="c3">./deploy.sh</span>
 
 <span class="c1"># Full teardown and fresh start:</span>
 <span class="c2">$</span> <span class="c3">k3d cluster delete perfstack && ./deploy.sh</span></pre>
+            </div>
           </div>
         </div>
-      </div>
 
+      </div>
+    </div>
+
+    <!-- Windows deploy -->
+    <div class="win-only">
+      <div class="steps">
+
+        <div class="step">
+          <div class="sn">01</div>
+          <div class="sb">
+            <h3>Option A — WSL2 bash (recommended)</h3>
+            <p class="sd">Open the Ubuntu WSL2 terminal, navigate to the project folder and run the bash script.</p>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">WSL2 Ubuntu Terminal</span></div><span class="flang">bash</span></div>
+              <pre><span class="c1"># Windows files are accessible under /mnt/c/...</span>
+<span class="c2">$</span> <span class="c3">cd /mnt/c/Users/YourName/PerfStack</span>
+<span class="c2">$</span> <span class="c3">chmod +x deploy.sh && ./deploy.sh</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="sn">02</div>
+          <div class="sb">
+            <h3>Option B — Native PowerShell</h3>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
+              <pre><span class="c2">PS></span> <span class="c3">cd C:\Users\YourName\PerfStack</span>
+<span class="c2">PS></span> <span class="c3">.\deploy.ps1</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="sn">03</div>
+          <div class="sb">
+            <h3>Re-deploy after code changes</h3>
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell or WSL2</span></div><span class="flang">bash</span></div>
+              <pre><span class="c1"># Re-deploy (idempotent — skips existing cluster):</span>
+<span class="c2">$</span> <span class="c3">./deploy.sh</span>   <span class="c1"># or .\deploy.ps1</span>
+
+<span class="c1"># Full teardown and fresh start:</span>
+<span class="c2">$</span> <span class="c3">k3d cluster delete perfstack && ./deploy.sh</span></pre>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
   </div>
 
@@ -763,7 +734,7 @@
 
   <!-- ══════════════════════════════════════ VERIFY -->
   <div class="section" id="verify">
-    <div class="sec-hdr"><span class="sec-n">06</span><h2>Verify Everything is Working</h2></div>
+    <div class="sec-hdr"><span class="sec-n">04</span><h2>Verify Everything is Working</h2></div>
 
     <div class="steps">
 
@@ -772,7 +743,7 @@
         <div class="sb">
           <h3>Check all pods are running</h3>
           <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell / WSL2</span></div><span class="flang">bash</span></div>
             <pre><span class="c2">$</span> <span class="c3">kubectl get pods -n perfstack</span>
 
 <span class="c2">NAME                        READY   STATUS    RESTARTS   AGE</span>
@@ -790,12 +761,12 @@
           <h3>Open in the browser</h3>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">browser</span></div><span class="flang">url</span></div>
-            <pre><span class="c4">http://localhost</span>             <span class="c1"># PerfStack Frontend UI</span>
-<span class="c4">http://localhost/grafana</span>      <span class="c1"># Grafana  (login: admin / admin)</span>
-<span class="c4">http://localhost/api/docs</span>     <span class="c1"># FastAPI Swagger UI</span>
-<span class="c4">http://localhost/api/health</span>   <span class="c1"># Backend health check → {"status":"ok"}</span></pre>
+            <pre><span class="c4">http://localhost</span>            <span class="c1"># PerfStack Frontend UI</span>
+<span class="c4">http://localhost/grafana</span>     <span class="c1"># Grafana  (admin / admin)</span>
+<span class="c4">http://localhost/api/docs</span>    <span class="c1"># FastAPI Swagger UI</span>
+<span class="c4">http://localhost/api/health</span>  <span class="c1"># → {"status":"ok"}</span></pre>
           </div>
-          <div class="tip">All services are served through the nginx ingress on port 80. No port-forwarding or tunnel is needed — just <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">localhost</code>.</div>
+          <div class="tip">All services go through the nginx ingress on port 80. No port-forwarding needed — just <code style="font-family:monospace;font-size:10.5px">localhost</code>.</div>
         </div>
       </div>
 
@@ -804,15 +775,14 @@
         <div class="sb">
           <h3>Run your first load test</h3>
           <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PerfStack UI</span></div><span class="flang">steps</span></div>
-            <pre><span class="c1">1. Open http://localhost</span>
-<span class="c1">2. Fill in IAM URL, Client ID, Secret</span>
-<span class="c1">3. Enter the Target URL to load test</span>
-<span class="c1">4. Select a Scenario  (Load / Spike / Stress / Soak / Custom)</span>
-<span class="c1">5. Adjust VUs and Duration with the sliders</span>
-<span class="c1">6. Click  Run Load Test</span>
-<span class="c2">→ Job created, status appears below the form</span>
-<span class="c2">→ Open Grafana to watch live metrics</span></pre>
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PerfStack UI — http://localhost</span></div><span class="flang">steps</span></div>
+            <pre><span class="c1">1. Enter IAM URL, Client ID, Secret</span>
+<span class="c1">2. Enter the Target URL to load test</span>
+<span class="c1">3. Select a Scenario  (Load / Spike / Stress / Soak / Custom)</span>
+<span class="c1">4. Adjust VUs and Duration with the sliders</span>
+<span class="c1">5. Click  Run Load Test</span>
+<span class="c2">→ Job created — status appears below the form</span>
+<span class="c2">→ Click "Show Grafana" to watch live metrics</span></pre>
           </div>
         </div>
       </div>
@@ -825,7 +795,7 @@
         <li><strong>kubectl get pods -n perfstack</strong> — all four pods STATUS=Running READY=1/1</li>
         <li><strong>http://localhost</strong> — PerfStack UI loads</li>
         <li><strong>http://localhost/api/health</strong> — returns <code>{"status":"ok"}</code></li>
-        <li><strong>http://localhost/grafana</strong> — Grafana login page appears</li>
+        <li><strong>http://localhost/grafana</strong> — Grafana login page (admin / admin)</li>
         <li>Grafana → Dashboards → PerfStack folder — two dashboards visible</li>
       </ul>
     </div>
@@ -835,7 +805,7 @@
 
   <!-- ══════════════════════════════════════ TROUBLESHOOTING -->
   <div class="section" id="troubleshoot">
-    <div class="sec-hdr"><span class="sec-n">07</span><h2>Troubleshooting</h2></div>
+    <div class="sec-hdr"><span class="sec-n">05</span><h2>Troubleshooting</h2></div>
 
     <div class="steps">
 
@@ -843,10 +813,19 @@
         <div class="sn">!</div>
         <div class="sb">
           <h3>deploy.sh fails — "Docker is not running"</h3>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Start Docker Desktop, wait for the whale icon to be steady, then re-run:</span>
+          <div class="mac-only">
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
+              <pre><span class="c1"># Start Docker Desktop, wait for whale icon to be steady, then:</span>
 <span class="c2">$</span> <span class="c3">./deploy.sh</span></pre>
+            </div>
+          </div>
+          <div class="win-only">
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">powershell</span></div>
+              <pre><span class="c1"># Start Docker Desktop, wait for it to be fully running, then:</span>
+<span class="c2">PS></span> <span class="c3">.\deploy.ps1</span>   <span class="c1"># or: ./deploy.sh from WSL2</span></pre>
+            </div>
           </div>
         </div>
       </div>
@@ -855,11 +834,10 @@
         <div class="sn">!</div>
         <div class="sb">
           <h3>Pods stuck in ImagePullBackOff</h3>
-          <p class="sd">The k3s nodes could not pull an image from the local registry. Usually means the cluster was created without the registry config.</p>
+          <p class="sd">k3s nodes could not pull from the local registry. Usually means the cluster was created without the registry config. Full teardown fixes it.</p>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Full teardown and fresh deploy (takes ~5 min)</span>
-<span class="c2">$</span> <span class="c3">k3d cluster delete perfstack</span>
+            <pre><span class="c2">$</span> <span class="c3">k3d cluster delete perfstack</span>
 <span class="c2">$</span> <span class="c3">./deploy.sh</span></pre>
           </div>
         </div>
@@ -869,16 +847,15 @@
         <div class="sn">!</div>
         <div class="sb">
           <h3>docker pull fails — x509 / certificate error</h3>
-          <p class="sd">The Zscaler proxy is intercepting HTTPS traffic and your cert is missing or not trusted.</p>
+          <p class="sd">Zscaler is intercepting HTTPS and the cert is missing or untrusted.</p>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Verify zscaler.pem is present in the project root</span>
+            <pre><span class="c1"># Verify zscaler.pem is in the project root</span>
 <span class="c2">$</span> <span class="c3">head -1 zscaler.pem</span>
 <span class="c2">-----BEGIN CERTIFICATE-----</span>
 
-<span class="c1"># Add zscaler.pem to Docker Desktop's trusted certs:</span>
-<span class="c1"># Docker Desktop → Settings → Docker Engine → add to "registry-mirrors"</span>
-<span class="c1"># or import via macOS Keychain / Windows certmgr.msc and restart Docker Desktop</span></pre>
+<span class="c1"># Also add to Docker Desktop: Settings → Docker Engine → add</span>
+<span class="c1"># the cert under "insecure-registries" or trust via system keychain</span></pre>
           </div>
         </div>
       </div>
@@ -887,16 +864,20 @@
         <div class="sn">!</div>
         <div class="sb">
           <h3>Port 80 already in use</h3>
-          <p class="sd">Another process (nginx, Apache, another k3d cluster) is bound to port 80.</p>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Find what is on port 80</span>
+            <pre><span class="mac-only c1"># Find what is using port 80</span>
 <span class="c2">$</span> <span class="c3">sudo lsof -i :80</span>
-
-<span class="c1"># Delete any existing perfstack cluster first</span>
-<span class="c2">$</span> <span class="c3">k3d cluster delete perfstack</span>
-
-<span class="c1"># Stop the conflicting process, then re-run deploy.sh</span></pre>
+<span class="c1"># Stop the conflicting process, then:</span>
+<span class="c2">$</span> <span class="c3">k3d cluster delete perfstack && ./deploy.sh</span></pre>
+          </div>
+          <div class="win-only">
+            <div class="code">
+              <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix — PowerShell</span></div><span class="flang">powershell</span></div>
+              <pre><span class="c1"># Find what is using port 80</span>
+<span class="c2">PS></span> <span class="c3">netstat -ano | findstr :80</span>
+<span class="c1"># Stop the process, then re-run deploy</span></pre>
+            </div>
           </div>
         </div>
       </div>
@@ -912,21 +893,17 @@
 Tell me what is wrong and how to fix it."</span>
 
 <span class="c4">"Run kubectl logs deployment/backend -n perfstack --tail=50
-and identify any startup errors."</span>
-
-<span class="c4">"Run kubectl get events -n perfstack --sort-by=.lastTimestamp
-and summarise what went wrong."</span></pre>
+and identify any startup errors."</span></pre>
           </div>
-          <div class="tip">This is a great live demo of Claude Code — it reads actual cluster state, understands the error context, and proposes a specific fix rather than generic advice.</div>
+          <div class="tip">This is a great live demo of Claude Code — it reads actual cluster state and proposes a specific fix rather than generic advice.</div>
         </div>
       </div>
 
     </div>
   </div>
 
-</div>
+</div><!-- end .page -->
 
-<!-- FOOTER -->
 <footer>
   <div>
     <div class="fb">PERFSTACK // LOCAL SETUP</div>
@@ -938,14 +915,34 @@ and summarise what went wrong."</span></pre>
   </div>
 </footer>
 
+</div><!-- end #main-content -->
+
 <script>
+  function pickOS(os) {
+    document.getElementById('os-picker').classList.add('hidden');
+    document.getElementById('main-content').style.display = 'block';
+    document.body.className = 'os-' + os;
+
+    // topbar label + toggle
+    document.getElementById('topbar-os-label').textContent = os === 'mac' ? 'macos' : 'windows';
+    document.getElementById('hero-os-tag').textContent = os === 'mac' ? 'macOS 12+' : 'Windows 10/11';
+    document.querySelectorAll('.os-toggle button').forEach(b => b.classList.remove('active'));
+    document.querySelector('.' + os + '-btn').classList.add('active');
+
+    localStorage.setItem('perfstack-os', os);
+  }
+
+  // Restore saved preference on load
+  const saved = localStorage.getItem('perfstack-os');
+  if (saved === 'mac' || saved === 'win') pickOS(saved);
+
+  // Nav scroll highlight
   const sections = document.querySelectorAll('[id]');
   const tabs = document.querySelectorAll('.ntab');
   const io = new IntersectionObserver(entries => {
     entries.forEach(e => {
-      if (e.isIntersecting) {
+      if (e.isIntersecting)
         tabs.forEach(t => t.classList.toggle('active', t.getAttribute('href') === '#' + e.target.id));
-      }
     });
   }, { rootMargin: '-30% 0px -60% 0px' });
   sections.forEach(s => io.observe(s));
