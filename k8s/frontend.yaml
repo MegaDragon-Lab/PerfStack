@@ -18,7 +18,7 @@ spec:
       containers:
         - name: frontend
           image: perfstack-frontend:latest
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
           resources:
@@ -37,8 +37,6 @@ metadata:
 spec:
   selector:
     app: frontend
-  type: NodePort
   ports:
     - port: 3000
       targetPort: 3000
-      nodePort: 30080

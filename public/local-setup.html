@@ -715,7 +715,7 @@
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
             <pre><span class="c1"># Start with Docker driver (works on both Mac and Windows)</span>
-<span class="c2">$</span> <span class="c3">minikube start --driver=docker --memory=4096 --cpus=2</span>
+<span class="c2">$</span> <span class="c3">minikube start --driver=qemu --memory=12288 --cpus=6 --network=socket_vmnet</span>
 
 <span class="c1">😄  minikube v1.32.x</span>
 <span class="c1">✨  Using the docker driver</span>
@@ -933,7 +933,7 @@
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
             <pre><span class="c1"># Start Docker Desktop, wait for it to be fully running, then:</span>
-<span class="c2">$</span> <span class="c3">minikube delete && minikube start --driver=docker --memory=4096 --cpus=2</span></pre>
+<span class="c2">$</span> <span class="c3">minikube delete && minikube start --driver=qemu --memory=12288 --cpus=6 --network=socket_vmnet</span></pre>
           </div>
         </div>
       </div>
