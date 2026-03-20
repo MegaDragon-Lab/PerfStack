@@ -1,6 +1,6 @@
 # ⚡ PerfStack
 
-> Load Testing Platform built with **Claude Code** — K6 + Grafana on Kubernetes
+> Load Testing Platform built by **GSA Team** — K6 + Grafana on Kubernetes
 
 ## Stack
 
@@ -53,4 +53,4 @@ perfstack/
 ```
 
 ---
-*PerfStack · Anthropic · Claude Code Hands-On Lab*
+*PerfStack · GSA Team*

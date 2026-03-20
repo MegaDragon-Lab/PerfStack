@@ -1,17 +1,15 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { Rate, Trend } from 'k6/metrics';
+import { Rate, Trend, Counter } from 'k6/metrics';
 
 // Custom metrics
-const errorRate = new Rate('custom_errors');
+const errorRate  = new Rate('custom_errors');
 const reqDuration = new Trend('custom_req_duration');
+const http2xx    = new Counter('http_2xx');
+const http503    = new Counter('http_503');
 
 export const options = {
-  stages: [
-    { duration: '30s', target: {{ vus }} },       // ramp up
-    { duration: '{{ duration }}s', target: {{ vus }} }, // sustain
-    { duration: '10s', target: 0 },               // ramp down
-  ],
+  stages: {{ stages }},
   thresholds: {
     'http_req_duration': ['p(95)<2000'],
     'http_req_failed':   ['rate<0.05'],
@@ -41,6 +39,11 @@ export default function () {
 
   errorRate.add(!success);
   reqDuration.add(res.timings.duration);
+  if (res.status >= 200 && res.status < 300) {
+    http2xx.add(1);
+  } else if (res.status >= 500) {
+    http503.add(1);
+  }
 
-  sleep(1);
+  sleep(0.1);
 }

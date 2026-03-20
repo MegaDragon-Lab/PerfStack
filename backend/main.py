@@ -39,14 +39,20 @@ app.add_middleware(
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
+class StageConfig(BaseModel):
+    duration: str
+    target: int
+
 class TestConfig(BaseModel):
     iam_url: str = Field(..., description="IAM token endpoint URL")
     client_id: str = Field(..., description="OAuth2 client ID")
     client_secret: str = Field(..., description="OAuth2 client secret")
     target_url: str = Field(..., description="URL to load test")
     payload: dict[str, Any] = Field(default={}, description="JSON body for each request")
-    vus: int = Field(default=10, ge=1, le=500, description="Virtual users")
-    duration: int = Field(default=60, ge=10, le=600, description="Test duration in seconds")
+    vus: int = Field(default=10, ge=1, le=2000, description="Virtual users")
+    duration: int = Field(default=60, ge=10, le=3600, description="Test duration in seconds")
+    scenario: str = Field(default="load", description="Test scenario type")
+    stages: list[StageConfig] = Field(default=[], description="Custom k6 stages")
 
 
 class TestResult(BaseModel):
@@ -91,12 +97,13 @@ async def run_test(config: TestConfig):
             payload=config.payload,
             vus=config.vus,
             duration=config.duration,
+            stages=[s.model_dump() for s in config.stages],
         )
     except Exception as e:
         logger.error("Failed to create K6 job: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to create K6 job: {e}")
 
-    logger.info("Test started: job=%s vus=%d duration=%ds", job_name, config.vus, config.duration)
+    logger.info("Test started: job=%s scenario=%s vus=%d duration=%ds", job_name, config.scenario, config.vus, config.duration)
     return TestResult(
         job_name=job_name,
         status="created",

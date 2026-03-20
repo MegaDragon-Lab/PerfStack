@@ -31,6 +31,7 @@ def _render_k6_script(
     payload: dict[str, Any],
     vus: int,
     duration: int,
+    stages: list[dict],
 ) -> str:
     """Render the Jinja2 K6 template with runtime values."""
     env = Environment(loader=FileSystemLoader(str(TEMPLATE_PATH.parent)))
@@ -41,6 +42,7 @@ def _render_k6_script(
         payload=json.dumps(payload),
         vus=vus,
         duration=duration,
+        stages=json.dumps(stages),
     )
 
 
@@ -51,9 +53,10 @@ async def create_k6_job(
     payload: dict[str, Any],
     vus: int,
     duration: int,
+    stages: list[dict],
 ) -> None:
     """Create a Kubernetes Job that runs a K6 load test."""
-    k6_script = _render_k6_script(bearer_token, target_url, payload, vus, duration)
+    k6_script = _render_k6_script(bearer_token, target_url, payload, vus, duration, stages)
 
     # Store script in a ConfigMap to avoid env var size limits
     core_v1 = client.CoreV1Api()
@@ -85,7 +88,7 @@ async def create_k6_job(
                         client.V1Container(
                             name="k6",
                             image="grafana/k6:latest",
-                            args=["run", "--out", f"influxdb={INFLUXDB_URL}", "/scripts/test.js"],
+                            args=["run", "--insecure-skip-tls-verify", "--out", f"influxdb={INFLUXDB_URL}", "/scripts/test.js"],
                             volume_mounts=[
                                 client.V1VolumeMount(
                                     name="k6-script",

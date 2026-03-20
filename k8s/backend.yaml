@@ -18,8 +18,8 @@ spec:
       serviceAccountName: k6-runner-sa
       containers:
         - name: backend
-          image: perfstack-backend:latest
-          imagePullPolicy: IfNotPresent
+          image: k3d-perfstack-registry:5000/library/perfstack-backend:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
           resources:

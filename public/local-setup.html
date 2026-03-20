@@ -314,7 +314,6 @@
   </span>
 </div>
 
-
 <!-- TOPBAR -->
 <div class="topbar">
   <div class="tl">
@@ -336,8 +335,8 @@
   <a class="ntab" href="#tools"><span class="n">01</span> Required Tools</a>
   <a class="ntab" href="#mac"><span class="n">02</span> macOS Setup</a>
   <a class="ntab" href="#windows"><span class="n">03</span> Windows Setup</a>
-  <a class="ntab" href="#cluster"><span class="n">04</span> Start the Cluster</a>
-  <a class="ntab" href="#perfstack"><span class="n">05</span> Build PerfStack</a>
+  <a class="ntab" href="#getcode"><span class="n">04</span> Get the Code</a>
+  <a class="ntab" href="#deploy"><span class="n">05</span> Deploy</a>
   <a class="ntab" href="#verify"><span class="n">06</span> Verify &amp; Run</a>
   <a class="ntab" href="#troubleshoot"><span class="n">07</span> Troubleshooting</a>
 </nav>
@@ -354,25 +353,26 @@
       </h1>
       <p class="hero-desc">
         This guide walks you through installing PerfStack locally on your own machine —
-        Windows or macOS. Once set up, you have a permanent local Kubernetes environment
-        to keep building with Claude Code, no cloud dependency needed.
+        Windows or macOS. One script does everything: creates the k3d cluster, builds
+        both Docker images, pushes them to a local registry, and deploys all services.
+        No cloud dependency, no tunnel, no admin rights needed.
       </p>
       <div class="tags">
         <span class="tag">Windows 10/11</span>
         <span class="tag">macOS 12+</span>
         <span class="tag">Docker Desktop</span>
-        <span class="tag">Minikube</span>
-        <span class="tag">Claude Code</span>
+        <span class="tag">k3d</span>
         <span class="tag">K6 + Grafana</span>
+        <span class="tag">localhost:80</span>
       </div>
     </div>
     <div class="meta-box">
-      <div class="mr"><div class="ml">Setup time</div><div class="mv r">~30 min</div></div>
+      <div class="mr"><div class="ml">Setup time</div><div class="mv r">~20 min</div></div>
       <div class="mr"><div class="ml">First-time only</div><div class="mv">Yes</div></div>
       <div class="mr"><div class="ml">macOS</div><div class="mv g">Homebrew</div></div>
-      <div class="mr"><div class="ml">Windows</div><div class="mv b">Winget / WSL2</div></div>
+      <div class="mr"><div class="ml">Windows</div><div class="mv b">WSL2 / winget</div></div>
       <div class="mr"><div class="ml">RAM required</div><div class="mv">8 GB min</div></div>
-      <div class="mr"><div class="ml">Disk space</div><div class="mv">~6 GB</div></div>
+      <div class="mr"><div class="ml">Access URL</div><div class="mv">localhost</div></div>
     </div>
   </div>
 
@@ -381,7 +381,7 @@
     <div class="sec-hdr"><span class="sec-n">01</span><h2>Required Tools</h2></div>
 
     <p class="body" style="margin-bottom:18px">
-      These are the tools you need on your laptop. The table below shows the recommended install method for each platform — sections 02 and 03 walk through them step by step.
+      Only three tools are needed on your laptop. Everything else (Python, Node.js, k6, InfluxDB, Grafana) runs inside the cluster — the deploy script handles it automatically.
     </p>
 
     <div class="comp">
@@ -398,59 +398,44 @@
         <tbody>
           <tr>
             <td><strong>Docker Desktop</strong></td>
-            <td class="m">Container runtime for Minikube</td>
+            <td class="m">Container runtime (host + cluster)</td>
             <td><span class="badge badge-mac">Homebrew</span></td>
             <td><span class="badge badge-win">Winget</span></td>
             <td class="b">4.x+</td>
           </tr>
           <tr>
-            <td><strong>Minikube</strong></td>
-            <td class="m">Local Kubernetes cluster</td>
+            <td><strong>k3d</strong></td>
+            <td class="m">k3s Kubernetes cluster in Docker</td>
             <td><span class="badge badge-mac">Homebrew</span></td>
-            <td><span class="badge badge-win">Winget</span></td>
-            <td class="b">1.32+</td>
+            <td><span class="badge badge-win">Winget / WSL2</span></td>
+            <td class="b">5.x+</td>
           </tr>
           <tr>
             <td><strong>kubectl</strong></td>
-            <td class="m">K8s CLI</td>
+            <td class="m">Kubernetes CLI</td>
             <td><span class="badge badge-mac">Homebrew</span></td>
             <td><span class="badge badge-win">Winget</span></td>
             <td class="b">1.28+</td>
           </tr>
           <tr>
-            <td><strong>Node.js 18+</strong></td>
-            <td class="m">Required by Claude Code</td>
-            <td><span class="badge badge-mac">Homebrew</span></td>
-            <td><span class="badge badge-win">Winget</span></td>
-            <td class="b">18 LTS</td>
-          </tr>
-          <tr>
-            <td><strong>Python 3.11+</strong></td>
-            <td class="m">FastAPI backend</td>
-            <td><span class="badge badge-mac">Homebrew</span></td>
-            <td><span class="badge badge-win">python.org</span></td>
-            <td class="b">3.11+</td>
-          </tr>
-          <tr>
-            <td><strong>Claude Code</strong></td>
-            <td class="m">AI dev copilot</td>
-            <td><span class="badge badge-both">npm</span></td>
-            <td><span class="badge badge-both">npm</span></td>
-            <td class="b">latest</td>
-          </tr>
-          <tr>
             <td><strong>Git</strong></td>
             <td class="m">Clone the repo</td>
-            <td><span class="badge badge-mac">Homebrew / Xcode</span></td>
+            <td><span class="badge badge-mac">Xcode / Homebrew</span></td>
             <td><span class="badge badge-win">git-scm.com</span></td>
             <td class="b">any</td>
+          </tr>
+          <tr>
+            <td><strong>zscaler.pem</strong></td>
+            <td class="m">Corporate proxy cert (FICO network)</td>
+            <td colspan="2" style="text-align:center;color:var(--amber);font-weight:600">Copy manually to project root</td>
+            <td class="b">—</td>
           </tr>
         </tbody>
       </table>
     </div>
 
     <div class="info" style="margin-top:14px">
-      Your machine needs at least <strong>8 GB RAM</strong> and <strong>6 GB free disk space</strong>. Minikube will use 4 GB RAM and 2 CPUs by default. On a 16 GB machine it runs comfortably alongside a browser and your editor.
+      k3d runs k3s (a lightweight Kubernetes distribution) entirely inside Docker containers, so it uses your existing Docker Desktop — no separate VM or hypervisor needed. The deploy script creates the cluster, a local image registry, builds your images, and deploys everything. <strong>No manual kubectl commands required.</strong>
     </div>
   </div>
 
@@ -461,7 +446,7 @@
     <div class="sec-hdr"><span class="sec-n">02</span><h2>macOS Setup</h2></div>
 
     <p class="body" style="margin-bottom:18px">
-      We use <strong>Homebrew</strong> as the package manager. If you already have Homebrew, skip step 1. All commands run in <strong>Terminal.app</strong> or iTerm2.
+      We use <strong>Homebrew</strong> as the package manager. All commands run in <strong>Terminal.app</strong> or iTerm2.
     </p>
 
     <div class="steps">
@@ -470,7 +455,7 @@
         <div class="sn">01</div>
         <div class="sb">
           <h3>Install Homebrew</h3>
-          <p class="sd">The missing package manager for macOS. Skip if already installed.</p>
+          <p class="sd">Skip if already installed.</p>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
             <pre><span class="c2">$</span> <span class="c3">/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</span>
@@ -479,7 +464,7 @@
 <span class="c2">$</span> <span class="c3">brew --version</span>
 <span class="c2">Homebrew 4.x.x</span></pre>
           </div>
-          <div class="tip">On Apple Silicon (M1/M2/M3) Homebrew installs to /opt/homebrew. Add it to your PATH if the shell doesn't find brew after install: <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile</code></div>
+          <div class="tip">On Apple Silicon (M1/M2/M3/M4) add Homebrew to PATH after install: <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile && source ~/.zprofile</code></div>
         </div>
       </div>
 
@@ -487,33 +472,34 @@
         <div class="sn">02</div>
         <div class="sb">
           <h3>Install Docker Desktop</h3>
-          <p class="sd">Docker Desktop provides the container runtime that Minikube uses as its driver on macOS.</p>
+          <p class="sd">Docker Desktop provides the container runtime that k3d uses. Must be running before deploy.</p>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
             <pre><span class="c2">$</span> <span class="c3">brew install --cask docker</span>
 
 <span class="c1"># Open Docker Desktop from Applications and complete the setup wizard</span>
-<span class="c1"># Wait until the Docker icon in the menu bar shows "Docker Desktop is running"</span>
+<span class="c1"># Wait until the Docker icon in the menu bar is steady (not animated)</span>
 
 <span class="c1"># Verify</span>
 <span class="c2">$</span> <span class="c3">docker --version</span>
-<span class="c2">Docker version 24.x.x</span></pre>
+<span class="c2">Docker version 26.x.x</span></pre>
           </div>
-          <div class="warn">Docker Desktop must be <strong>running</strong> before you start Minikube. Check the whale icon in the menu bar — it must be steady, not animated.</div>
+          <div class="warn">Docker Desktop must be <strong>running</strong> before you run deploy.sh. Check the whale icon in the menu bar.</div>
         </div>
       </div>
 
       <div class="step">
         <div class="sn">03</div>
         <div class="sb">
-          <h3>Install Minikube + kubectl</h3>
+          <h3>Install k3d + kubectl</h3>
+          <p class="sd">k3d creates a full Kubernetes cluster inside Docker containers. kubectl is the CLI to interact with it.</p>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
-            <pre><span class="c2">$</span> <span class="c3">brew install minikube kubectl</span>
+            <pre><span class="c2">$</span> <span class="c3">brew install k3d kubectl</span>
 
-<span class="c1"># Verify both</span>
-<span class="c2">$</span> <span class="c3">minikube version</span>
-<span class="c2">minikube version: v1.32.x</span>
+<span class="c1"># Verify</span>
+<span class="c2">$</span> <span class="c3">k3d version</span>
+<span class="c2">k3d version v5.x.x</span>
 
 <span class="c2">$</span> <span class="c3">kubectl version --client</span>
 <span class="c2">Client Version: v1.28.x</span></pre>
@@ -521,43 +507,15 @@
         </div>
       </div>
 
-      <div class="step">
-        <div class="sn">04</div>
-        <div class="sb">
-          <h3>Install Node.js, Python 3.11 and Git</h3>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
-            <pre><span class="c2">$</span> <span class="c3">brew install node@18 <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="a7d7ded3cfc8c9e794899696">[email&#160;protected]</a> git</span>
+    </div>
 
-<span class="c1"># Link node 18 if you have multiple versions</span>
-<span class="c2">$</span> <span class="c3">brew link node@18 --force --overwrite</span>
-
-<span class="c1"># Verify</span>
-<span class="c2">$</span> <span class="c3">node --version</span>   <span class="c1"># → v18.x.x</span>
-<span class="c2">$</span> <span class="c3">python3 --version</span> <span class="c1"># → Python 3.11.x</span></pre>
-          </div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="sn">05</div>
-        <div class="sb">
-          <h3>Install Claude Code</h3>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
-            <pre><span class="c2">$</span> <span class="c3">npm install -g @anthropic-ai/claude-code</span>
-
-<span class="c1"># Verify</span>
-<span class="c2">$</span> <span class="c3">claude --version</span>
-<span class="c2">claude 1.x.x</span>
-
-<span class="c1"># Set your Anthropic API key (add to ~/.zshrc or ~/.bash_profile to persist)</span>
-<span class="c2">$</span> <span class="c3">export ANTHROPIC_API_KEY=sk-ant-...</span></pre>
-          </div>
-          <div class="tip">To make the API key permanent on macOS, add the export line to your <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">~/.zshrc</code> file and run <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">source ~/.zshrc</code>.</div>
-        </div>
-      </div>
-
+    <div class="verify">
+      <div class="verify-title">macOS ready checklist</div>
+      <ul class="chk">
+        <li><strong>docker ps</strong> returns an empty table (no error)</li>
+        <li><strong>k3d version</strong> returns v5.x or higher</li>
+        <li><strong>kubectl version --client</strong> returns a version number</li>
+      </ul>
     </div>
   </div>
 
@@ -568,12 +526,11 @@
     <div class="sec-hdr"><span class="sec-n">03</span><h2>Windows Setup</h2></div>
 
     <p class="body" style="margin-bottom:18px">
-      We use <strong>winget</strong> (built into Windows 10/11) and <strong>WSL2</strong> for the best experience.
-      All commands run in <strong>PowerShell</strong> (run as Administrator where noted) or the WSL2 terminal.
+      We use <strong>WSL2</strong> + <strong>winget</strong>. Run PowerShell commands as Administrator where noted. The deploy script runs from either WSL2 (bash) or native PowerShell.
     </p>
 
     <div class="warn" style="margin-bottom:18px">
-      Windows requires <strong>WSL2</strong> (Windows Subsystem for Linux 2) so Docker Desktop can run Linux containers properly. This is a one-time setup that takes about 5 minutes.
+      Windows requires <strong>WSL2</strong> for Docker Desktop's Linux container support. This is a one-time setup (~5 min).
     </div>
 
     <div class="steps">
@@ -585,16 +542,16 @@
           <p class="sd">Open PowerShell as Administrator (right-click Start → Windows PowerShell (Admin)).</p>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell (Administrator)</span></div><span class="flang">powershell</span></div>
-            <pre><span class="c1"># Install WSL2 with Ubuntu — this will require a restart</span>
+            <pre><span class="c1"># Install WSL2 with Ubuntu — requires a restart</span>
 <span class="c2">PS></span> <span class="c3">wsl --install</span>
 
-<span class="c1"># After restart, verify WSL2 is the default</span>
+<span class="c1"># After restart, set WSL2 as default</span>
 <span class="c2">PS></span> <span class="c3">wsl --set-default-version 2</span>
 <span class="c2">PS></span> <span class="c3">wsl --list --verbose</span>
 <span class="c2">  NAME      STATE   VERSION</span>
 <span class="c2">* Ubuntu    Running 2</span></pre>
           </div>
-          <div class="tip">After the restart, Windows will open Ubuntu and ask you to create a Linux username and password. Set something simple — you'll use it for sudo commands inside WSL.</div>
+          <div class="tip">After the restart Windows will prompt you to create a Linux username and password for Ubuntu. Use something simple — you will need it for sudo inside WSL.</div>
         </div>
       </div>
 
@@ -602,18 +559,17 @@
         <div class="sn">02</div>
         <div class="sb">
           <h3>Install Docker Desktop</h3>
-          <p class="sd">Docker Desktop for Windows uses the WSL2 backend automatically.</p>
+          <p class="sd">Uses the WSL2 backend automatically.</p>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
             <pre><span class="c2">PS></span> <span class="c3">winget install Docker.DockerDesktop</span>
 
-<span class="c1"># After install, open Docker Desktop</span>
-<span class="c1"># Settings → General → ✓ "Use WSL 2 based engine" (should be checked by default)</span>
+<span class="c1"># Open Docker Desktop after install</span>
+<span class="c1"># Settings → General → ✓ "Use WSL 2 based engine"</span>
 <span class="c1"># Settings → Resources → WSL Integration → Enable for Ubuntu</span>
 
-<span class="c1"># Restart Docker Desktop, then verify from PowerShell</span>
 <span class="c2">PS></span> <span class="c3">docker --version</span>
-<span class="c2">Docker version 24.x.x</span></pre>
+<span class="c2">Docker version 26.x.x</span></pre>
           </div>
         </div>
       </div>
@@ -621,73 +577,35 @@
       <div class="step">
         <div class="sn">03</div>
         <div class="sb">
-          <h3>Install Minikube + kubectl</h3>
+          <h3>Install k3d + kubectl</h3>
+          <p class="sd">Install natively via winget, or inside WSL2 via the bash script. Both work.</p>
           <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
-            <pre><span class="c2">PS></span> <span class="c3">winget install Kubernetes.minikube</span>
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell — native Windows</span></div><span class="flang">powershell</span></div>
+            <pre><span class="c2">PS></span> <span class="c3">winget install k3d</span>
 <span class="c2">PS></span> <span class="c3">winget install Kubernetes.kubectl</span>
 
-<span class="c1"># Close and reopen PowerShell, then verify</span>
-<span class="c2">PS></span> <span class="c3">minikube version</span>
-<span class="c2">minikube version: v1.32.x</span>
-
-<span class="c2">PS></span> <span class="c3">kubectl version --client</span>
-<span class="c2">Client Version: v1.28.x</span></pre>
+<span class="c1"># Reopen PowerShell, then verify</span>
+<span class="c2">PS></span> <span class="c3">k3d version</span>
+<span class="c2">k3d version v5.x.x</span></pre>
           </div>
-          <div class="warn">On Windows, Minikube uses the <strong>docker</strong> driver (which requires Docker Desktop running). Do not use the Hyper-V driver — it conflicts with WSL2.</div>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">WSL2 Ubuntu — alternative</span></div><span class="flang">bash</span></div>
+            <pre><span class="c1"># Inside WSL2 terminal</span>
+<span class="c2">$</span> <span class="c3">curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash</span>
+<span class="c2">$</span> <span class="c3">sudo apt-get install -y kubectl</span></pre>
+          </div>
+          <div class="tip">Running the bash <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">deploy.sh</code> inside WSL2 is the easiest path on Windows — Docker Desktop exposes its socket to WSL2 automatically.</div>
         </div>
       </div>
 
       <div class="step">
         <div class="sn">04</div>
         <div class="sb">
-          <h3>Install Node.js 18 and Python 3.11</h3>
+          <h3>Allow PowerShell scripts (if using deploy.ps1)</h3>
+          <p class="sd">Windows blocks unsigned scripts by default. Run once as Administrator.</p>
           <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
-            <pre><span class="c2">PS></span> <span class="c3">winget install OpenJS.NodeJS.LTS</span>
-<span class="c2">PS></span> <span class="c3">winget install Python.Python.3.11</span>
-
-<span class="c1"># Close and reopen PowerShell to refresh PATH, then verify</span>
-<span class="c2">PS></span> <span class="c3">node --version</span>   <span class="c1"># → v18.x.x</span>
-<span class="c2">PS></span> <span class="c3">python --version</span>  <span class="c1"># → Python 3.11.x</span></pre>
-          </div>
-          <div class="tip">If python command is not found after install, look for it as <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">py</code> or <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">python3</code> — Windows sometimes registers Python under those aliases.</div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="sn">05</div>
-        <div class="sb">
-          <h3>Install Claude Code</h3>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
-            <pre><span class="c2">PS></span> <span class="c3">npm install -g @anthropic-ai/claude-code</span>
-
-<span class="c1"># Verify</span>
-<span class="c2">PS></span> <span class="c3">claude --version</span>
-<span class="c2">claude 1.x.x</span>
-
-<span class="c1"># Set your API key (for the current session)</span>
-<span class="c2">PS></span> <span class="c3">$env:ANTHROPIC_API_KEY="sk-ant-..."</span>
-
-<span class="c1"># To persist it across sessions, set it via System Environment Variables:</span>
-<span class="c1"># Start → "Edit the system environment variables" → Environment Variables</span>
-<span class="c1"># → New (User variables) → Name: ANTHROPIC_API_KEY · Value: sk-ant-...</span></pre>
-          </div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="sn">06</div>
-        <div class="sb">
-          <h3>Install Git</h3>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
-            <pre><span class="c2">PS></span> <span class="c3">winget install Git.Git</span>
-
-<span class="c1"># Reopen PowerShell, then verify</span>
-<span class="c2">PS></span> <span class="c3">git --version</span>
-<span class="c2">git version 2.x.x.windows.x</span></pre>
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell (Administrator)</span></div><span class="flang">powershell</span></div>
+            <pre><span class="c2">PS></span> <span class="c3">Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser</span></pre>
           </div>
         </div>
       </div>
@@ -697,100 +615,24 @@
 
   <hr class="div">
 
-  <!-- ══════════════════════════════════════ START CLUSTER -->
-  <div class="section" id="cluster">
-    <div class="sec-hdr"><span class="sec-n">04</span><h2>Start the Kubernetes Cluster</h2></div>
-
-    <p class="body" style="margin-bottom:18px">
-      Same commands on both platforms. Make sure <strong>Docker Desktop is running</strong> before executing these.
-    </p>
+  <!-- ══════════════════════════════════════ GET THE CODE -->
+  <div class="section" id="getcode">
+    <div class="sec-hdr"><span class="sec-n">04</span><h2>Get the Code + Zscaler Certificate</h2></div>
 
     <div class="steps">
 
       <div class="step">
         <div class="sn">01</div>
         <div class="sb">
-          <h3>Start Minikube</h3>
-          <p class="sd">Allocate at least 4 GB RAM and 2 CPUs. First start downloads the base image (~600 MB).</p>
+          <h3>Clone the PerfStack repository</h3>
           <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Start with Docker driver (works on both Mac and Windows)</span>
-<span class="c2">$</span> <span class="c3">minikube start --driver=qemu --memory=12288 --cpus=6 --network=socket_vmnet</span>
-
-<span class="c1">😄  minikube v1.32.x</span>
-<span class="c1">✨  Using the docker driver</span>
-<span class="c1">🔥  Creating docker container (CPUs=2, Memory=4096MB)</span>
-<span class="c2">🏄  Done! kubectl is now configured to use "minikube"</span></pre>
-          </div>
-          <div class="tip">On a machine with 16 GB+ RAM, use <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">--memory=6144 --cpus=4</code> for better performance with all PerfStack pods running simultaneously.</div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="sn">02</div>
-        <div class="sb">
-          <h3>Verify the cluster</h3>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
-            <pre><span class="c2">$</span> <span class="c3">kubectl get nodes</span>
-<span class="c2">NAME       STATUS   ROLES           AGE   VERSION</span>
-<span class="c2">minikube   Ready    control-plane   30s   v1.28.x</span>
-
-<span class="c2">$</span> <span class="c3">minikube status</span>
-<span class="c2">minikube: Running</span>
-<span class="c2">kubelet:  Running</span>
-<span class="c2">apiserver: Running</span>
-
-<span class="c1"># Point Docker CLI to Minikube's daemon</span>
-<span class="c1"># macOS / Linux:</span>
-<span class="c2">$</span> <span class="c3">eval $(minikube docker-env)</span>
-<span class="c1"># Windows PowerShell:</span>
-<span class="c2">PS></span> <span class="c3">minikube docker-env | Invoke-Expression</span></pre>
-          </div>
-          <div class="warn">The <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">eval $(minikube docker-env)</code> command only applies to your current terminal session. You need to run it every time you open a new terminal before building Docker images.</div>
-        </div>
-      </div>
-
-    </div>
-
-    <div class="verify">
-      <div class="verify-title">Environment ready checklist</div>
-      <ul class="chk">
-        <li><strong>docker ps</strong> returns an empty table (no error)</li>
-        <li><strong>minikube status</strong> shows Running on all three lines</li>
-        <li><strong>kubectl get nodes</strong> shows minikube with STATUS=Ready</li>
-        <li><strong>claude --version</strong> returns a version number</li>
-        <li><strong>ANTHROPIC_API_KEY</strong> is set in the environment</li>
-      </ul>
-    </div>
-  </div>
-
-  <hr class="div">
-
-  <!-- ══════════════════════════════════════ BUILD PERFSTACK -->
-  <div class="section" id="perfstack">
-    <div class="sec-hdr"><span class="sec-n">05</span><h2>Build PerfStack with Claude Code</h2></div>
-
-    <p class="body" style="margin-bottom:18px">
-      With the cluster running, you can now reproduce everything from the workshop on your own machine.
-      Start Claude Code in your project directory and follow the lab steps from the workshop guide.
-    </p>
-
-    <div class="steps">
-
-      <div class="step">
-        <div class="sn">01</div>
-        <div class="sb">
-          <h3>Clone the workshop repo (if shared) or start fresh</h3>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Option A — clone the workshop repo</span>
-<span class="c2">$</span> <span class="c3">git clone https://github.com/your-org/perfstack.git</span>
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / WSL2 / PowerShell</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">git clone https://github.com/your-org/perfstack.git</span>
 <span class="c2">$</span> <span class="c3">cd perfstack</span>
 
-<span class="c1"># Option B — start from scratch (recommended: build it yourself!)</span>
-<span class="c2">$</span> <span class="c3">mkdir perfstack && cd perfstack</span>
-<span class="c2">$</span> <span class="c3">claude</span></pre>
+<span class="c1"># Confirm the deploy script is present</span>
+<span class="c2">$</span> <span class="c3">ls deploy.sh deploy.ps1</span>
+<span class="c2">deploy.sh   deploy.ps1</span></pre>
           </div>
         </div>
       </div>
@@ -798,53 +640,118 @@
       <div class="step">
         <div class="sn">02</div>
         <div class="sb">
-          <h3>Run the deploy script</h3>
-          <p class="sd">Build and deploy all services to your local Minikube cluster.</p>
+          <h3>Copy the Zscaler certificate into the project root</h3>
+          <p class="sd">Required on any machine behind the FICO corporate proxy. The deploy script uses it when pulling images and building Docker images.</p>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">macOS / Linux</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Make sure Docker is pointing at Minikube first</span>
-<span class="c2">$</span> <span class="c3">eval $(minikube docker-env)</span>
-<span class="c2">$</span> <span class="c3">chmod +x deploy.sh && ./deploy.sh</span></pre>
+            <pre><span class="c1"># Copy the cert into the project root — exact filename matters</span>
+<span class="c2">$</span> <span class="c3">cp /path/to/ZscalerRootCA.pem ./zscaler.pem</span>
+
+<span class="c1"># Verify it is a PEM file</span>
+<span class="c2">$</span> <span class="c3">head -1 zscaler.pem</span>
+<span class="c2">-----BEGIN CERTIFICATE-----</span></pre>
           </div>
           <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Windows PowerShell</span></div><span class="flang">powershell</span></div>
-            <pre><span class="c1"># Point Docker at Minikube</span>
-<span class="c2">PS></span> <span class="c3">minikube docker-env | Invoke-Expression</span>
-
-<span class="c1"># Build images manually (deploy.sh is a bash script)</span>
-<span class="c2">PS></span> <span class="c3">docker build -t perfstack-backend:latest ./backend</span>
-<span class="c2">PS></span> <span class="c3">docker build -t perfstack-frontend:latest ./frontend</span>
-<span class="c2">PS></span> <span class="c3">kubectl apply -f k8s/</span>
-<span class="c2">PS></span> <span class="c3">kubectl rollout status deployment/backend -n perfstack</span>
-<span class="c2">PS></span> <span class="c3">kubectl rollout status deployment/frontend -n perfstack</span></pre>
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Windows — where to export the cert</span></div><span class="flang">text</span></div>
+            <pre><span class="c1"># Open certmgr.msc  →  Trusted Root Certification Authorities</span>
+<span class="c1">#   → Certificates → find "Zscaler Root CA"</span>
+<span class="c1">#   → Right-click → All Tasks → Export...</span>
+<span class="c1">#   → Base-64 encoded X.509 (.CER)</span>
+<span class="c1">#   → Save as zscaler.pem in the project root</span></pre>
           </div>
-          <div class="tip">Windows users: ask Claude Code to generate a <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">deploy.ps1</code> PowerShell script equivalent to the bash deploy.sh — it will handle the syntax differences automatically.</div>
+          <div class="warn">If <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">zscaler.pem</code> is missing the deploy script will warn and continue, but Docker image pulls may fail on a Zscaler-intercepted network. The cert is <strong>never committed to the repo</strong>.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ══════════════════════════════════════ DEPLOY -->
+  <div class="section" id="deploy">
+    <div class="sec-hdr"><span class="sec-n">05</span><h2>Deploy — One Command</h2></div>
+
+    <p class="body" style="margin-bottom:18px">
+      A single script does everything: creates the k3d cluster, sets up a local image registry, pre-pulls all infra images, builds the backend and frontend Docker images, pushes them to the registry, applies all Kubernetes manifests, and waits for every pod to be healthy.
+    </p>
+
+    <div class="steps">
+
+      <div class="step">
+        <div class="sn">01</div>
+        <div class="sb">
+          <h3>macOS / Linux</h3>
+          <p class="sd">Make sure Docker Desktop is running, then:</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">chmod +x deploy.sh && ./deploy.sh</span>
+
+<span class="c1">▶ Running preflight checks...</span>
+<span class="c2">✓ Preflight checks passed</span>
+<span class="c1">▶ Pre-pulling images on host Docker...</span>
+<span class="c2">✓ influxdb:1.8 pulled</span>
+<span class="c2">✓ grafana/grafana:10.2.0 pulled</span>
+<span class="c1">▶ Creating k3d cluster 'perfstack'...</span>
+<span class="c2">✓ Cluster 'perfstack' created</span>
+<span class="c1">▶ Building perfstack-backend:latest...</span>
+<span class="c2">✓ Backend image pushed to registry</span>
+<span class="c1">▶ Building perfstack-frontend:latest...</span>
+<span class="c2">✓ Frontend image pushed to registry</span>
+<span class="c1">▶ Applying Kubernetes manifests...</span>
+<span class="c2">✓ All manifests applied</span>
+<span class="c2">✓ influxdb is ready</span>
+<span class="c2">✓ grafana is ready</span>
+<span class="c2">✓ backend is ready</span>
+<span class="c2">✓ frontend is ready</span>
+
+<span class="c2">  🚀 PerfStack is up!</span>
+<span class="c4">  Frontend UI  →  http://localhost</span>
+<span class="c4">  Grafana      →  http://localhost/grafana</span>
+<span class="c4">  Backend API  →  http://localhost/api/docs</span></pre>
+          </div>
+          <div class="tip">The first run downloads ~1.5 GB of Docker images. Subsequent runs skip already-cached images and complete in ~2 minutes.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">02</div>
+        <div class="sb">
+          <h3>Windows — Option A: WSL2 (recommended)</h3>
+          <p class="sd">Open the WSL2 Ubuntu terminal, navigate to the project, run the bash script.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">WSL2 Ubuntu Terminal</span></div><span class="flang">bash</span></div>
+            <pre><span class="c1"># Navigate to the cloned repo (Windows paths accessible via /mnt/c/...)</span>
+<span class="c2">$</span> <span class="c3">cd /mnt/c/Users/YourName/perfstack</span>
+<span class="c2">$</span> <span class="c3">chmod +x deploy.sh && ./deploy.sh</span></pre>
+          </div>
         </div>
       </div>
 
       <div class="step">
         <div class="sn">03</div>
         <div class="sb">
-          <h3>Open the services in your browser</h3>
+          <h3>Windows — Option B: Native PowerShell</h3>
           <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Get Minikube IP</span>
-<span class="c2">$</span> <span class="c3">minikube ip</span>
-<span class="c2">192.168.49.2</span>
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
+            <pre><span class="c2">PS></span> <span class="c3">cd C:\Users\YourName\perfstack</span>
+<span class="c2">PS></span> <span class="c3">.\deploy.ps1</span></pre>
+          </div>
+        </div>
+      </div>
 
-<span class="c1"># Or open services directly in the browser (minikube handles the tunnel)</span>
-<span class="c2">$</span> <span class="c3">minikube service frontend -n perfstack</span>
-<span class="c2">$</span> <span class="c3">minikube service grafana  -n perfstack</span>
+      <div class="step">
+        <div class="sn">04</div>
+        <div class="sb">
+          <h3>Re-deploy after code changes</h3>
+          <p class="sd">The script is fully idempotent — it skips the cluster and registry if they already exist, rebuilds only the app images, and restarts affected deployments.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+            <pre><span class="c1"># Edit backend/ or frontend/ source code, then:</span>
+<span class="c2">$</span> <span class="c3">./deploy.sh</span>
 
-<span class="c1"># All services at once</span>
-<span class="c2">$</span> <span class="c3">minikube service list -n perfstack</span>
-<span class="c2">|-----------|----------|-------------|--------------------------|</span>
-<span class="c2">| NAMESPACE |   NAME   | TARGET PORT |            URL           |</span>
-<span class="c2">|-----------|----------|-------------|--------------------------|</span>
-<span class="c2">| perfstack | frontend |        3000 | http://192.168.49.2:30080|</span>
-<span class="c2">| perfstack | grafana  |        3000 | http://192.168.49.2:30300|</span>
-<span class="c2">| perfstack | backend  |        8000 | http://192.168.49.2:30800|</span>
-<span class="c2">|-----------|----------|-------------|--------------------------|</span></pre>
+<span class="c1"># Full teardown and fresh start:</span>
+<span class="c2">$</span> <span class="c3">k3d cluster delete perfstack && ./deploy.sh</span></pre>
           </div>
         </div>
       </div>
@@ -872,9 +779,7 @@
 <span class="c2">backend-xxxxxxxxx-xxxxx     1/1     Running   0          2m</span>
 <span class="c2">frontend-xxxxxxxxx-xxxxx    1/1     Running   0          2m</span>
 <span class="c2">grafana-xxxxxxxxx-xxxxx     1/1     Running   0          2m</span>
-<span class="c2">influxdb-xxxxxxxxx-xxxxx    1/1     Running   0          2m</span>
-
-<span class="c1"># All pods should show STATUS=Running and READY=1/1</span></pre>
+<span class="c2">influxdb-xxxxxxxxx-xxxxx    1/1     Running   0          2m</span></pre>
           </div>
         </div>
       </div>
@@ -882,38 +787,47 @@
       <div class="step">
         <div class="sn">02</div>
         <div class="sb">
-          <h3>Verify the backend API</h3>
+          <h3>Open in the browser</h3>
           <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
-            <pre><span class="c2">$</span> <span class="c3">curl http://$(minikube ip):30800/health</span>
-<span class="c2">{"status":"ok"}</span>
-
-<span class="c1"># Windows PowerShell alternative:</span>
-<span class="c2">PS></span> <span class="c3">Invoke-RestMethod http://$(minikube ip):30800/health</span>
-<span class="c2">status : ok</span>
-
-<span class="c1"># Interactive API docs</span>
-<span class="c1"># Open in browser: http://&lt;minikube-ip&gt;:30800/docs</span></pre>
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">browser</span></div><span class="flang">url</span></div>
+            <pre><span class="c4">http://localhost</span>             <span class="c1"># PerfStack Frontend UI</span>
+<span class="c4">http://localhost/grafana</span>      <span class="c1"># Grafana  (login: admin / admin)</span>
+<span class="c4">http://localhost/api/docs</span>     <span class="c1"># FastAPI Swagger UI</span>
+<span class="c4">http://localhost/api/health</span>   <span class="c1"># Backend health check → {"status":"ok"}</span></pre>
           </div>
+          <div class="tip">All services are served through the nginx ingress on port 80. No port-forwarding or tunnel is needed — just <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">localhost</code>.</div>
         </div>
       </div>
 
       <div class="step">
         <div class="sn">03</div>
         <div class="sb">
-          <h3>Open Grafana and confirm the dashboard</h3>
+          <h3>Run your first load test</h3>
           <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">browser</span></div><span class="flang">url</span></div>
-            <pre><span class="c1"># Open Grafana</span>
-<span class="c4">http://&lt;minikube-ip&gt;:30300</span>
-
-<span class="c1"># Login: admin / admin</span>
-<span class="c1"># Navigate to Dashboards → PerfStack Metrics</span>
-<span class="c1"># The dashboard will show data as soon as a K6 test runs</span></pre>
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PerfStack UI</span></div><span class="flang">steps</span></div>
+            <pre><span class="c1">1. Open http://localhost</span>
+<span class="c1">2. Fill in IAM URL, Client ID, Secret</span>
+<span class="c1">3. Enter the Target URL to load test</span>
+<span class="c1">4. Select a Scenario  (Load / Spike / Stress / Soak / Custom)</span>
+<span class="c1">5. Adjust VUs and Duration with the sliders</span>
+<span class="c1">6. Click  Run Load Test</span>
+<span class="c2">→ Job created, status appears below the form</span>
+<span class="c2">→ Open Grafana to watch live metrics</span></pre>
           </div>
         </div>
       </div>
 
+    </div>
+
+    <div class="verify">
+      <div class="verify-title">Final checklist</div>
+      <ul class="chk">
+        <li><strong>kubectl get pods -n perfstack</strong> — all four pods STATUS=Running READY=1/1</li>
+        <li><strong>http://localhost</strong> — PerfStack UI loads</li>
+        <li><strong>http://localhost/api/health</strong> — returns <code>{"status":"ok"}</code></li>
+        <li><strong>http://localhost/grafana</strong> — Grafana login page appears</li>
+        <li>Grafana → Dashboards → PerfStack folder — two dashboards visible</li>
+      </ul>
     </div>
   </div>
 
@@ -928,12 +842,11 @@
       <div class="step">
         <div class="sn">!</div>
         <div class="sb">
-          <h3>Minikube won't start — "Docker is not running"</h3>
-          <p class="sd">Docker Desktop must be running before minikube start. Check the system tray / menu bar icon.</p>
+          <h3>deploy.sh fails — "Docker is not running"</h3>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># Start Docker Desktop, wait for it to be fully running, then:</span>
-<span class="c2">$</span> <span class="c3">minikube delete && minikube start --driver=qemu --memory=12288 --cpus=6 --network=socket_vmnet</span></pre>
+            <pre><span class="c1"># Start Docker Desktop, wait for the whale icon to be steady, then re-run:</span>
+<span class="c2">$</span> <span class="c3">./deploy.sh</span></pre>
           </div>
         </div>
       </div>
@@ -942,18 +855,12 @@
         <div class="sn">!</div>
         <div class="sb">
           <h3>Pods stuck in ImagePullBackOff</h3>
-          <p class="sd">The Docker images were built on the host daemon, not Minikube's. You forgot eval $(minikube docker-env) before building.</p>
+          <p class="sd">The k3s nodes could not pull an image from the local registry. Usually means the cluster was created without the registry config.</p>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
-            <pre><span class="c1"># macOS/Linux</span>
-<span class="c2">$</span> <span class="c3">eval $(minikube docker-env)</span>
-<span class="c2">$</span> <span class="c3">docker build -t perfstack-backend:latest ./backend</span>
-<span class="c2">$</span> <span class="c3">docker build -t perfstack-frontend:latest ./frontend</span>
-<span class="c2">$</span> <span class="c3">kubectl rollout restart deployment/backend deployment/frontend -n perfstack</span>
-
-<span class="c1"># Windows PowerShell</span>
-<span class="c2">PS></span> <span class="c3">minikube docker-env | Invoke-Expression</span>
-<span class="c2">PS></span> <span class="c3">docker build -t perfstack-backend:latest ./backend</span></pre>
+            <pre><span class="c1"># Full teardown and fresh deploy (takes ~5 min)</span>
+<span class="c2">$</span> <span class="c3">k3d cluster delete perfstack</span>
+<span class="c2">$</span> <span class="c3">./deploy.sh</span></pre>
           </div>
         </div>
       </div>
@@ -961,49 +868,56 @@
       <div class="step">
         <div class="sn">!</div>
         <div class="sb">
-          <h3>Windows: "execution of scripts is disabled on this system"</h3>
-          <p class="sd">PowerShell script execution policy is restricted by default on Windows.</p>
-          <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell (Administrator)</span></div><span class="flang">powershell</span></div>
-            <pre><span class="c1"># Allow local scripts (safe — only affects local, unsigned scripts)</span>
-<span class="c2">PS></span> <span class="c3">Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser</span></pre>
-          </div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="sn">!</div>
-        <div class="sb">
-          <h3>Not enough memory — pods in Pending state</h3>
-          <p class="sd">Minikube doesn't have enough RAM allocated. Delete and recreate with more memory.</p>
+          <h3>docker pull fails — x509 / certificate error</h3>
+          <p class="sd">The Zscaler proxy is intercepting HTTPS traffic and your cert is missing or not trusted.</p>
           <div class="code">
             <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
-            <pre><span class="c2">$</span> <span class="c3">minikube stop</span>
-<span class="c2">$</span> <span class="c3">minikube delete</span>
-<span class="c2">$</span> <span class="c3">minikube start --driver=docker --memory=6144 --cpus=4</span></pre>
+            <pre><span class="c1"># Verify zscaler.pem is present in the project root</span>
+<span class="c2">$</span> <span class="c3">head -1 zscaler.pem</span>
+<span class="c2">-----BEGIN CERTIFICATE-----</span>
+
+<span class="c1"># Add zscaler.pem to Docker Desktop's trusted certs:</span>
+<span class="c1"># Docker Desktop → Settings → Docker Engine → add to "registry-mirrors"</span>
+<span class="c1"># or import via macOS Keychain / Windows certmgr.msc and restart Docker Desktop</span></pre>
           </div>
-          <div class="warn">You need at least 8 GB total RAM on your machine to allocate 6 GB to Minikube. Close other memory-heavy apps (browsers with many tabs, other VMs) before starting.</div>
         </div>
       </div>
 
       <div class="step">
         <div class="sn">!</div>
         <div class="sb">
-          <h3>Ask Claude Code to debug</h3>
-          <p class="sd">When something is broken, Claude Code can inspect the cluster state and propose a fix.</p>
+          <h3>Port 80 already in use</h3>
+          <p class="sd">Another process (nginx, Apache, another k3d cluster) is bound to port 80.</p>
           <div class="code">
-            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Claude Code prompts for debugging</span></div><span class="flang">prompts</span></div>
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
+            <pre><span class="c1"># Find what is on port 80</span>
+<span class="c2">$</span> <span class="c3">sudo lsof -i :80</span>
+
+<span class="c1"># Delete any existing perfstack cluster first</span>
+<span class="c2">$</span> <span class="c3">k3d cluster delete perfstack</span>
+
+<span class="c1"># Stop the conflicting process, then re-run deploy.sh</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">!</div>
+        <div class="sb">
+          <h3>Ask Claude Code to debug the cluster</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Claude Code prompts</span></div><span class="flang">prompts</span></div>
             <pre><span class="c4">"Run kubectl get pods -n perfstack and kubectl describe pod
- &lt;pod-name&gt; -n perfstack for any pod not in Running state.
- Tell me what is wrong and how to fix it."</span>
+&lt;pod-name&gt; -n perfstack for any pod not in Running state.
+Tell me what is wrong and how to fix it."</span>
 
 <span class="c4">"Run kubectl logs deployment/backend -n perfstack --tail=50
- and identify any startup errors."</span>
+and identify any startup errors."</span>
 
 <span class="c4">"Run kubectl get events -n perfstack --sort-by=.lastTimestamp
- and summarise what went wrong."</span></pre>
+and summarise what went wrong."</span></pre>
           </div>
-          <div class="tip">This is a great live demo of Claude Code's power — it reads the actual cluster state, understands the error context, and proposes a specific fix rather than generic advice.</div>
+          <div class="tip">This is a great live demo of Claude Code — it reads actual cluster state, understands the error context, and proposes a specific fix rather than generic advice.</div>
         </div>
       </div>
 
@@ -1019,14 +933,22 @@
     <div style="margin-top:5px;color:#3a3830">Windows &amp; macOS · Post-Workshop Guide</div>
   </div>
   <div class="fr" style="color:#3a3830">
-    Setup time ~30 min · One-time only<br>
-    Solution Architect Track · Anthropic
+    Setup time ~20 min · One-time only<br>
+    GSA Team · PerfStack
   </div>
 </footer>
 
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+<script>
   const sections = document.querySelectorAll('[id]');
   const tabs = document.querySelectorAll('.ntab');
   const io = new IntersectionObserver(entries => {
     entries.forEach(e => {
-      if (e.isIntersecting
+      if (e.isIntersecting) {
+        tabs.forEach(t => t.classList.toggle('active', t.getAttribute('href') === '#' + e.target.id));
+      }
+    });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+  sections.forEach(s => io.observe(s));
+</script>
+</body>
+</html>

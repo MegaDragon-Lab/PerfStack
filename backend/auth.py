@@ -36,23 +36,18 @@ class IamAuthClient:
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(
                 self.iam_url,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
+                json={
+                    "clientId": self.client_id,
+                    "secret": self.client_secret,
                 },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
 
         if response.status_code != 200:
-            logger.error("IAM returned %d", response.status_code)
             raise RuntimeError(
                 f"IAM authentication failed ({response.status_code}): {response.text}"
             )
 
-        data = response.json()
-        self._token = data["access_token"]
-        expires_in = data.get("expires_in", 3600)
-        self._expires_at = time.time() + expires_in
-        logger.info("Token obtained, expires in %ds", expires_in)
+        self._token = response.text.strip()
+        self._expires_at = time.time() + 3600
+        logger.info("Token obtained (%d chars)", len(self._token))
         return self._token

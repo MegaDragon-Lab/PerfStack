@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: perfstack-frontend:latest
-          imagePullPolicy: IfNotPresent
+          image: k3d-perfstack-registry:5000/library/perfstack-frontend:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 3000
           resources:

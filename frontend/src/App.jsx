@@ -40,6 +40,67 @@ function StatusBadge({ status }) {
   );
 }
 
+// ── Scenarios ────────────────────────────────────────────────────────────────
+
+const SCENARIOS = {
+  load:   { label: "Load",   icon: "📈", desc: "Constant VUs — ramp up, hold, ramp down",         suggestVus: 50,  suggestDur: 120  },
+  spike:  { label: "Spike",  icon: "⚡", desc: "Sudden spike — baseline, burst, then recovery",    suggestVus: 200, suggestDur: 90   },
+  stress: { label: "Stress", icon: "🔥", desc: "Progressive ramp — increase load until failure",   suggestVus: 300, suggestDur: 300  },
+  soak:   { label: "Soak",   icon: "🕐", desc: "Endurance — sustained load over long duration",    suggestVus: 30,  suggestDur: 3600 },
+  custom: { label: "Custom", icon: "🎛️", desc: "Manual — set VUs and duration freely",             suggestVus: null, suggestDur: null },
+};
+
+function computeStages(scenario, vus, duration) {
+  const v = Math.max(1, vus);
+  const d = Math.max(10, duration);
+  switch (scenario) {
+    case "load":
+      return [
+        { duration: `${Math.max(5, Math.floor(d * 0.15))}s`, target: v },
+        { duration: `${Math.max(5, Math.floor(d * 0.75))}s`, target: v },
+        { duration: `${Math.max(5, Math.floor(d * 0.10))}s`, target: 0 },
+      ];
+    case "spike":
+      return [
+        { duration: "15s",                                    target: Math.max(1, Math.floor(v * 0.05)) },
+        { duration: "15s",                                    target: v },
+        { duration: `${Math.max(10, d - 50)}s`,               target: v },
+        { duration: "10s",                                    target: Math.max(1, Math.floor(v * 0.05)) },
+        { duration: "10s",                                    target: 0 },
+      ];
+    case "stress":
+      return [
+        { duration: `${Math.floor(d * 0.20)}s`, target: Math.floor(v * 0.25) },
+        { duration: `${Math.floor(d * 0.20)}s`, target: Math.floor(v * 0.50) },
+        { duration: `${Math.floor(d * 0.20)}s`, target: Math.floor(v * 0.75) },
+        { duration: `${Math.floor(d * 0.30)}s`, target: v },
+        { duration: `${Math.floor(d * 0.10)}s`, target: 0 },
+      ];
+    case "soak":
+      return [
+        { duration: `${Math.max(30, Math.floor(d * 0.05))}s`, target: v },
+        { duration: `${Math.floor(d * 0.90)}s`,               target: v },
+        { duration: `${Math.max(30, Math.floor(d * 0.05))}s`, target: 0 },
+      ];
+    default: // custom
+      return [
+        { duration: "5s",  target: v },
+        { duration: `${d}s`, target: v },
+        { duration: "5s",  target: 0 },
+      ];
+  }
+}
+
+const STORAGE_KEY = "perfstack_services";
+
+function loadServices() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch { return []; }
+}
+function saveServices(list) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+
 // ── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -53,12 +114,75 @@ export default function App() {
     duration:      60,
   });
 
-  const [status,   setStatus]   = useState("idle");
-  const [jobName,  setJobName]  = useState(null);
-  const [message,  setMessage]  = useState("");
-  const [loading,  setLoading]  = useState(false);
-  const [jsonError,setJsonError]= useState("");
+  const [status,      setStatus]      = useState("idle");
+  const [jobName,     setJobName]     = useState(null);
+  const [message,     setMessage]     = useState("");
+  const [loading,     setLoading]     = useState(false);
+  const [jsonError,   setJsonError]   = useState("");
+  const [showGrafana, setShowGrafana] = useState(false);
+  const [scenario,    setScenario]    = useState("load");
+
+  const selectScenario = (key) => {
+    setScenario(key);
+    const s = SCENARIOS[key];
+    if (s.suggestVus)  setForm(f => ({ ...f, vus:      s.suggestVus  }));
+    if (s.suggestDur)  setForm(f => ({ ...f, duration: s.suggestDur  }));
+  };
+
+  const [services,    setServices]    = useState(loadServices);
+  const [saveName,    setSaveName]    = useState("");
+  const [activeIdx,   setActiveIdx]   = useState(null);
+  const importRef = useRef(null);
   const pollingRef = useRef(null);
+
+  const persistServices = (list) => { saveServices(list); setServices(list); };
+
+  const saveService = () => {
+    const name = saveName.trim();
+    if (!name) return;
+    const entry = { name, ...form };
+    const idx = services.findIndex(s => s.name === name);
+    const updated = idx >= 0
+      ? services.map((s, i) => i === idx ? entry : s)
+      : [...services, entry];
+    persistServices(updated);
+    setActiveIdx(updated.findIndex(s => s.name === name));
+    setSaveName("");
+  };
+
+  const loadService = (idx) => {
+    const { name, ...config } = services[idx];
+    setForm(config);
+    setActiveIdx(idx);
+  };
+
+  const deleteService = (idx) => {
+    const updated = services.filter((_, i) => i !== idx);
+    persistServices(updated);
+    if (activeIdx === idx) setActiveIdx(null);
+  };
+
+  const exportServices = () => {
+    const blob = new Blob([JSON.stringify(services, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "perfstack-services.json";
+    a.click();
+  };
+
+  const importServices = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (Array.isArray(data)) { persistServices(data); setActiveIdx(null); }
+      } catch { /* invalid file */ }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
 
   const set = (key) => (val) => setForm((f) => ({ ...f, [key]: val }));
 
@@ -76,7 +200,12 @@ export default function App() {
       const res = await fetch(`${API_BASE}/api/run-test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, payload: JSON.parse(form.payload) }),
+        body: JSON.stringify({
+          ...form,
+          payload: JSON.parse(form.payload),
+          scenario,
+          stages: computeStages(scenario, form.vus, form.duration),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Unknown error");
@@ -185,6 +314,73 @@ export default function App() {
         }
         .grafana-link a { color: #58a6ff; }
 
+        .scenario-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+        .scenario-chip {
+          background: transparent; border: 1px solid #30363d; color: #8b949e;
+          padding: 5px 11px; border-radius: 20px; font-size: 10px;
+          font-family: monospace; cursor: pointer; letter-spacing: .04em;
+          transition: all .15s; white-space: nowrap;
+        }
+        .scenario-chip:hover  { border-color: #58a6ff; color: #58a6ff; }
+        .scenario-chip.active { border-color: #c73000; color: #c73000; background: rgba(199,48,0,.08); font-weight: 700; }
+        .scenario-desc { font-size: 10px; color: #3a3830; margin-top: 2px; }
+        .stages-preview {
+          margin-top: 8px; padding: 8px 10px; background: #0d1117;
+          border: 1px solid #21262d; border-radius: 5px;
+          display: flex; gap: 4px; align-items: flex-end; flex-wrap: wrap;
+        }
+        .stage-block {
+          display: flex; flex-direction: column; align-items: center; gap: 2px;
+          font-size: 9px; color: #3a3830; min-width: 36px;
+        }
+        .stage-bar { background: #c73000; border-radius: 2px 2px 0 0; width: 28px; transition: height .3s; }
+        .stage-dur { color: #3a3830; }
+
+        .svc-bar {
+          display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        }
+        .svc-select {
+          flex: 2; min-width: 160px; background: #0d1117; border: 1px solid #30363d;
+          border-radius: 5px; padding: 7px 10px; color: #e6edf3;
+          font-size: 11px; font-family: monospace; outline: none; cursor: pointer;
+          transition: border-color .15s;
+        }
+        .svc-select:focus { border-color: #388bfd; }
+        .svc-input {
+          flex: 2; min-width: 130px; background: #0d1117; border: 1px solid #30363d;
+          border-radius: 5px; padding: 7px 10px; color: #e6edf3;
+          font-size: 11px; font-family: monospace; outline: none;
+        }
+        .svc-input:focus { border-color: #388bfd; }
+        .svc-btn {
+          background: transparent; border: 1px solid #30363d; color: #8b949e;
+          padding: 6px 10px; border-radius: 5px; font-size: 10px;
+          font-family: monospace; cursor: pointer; white-space: nowrap;
+          transition: border-color .15s, color .15s; display: flex; align-items: center; gap: 4px;
+        }
+        .svc-btn:hover          { border-color: #58a6ff; color: #58a6ff; }
+        .svc-btn.save-btn       { border-color: #2ea043; color: #3fb950; }
+        .svc-btn.save-btn:hover { background: rgba(46,160,67,.1); }
+        .svc-btn.del-btn        { border-color: transparent; color: #3a3830; padding: 6px 7px; }
+        .svc-btn.del-btn:hover  { border-color: #ef444466; color: #ef4444; }
+
+        .grafana-toggle-btn {
+          background: transparent; border: 1px solid #30363d; color: #8b949e;
+          padding: 5px 12px; border-radius: 5px; font-size: 10px;
+          font-family: monospace; cursor: pointer; letter-spacing: .06em;
+          transition: border-color .15s, color .15s;
+        }
+        .grafana-toggle-btn:hover  { border-color: #58a6ff; color: #58a6ff; }
+        .grafana-toggle-btn.active { border-color: #58a6ff; color: #58a6ff; background: rgba(56,139,253,.08); }
+
+        .grafana-iframe-panel {
+          width: 100%; background: #161b22;
+          border-top: 2px solid #388bfd44;
+        }
+        .grafana-iframe-panel iframe {
+          width: 100%; height: 780px; border: none; display: block;
+        }
+
         footer {
           background: #010409; border-top: 1px solid #21262d;
           padding: 14px 28px; text-align: center;
@@ -200,10 +396,53 @@ export default function App() {
             <span className="logo">PERFSTACK</span>
             <span className="logo-sub">// load testing platform</span>
           </div>
-          <div className="header-right">powered by Claude Code</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <button
+              className={`grafana-toggle-btn${showGrafana ? " active" : ""}`}
+              onClick={() => setShowGrafana(v => !v)}
+            >
+              📊 {showGrafana ? "Hide" : "Show"} Grafana
+            </button>
+            <div className="header-right">powered by GSA Team</div>
+          </div>
         </header>
 
         <main>
+          {/* Services */}
+          <div className="panel" style={{ padding: "14px 22px" }}>
+            <div className="panel-title" style={{ marginBottom: 10 }}>Saved Services</div>
+            <div className="svc-bar">
+              <select
+                className="svc-select"
+                value={activeIdx ?? ""}
+                onChange={e => { const i = +e.target.value; loadService(i); }}
+              >
+                <option value="" disabled>— select a service —</option>
+                {services.map((s, i) => (
+                  <option key={i} value={i}>{s.name}</option>
+                ))}
+              </select>
+              <button
+                className="svc-btn del-btn"
+                title="Delete selected"
+                disabled={activeIdx === null}
+                onClick={() => activeIdx !== null && deleteService(activeIdx)}
+              >✕</button>
+              <span style={{ color: "#30363d", fontSize: 12 }}>|</span>
+              <input
+                className="svc-input"
+                placeholder="Save current as…"
+                value={saveName}
+                onChange={e => setSaveName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && saveService()}
+              />
+              <button className="svc-btn save-btn" onClick={saveService}>💾 Save</button>
+              <button className="svc-btn" title="Export all" onClick={exportServices}>⬇ Export</button>
+              <button className="svc-btn" title="Import from file" onClick={() => importRef.current.click()}>⬆ Import</button>
+              <input ref={importRef} type="file" accept=".json" style={{ display: "none" }} onChange={importServices} />
+            </div>
+          </div>
+
           {/* IAM */}
           <div className="panel">
             <div className="panel-title">IAM Configuration</div>
@@ -220,6 +459,7 @@ export default function App() {
           {/* Test config */}
           <div className="panel">
             <div className="panel-title">Test Configuration</div>
+
             <Field label="Target URL" value={form.target_url} onChange={set("target_url")}
               placeholder="https://api.example.com/v1/endpoint" mono />
 
@@ -234,23 +474,52 @@ export default function App() {
               {jsonError && <span className="json-err">⚠ {jsonError}</span>}
             </div>
 
-            <div className="row2">
-              <div className="field">
-                <div className="slider-label">
-                  <label>Virtual Users</label>
-                  <span>{form.vus}</span>
-                </div>
-                <input type="range" min={1} max={500} value={form.vus}
-                  onChange={(e) => set("vus")(+e.target.value)} />
+            <div className="field" style={{ marginBottom: 0, marginTop: 4 }}>
+              <label>Scenario</label>
+              <div className="scenario-chips">
+                {Object.entries(SCENARIOS).map(([key, s]) => (
+                  <button key={key} className={`scenario-chip${scenario === key ? " active" : ""}`}
+                    onClick={() => selectScenario(key)}>
+                    {s.icon} {s.label}
+                  </button>
+                ))}
               </div>
-              <div className="field">
-                <div className="slider-label">
-                  <label>Duration</label>
-                  <span>{form.duration}s</span>
+              <span className="scenario-desc">{SCENARIOS[scenario].desc}</span>
+
+              <div className="row2" style={{ marginTop: 10 }}>
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <div className="slider-label">
+                    <label>Virtual Users</label>
+                    <span>{form.vus}</span>
+                  </div>
+                  <input type="range" min={1} max={2000} value={form.vus}
+                    onChange={(e) => set("vus")(+e.target.value)} />
                 </div>
-                <input type="range" min={10} max={600} step={10} value={form.duration}
-                  onChange={(e) => set("duration")(+e.target.value)} />
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <div className="slider-label">
+                    <label>Duration</label>
+                    <span>{form.duration}s</span>
+                  </div>
+                  <input type="range" min={10} max={3600} step={10} value={form.duration}
+                    onChange={(e) => set("duration")(+e.target.value)} />
+                </div>
               </div>
+
+              {(() => {
+                const stages = computeStages(scenario, form.vus, form.duration);
+                const maxVus = Math.max(...stages.map(s => s.target), 1);
+                return (
+                  <div className="stages-preview">
+                    {stages.map((s, i) => (
+                      <div key={i} className="stage-block">
+                        <span style={{ color: "#8b949e", fontSize: 9 }}>{s.target}vu</span>
+                        <div className="stage-bar" style={{ height: Math.max(4, Math.round((s.target / maxVus) * 40)) }} />
+                        <span className="stage-dur">{s.duration}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -279,7 +548,16 @@ export default function App() {
           </div>
         </main>
 
-        <footer>PERFSTACK · K6 + GRAFANA + KUBERNETES · BUILT WITH CLAUDE CODE</footer>
+        {showGrafana && (
+          <div className="grafana-iframe-panel">
+            <iframe
+              src={`${window.location.origin}/grafana/d/k6/k6-load-testing-results?orgId=1&refresh=5s&kiosk=tv`}
+              title="k6 Load Testing Results"
+            />
+          </div>
+        )}
+
+        <footer>PERFSTACK · K6 + GRAFANA + KUBERNETES · BUILT BY GSA TEAM</footer>
       </div>
     </>
   );

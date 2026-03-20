@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # PerfStack — Deploy script (macOS / Linux)
-# k3d — no tunnel, no MetalLB, no admin rights
-# Ingress exposed directly on localhost:80
+# k3d + local registry + mirrors — works behind Zscaler proxy
 set -euo pipefail
 
 GREEN='\033[0;32m'
@@ -13,12 +12,33 @@ NC='\033[0m'
 
 CLUSTER_NAME="perfstack"
 NS="perfstack"
+INGRESS_VERSION="v1.10.1"
+REG_NAME="perfstack-registry"
+REG_PORT="5001"
 
 log()  { echo -e "${BLUE}▶${NC} $1"; }
 ok()   { echo -e "${GREEN}✓${NC} $1"; }
 warn() { echo -e "${AMBER}!${NC} $1"; }
 err()  { echo -e "${RED}✗${NC} $1"; exit 1; }
 dim()  { echo -e "${DIM}  $1${NC}"; }
+
+# Push a Docker image to the local registry under the correct mirror path.
+# registry.k8s.io/foo/bar:tag  -> localhost:REG_PORT/foo/bar:tag
+# docker.io/grafana/foo:tag    -> localhost:REG_PORT/grafana/foo:tag
+# grafana/foo:tag (bare)       -> localhost:REG_PORT/grafana/foo:tag
+# influxdb:1.8 (no slash)      -> localhost:REG_PORT/library/influxdb:1.8
+push_to_local_registry() {
+  local img="$1"
+  local local_tag
+  case "$img" in
+    registry.k8s.io/*) local_tag="localhost:${REG_PORT}/${img#registry.k8s.io/}" ;;
+    docker.io/*)        local_tag="localhost:${REG_PORT}/${img#docker.io/}" ;;
+    */*)                local_tag="localhost:${REG_PORT}/${img}" ;;
+    *)                  local_tag="localhost:${REG_PORT}/library/${img}" ;;
+  esac
+  docker tag "$img" "$local_tag" 2>/dev/null || true
+  docker push "$local_tag" -q >/dev/null 2>&1
+}
 
 echo ""
 echo "  ██████╗ ███████╗██████╗ ███████╗███████╗████████╗ █████╗  ██████╗██╗  ██╗"
@@ -37,10 +57,10 @@ ZSCALER_CERT="${ZSCALER_CERT:-./zscaler.pem}"
 
 # ── Preflight checks ──────────────────────────────────────────────────────────
 log "Running preflight checks..."
-command -v docker >/dev/null 2>&1 || err "Docker not found. Install Docker Desktop first."
-command -v k3d    >/dev/null 2>&1 || err "k3d not found. Run: brew install k3d"
-command -v kubectl>/dev/null 2>&1 || err "kubectl not found. Run: brew install kubectl"
-docker info >/dev/null 2>&1        || err "Docker Desktop is not running. Please start it first."
+command -v docker  >/dev/null 2>&1 || err "Docker not found."
+command -v k3d     >/dev/null 2>&1 || err "k3d not found. Run: brew install k3d"
+command -v kubectl >/dev/null 2>&1 || err "kubectl not found. Run: brew install kubectl"
+docker info >/dev/null 2>&1         || err "Docker Desktop is not running. Please start it first."
 ok "Preflight checks passed"
 echo ""
 
@@ -55,9 +75,61 @@ else
 fi
 echo ""
 
+# ── Pre-pull all images on HOST Docker (has Zscaler trust) ───────────────────
+log "Pre-pulling images on host Docker (bypasses Zscaler inside cluster)..."
+
+INGRESS_IMAGES=(
+  "registry.k8s.io/ingress-nginx/controller:v1.10.1"
+  "registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.4.1"
+)
+INFRA_IMAGES=(
+  "influxdb:1.8"
+  "grafana/grafana:10.2.0"
+  "grafana/k6:latest"
+)
+
+for img in "${INGRESS_IMAGES[@]}" "${INFRA_IMAGES[@]}"; do
+  echo -ne "  ${DIM}pulling ${img}...${NC}\r"
+  docker pull --platform linux/arm64 "$img" -q
+  echo -e "  ${GREEN}✓${NC} pulled ${img}                    "
+done
+ok "All base images pre-pulled"
+echo ""
+
+# ── Create local registry ─────────────────────────────────────────────────────
+log "Setting up local registry..."
+if k3d registry list 2>/dev/null | grep -q "${REG_NAME}"; then
+  ok "Registry 'k3d-${REG_NAME}' already exists"
+else
+  k3d registry create ${REG_NAME} --port ${REG_PORT} 2>&1 | grep -vE "^\s*$" || true
+  ok "Registry created at localhost:${REG_PORT}"
+fi
+echo ""
+
+# ── Push pre-pulled images to local registry ──────────────────────────────────
+log "Pushing images to local registry..."
+for img in "${INGRESS_IMAGES[@]}" "${INFRA_IMAGES[@]}"; do
+  echo -ne "  ${DIM}pushing ${img}...${NC}\r"
+  push_to_local_registry "$img"
+  echo -e "  ${GREEN}✓${NC} pushed ${img}                    "
+done
+ok "All images available in local registry"
+echo ""
+
+# ── Write k3s registry mirrors config ────────────────────────────────────────
+cat > /tmp/perfstack-registries.yaml << EOF
+mirrors:
+  "registry.k8s.io":
+    endpoint:
+      - "http://k3d-${REG_NAME}:5000"
+  "docker.io":
+    endpoint:
+      - "http://k3d-${REG_NAME}:5000"
+EOF
+
 # ── Create k3d cluster ────────────────────────────────────────────────────────
 log "Checking k3d cluster..."
-if k3d cluster list | grep -q "^${CLUSTER_NAME}"; then
+if k3d cluster list 2>/dev/null | grep -q "^${CLUSTER_NAME}"; then
   ok "Cluster '${CLUSTER_NAME}' already exists"
 else
   log "Creating k3d cluster '${CLUSTER_NAME}'..."
@@ -66,7 +138,9 @@ else
     --port "443:443@loadbalancer" \
     --k3s-arg "--disable=traefik@server:0" \
     --agents 2 \
-    --timeout 120s
+    --registry-use k3d-${REG_NAME}:${REG_PORT} \
+    --registry-config /tmp/perfstack-registries.yaml \
+    --timeout 120s 2>&1 | grep -E "Cluster|error|Error" || true
   ok "Cluster '${CLUSTER_NAME}' created"
 fi
 echo ""
@@ -79,7 +153,11 @@ echo ""
 
 # ── Install nginx ingress controller ─────────────────────────────────────────
 log "Installing nginx ingress controller..."
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml >/dev/null 2>&1
+CURL_OPTS=(-s)
+[[ "$ZSCALER_FOUND" == "true" ]] && CURL_OPTS+=(--cacert "$ZSCALER_CERT")
+curl "${CURL_OPTS[@]}" "https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-${INGRESS_VERSION}/deploy/static/provider/cloud/deploy.yaml" \
+  | sed 's|@sha256:[a-f0-9]*||g' \
+  | kubectl apply -f - >/dev/null 2>&1
 
 log "Waiting for ingress controller pod..."
 kubectl wait --namespace ingress-nginx \
@@ -89,8 +167,7 @@ kubectl wait --namespace ingress-nginx \
 ok "Ingress controller ready"
 echo ""
 
-# ── Build images directly into k3d ───────────────────────────────────────────
-# k3d can import images directly — no registry needed
+# ── Build app images ──────────────────────────────────────────────────────────
 log "Building perfstack-backend:latest..."
 if [[ "$ZSCALER_FOUND" == "true" ]]; then
   docker build --platform linux/arm64 --build-arg CERT_FILE=zscaler.pem \
@@ -100,9 +177,10 @@ else
 fi
 ok "perfstack-backend:latest built"
 
-log "Importing perfstack-backend into k3d cluster..."
-k3d image import perfstack-backend:latest -c ${CLUSTER_NAME} >/dev/null 2>&1
-ok "Backend image imported"
+log "Pushing perfstack-backend to local registry..."
+docker tag perfstack-backend:latest localhost:${REG_PORT}/library/perfstack-backend:latest
+docker push localhost:${REG_PORT}/library/perfstack-backend:latest -q >/dev/null 2>&1
+ok "Backend image pushed to registry"
 
 log "Building perfstack-frontend:latest..."
 if [[ "$ZSCALER_FOUND" == "true" ]]; then
@@ -113,9 +191,10 @@ else
 fi
 ok "perfstack-frontend:latest built"
 
-log "Importing perfstack-frontend into k3d cluster..."
-k3d image import perfstack-frontend:latest -c ${CLUSTER_NAME} >/dev/null 2>&1
-ok "Frontend image imported"
+log "Pushing perfstack-frontend to local registry..."
+docker tag perfstack-frontend:latest localhost:${REG_PORT}/library/perfstack-frontend:latest
+docker push localhost:${REG_PORT}/library/perfstack-frontend:latest -q >/dev/null 2>&1
+ok "Frontend image pushed to registry"
 echo ""
 
 # ── Apply Kubernetes manifests ────────────────────────────────────────────────
@@ -129,6 +208,15 @@ kubectl apply -f k8s/backend.yaml         >/dev/null
 kubectl apply -f k8s/frontend.yaml        >/dev/null
 kubectl apply -f k8s/ingress.yaml         >/dev/null
 ok "All manifests applied"
+echo ""
+
+# ── Restart deployments to pick up new images / config changes ────────────────
+log "Restarting deployments to apply latest images and config..."
+# grafana restarts in case grafana-config.yaml changed (datasource/dashboards)
+for deploy in grafana backend frontend; do
+  kubectl rollout restart deployment/$deploy -n $NS >/dev/null 2>&1 || true
+done
+ok "Rollout restarts triggered"
 echo ""
 
 # ── Wait for app deployments ──────────────────────────────────────────────────
