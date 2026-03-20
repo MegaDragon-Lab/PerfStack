@@ -23,6 +23,7 @@ app = FastAPI(
     title="PerfStack API",
     description="Load testing orchestration — K6 + Grafana on Kubernetes",
     version="1.0.0",
+    root_path="/api",
 )
 
 app.add_middleware(
