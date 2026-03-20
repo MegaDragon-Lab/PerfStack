@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PerfStack — Local Setup Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #f7f6f2;
+    --surface: #ffffff;
+    --s2:      #efede8;
+    --border:  #d8d4cc;
+    --border2: #b8b2a8;
+    --red:     #c73000;
+    --blue:    #1747c8;
+    --green:   #007040;
+    --amber:   #a06000;
+    --purple:  #6930c3;
+    --text:    #181614;
+    --muted:   #6a6460;
+    --ink:     #0d1117;
+    --ink2:    #161b22;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.011) 3px,rgba(0,0,0,.011) 4px);
+    pointer-events: none; z-index: 9000;
+  }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── TOPBAR ── */
+  .topbar {
+    position: sticky; top: 0; z-index: 200;
+    height: 40px; background: var(--ink);
+    border-bottom: 2px solid var(--red);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 28px; font-size: 11px; letter-spacing: .05em;
+  }
+  .tl { display: flex; align-items: center; gap: 6px; }
+  .t-brand { color: var(--red); font-weight: 700; font-size: 12px; letter-spacing: .08em; }
+  .t-sep   { color: #2e2c28; }
+  .t-path  { color: #5a5650; }
+  .tr { display: flex; align-items: center; gap: 12px; }
+  .t-badge {
+    background: rgba(0,112,64,.2); border: 1px solid rgba(0,112,64,.4);
+    color: #3dffc0; border-radius: 3px; padding: 2px 7px;
+    font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  }
+  .t-dim { color: #3a3830; font-size: 10px; }
+
+  /* ── NAV ── */
+  .nav {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-end;
+    padding: 0 28px; gap: 0; overflow-x: auto;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .ntab {
+    display: flex; align-items: center; gap: 5px;
+    padding: 9px 14px 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px; letter-spacing: .03em; color: var(--muted);
+    border-bottom: 2px solid transparent;
+    white-space: nowrap; text-decoration: none;
+    transition: color .12s, border-color .12s;
+  }
+  .ntab:hover { color: var(--text); text-decoration: none; }
+  .ntab.active { color: var(--red); border-bottom-color: var(--red); }
+  .ntab .n { color: var(--border2); font-size: 9px; }
+
+  /* ── LAYOUT ── */
+  .page { max-width: 1040px; margin: 0 auto; padding: 0 28px 100px; }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 52px 0 40px; border-bottom: 1px solid var(--border);
+    display: grid; grid-template-columns: 1fr 190px; gap: 32px; align-items: start;
+  }
+  .eyebrow {
+    font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--green); margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .eyebrow::before { content: ''; width: 20px; height: 1px; background: var(--green); display: block; }
+  h1 {
+    font-size: clamp(24px, 3.5vw, 40px); font-weight: 600;
+    line-height: 1.1; letter-spacing: -.025em; color: var(--text); margin-bottom: 16px;
+  }
+  h1 .r { color: var(--red); }
+  h1 .g { color: var(--green); }
+  .hero-desc {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 14px; color: var(--muted); font-weight: 300;
+    max-width: 500px; line-height: 1.65; margin-bottom: 22px;
+  }
+  .tags { display: flex; flex-wrap: wrap; gap: 7px; }
+  .tag {
+    font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+    border: 1px solid var(--border); border-radius: 3px; padding: 3px 9px;
+    color: var(--muted); background: var(--surface);
+  }
+  .meta-box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 5px; padding: 18px 16px; font-size: 11px;
+  }
+  .mr { margin-bottom: 12px; }
+  .mr:last-child { margin-bottom: 0; }
+  .ml { font-size: 8px; letter-spacing: .14em; text-transform: uppercase; color: var(--border2); margin-bottom: 2px; }
+  .mv { font-size: 13px; font-weight: 500; color: var(--text); }
+  .mv.r { color: var(--red); } .mv.g { color: var(--green); } .mv.b { color: var(--blue); }
+
+  /* ── SECTIONS ── */
+  .section { padding: 44px 0 0; }
+  .sec-hdr {
+    display: flex; align-items: baseline; gap: 10px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 22px;
+  }
+  .sec-n { font-size: 9px; color: var(--red); letter-spacing: .1em; font-weight: 700; flex-shrink: 0; }
+  h2 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; color: var(--text); }
+  h3 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text); margin-bottom: 5px; }
+  p.body { font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; color: var(--muted); font-weight: 300; line-height: 1.7; }
+  hr.div { border: none; border-top: 1px solid var(--border); margin: 40px 0 0; }
+
+  /* ── OS SWITCHER ── */
+  .os-switch {
+    display: flex; gap: 0; margin-bottom: 20px;
+    border: 1px solid var(--border); border-radius: 5px; overflow: hidden;
+    width: fit-content;
+  }
+  .os-btn {
+    display: flex; align-items: center; gap: 7px;
+    padding: 9px 18px; font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px; letter-spacing: .04em; font-weight: 600;
+    cursor: pointer; border: none; background: var(--surface);
+    color: var(--muted); transition: background .12s, color .12s;
+    border-right: 1px solid var(--border);
+  }
+  .os-btn:last-child { border-right: none; }
+  .os-btn.active { background: var(--ink); color: #e0dcd8; }
+  .os-btn.active.mac  { color: #a8d8ff; }
+  .os-btn.active.win  { color: #7ec8ff; }
+  .os-icon { font-size: 14px; }
+
+  .os-panel { display: none; }
+  .os-panel.active { display: block; }
+
+  /* ── STEP BLOCKS ── */
+  .steps { display: flex; flex-direction: column; }
+  .step {
+    display: grid; grid-template-columns: 46px 1fr;
+    border: 1px solid var(--border); border-bottom: none; background: var(--surface);
+    transition: background .12s;
+  }
+  .step:first-child { border-radius: 5px 5px 0 0; }
+  .step:last-child  { border-bottom: 1px solid var(--border); border-radius: 0 0 5px 5px; }
+  .step:hover { background: #faf9f6; }
+  .sn {
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: 18px; font-size: 9px; color: var(--red); font-weight: 700;
+    letter-spacing: .06em; border-right: 1px solid var(--border); background: var(--s2);
+  }
+  .sb { padding: 16px 20px; }
+  .sb h3 { margin-bottom: 5px; }
+  .sb .sd { font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; color: var(--muted); margin-bottom: 11px; font-weight: 300; }
+
+  /* ── CODE ── */
+  .code { background: var(--ink); border: 1px solid #2e2c28; border-radius: 5px; overflow: hidden; margin: 9px 0 3px; }
+  .code-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 12px; background: var(--ink2); border-bottom: 1px solid #2e2c28;
+  }
+  .chl { display: flex; align-items: center; gap: 9px; }
+  .dots { display: flex; gap: 4px; }
+  .dots span { width: 8px; height: 8px; border-radius: 50%; }
+  .dr { background: #ff5f57; } .dy { background: #febc2e; } .dg { background: #28c840; }
+  .fname { font-size: 10px; color: #4a4840; letter-spacing: .05em; }
+  .flang { font-size: 9px; color: #2e2c28; letter-spacing: .08em; text-transform: uppercase; }
+  pre {
+    padding: 13px 16px; font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px; line-height: 1.75; overflow-x: auto; color: #c9d1d9;
+  }
+  .c1 { color: #3a3830; } /* dim/comment */
+  .c2 { color: #3dffc0; } /* green prompt/ok */
+  .c3 { color: #79c0ff; } /* blue command */
+  .c4 { color: #ffa657; } /* orange string */
+  .c5 { color: #ff7b72; } /* red keyword */
+  .c6 { color: #a5d6ff; } /* light blue value */
+  .c7 { color: #febc2e; } /* amber */
+  .c8 { color: #d2a8ff; } /* purple */
+
+  /* ── CALLOUTS ── */
+  .tip {
+    background: #f0faf5; border: 1px solid #a8dfc0; border-left: 3px solid var(--green);
+    border-radius: 4px; padding: 9px 13px; margin-top: 7px;
+    font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; color: #1a4032;
+    font-weight: 300; display: flex; gap: 8px; align-items: flex-start;
+  }
+  .tip::before { content: '→'; font-family: 'IBM Plex Mono', monospace; color: var(--green); flex-shrink: 0; font-weight: 700; margin-top: 1px; }
+  .warn {
+    background: #fff8f0; border: 1px solid #f0d0a8; border-left: 3px solid var(--amber);
+    border-radius: 4px; padding: 9px 13px; margin-top: 7px;
+    font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; color: #5a3200;
+    font-weight: 300; display: flex; gap: 8px; align-items: flex-start;
+  }
+  .warn::before { content: '!'; font-family: 'IBM Plex Mono', monospace; color: var(--amber); flex-shrink: 0; font-weight: 700; }
+  .info {
+    background: #f0f3ff; border: 1px solid #c4cef5; border-left: 3px solid var(--blue);
+    border-radius: 4px; padding: 9px 13px; margin-top: 7px;
+    font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; color: #1a2a5a;
+    font-weight: 300; display: flex; gap: 8px; align-items: flex-start;
+  }
+  .info::before { content: 'i'; font-family: 'IBM Plex Mono', monospace; color: var(--blue); flex-shrink: 0; font-weight: 700; }
+
+  /* ── CHECKLIST ── */
+  .chk { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .chk li {
+    display: flex; align-items: flex-start; gap: 9px;
+    font-size: 12px; color: var(--muted);
+    font-family: 'IBM Plex Sans', sans-serif; font-weight: 300;
+    padding: 8px 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  }
+  .chk li::before { content: '[ ]'; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--border2); flex-shrink: 0; margin-top: 1px; }
+  .chk li strong { color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; }
+  .chk li code { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--blue); background: #eef1ff; padding: 1px 5px; border-radius: 3px; }
+
+  /* ── GRID CARDS ── */
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(155px,1fr));
+    border: 1px solid var(--border); border-radius: 5px; overflow: hidden;
+  }
+  .gc {
+    background: var(--surface); padding: 18px 16px;
+    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    transition: background .12s;
+  }
+  .gc:hover { background: var(--s2); }
+  .gc .gi { font-size: 18px; margin-bottom: 9px; display: block; }
+  .gc h3 { font-size: 10px; margin-bottom: 4px; }
+  .gc p  { font-size: 11px; color: var(--muted); font-family: 'IBM Plex Sans', sans-serif; font-weight: 300; line-height: 1.5; }
+
+  /* ── COMPARE TABLE ── */
+  .comp { border: 1px solid var(--border); border-radius: 5px; overflow: hidden; margin-top: 18px; }
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  th { text-align: left; font-size: 8px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 9px 13px; border-bottom: 2px solid var(--border); background: var(--s2); }
+  td { padding: 9px 13px; border-bottom: 1px solid var(--border); font-family: 'IBM Plex Mono', monospace; vertical-align: top; font-size: 11px; }
+  td.m { color: var(--muted); font-family: 'IBM Plex Sans', sans-serif; font-weight: 300; font-size: 11px; }
+  td.r { color: var(--red); font-weight: 600; }
+  td.g { color: var(--green); font-weight: 600; }
+  td.b { color: var(--blue); }
+  tr:hover td { background: var(--s2); }
+
+  .badge {
+    display: inline-block; font-size: 8px; letter-spacing: .1em; text-transform: uppercase;
+    border-radius: 3px; padding: 2px 6px; margin-left: 5px;
+    font-family: 'IBM Plex Mono', monospace; font-weight: 600;
+  }
+  .badge-mac  { background: rgba(23,71,200,.1); border: 1px solid rgba(23,71,200,.3); color: var(--blue); }
+  .badge-win  { background: rgba(0,112,64,.1);  border: 1px solid rgba(0,112,64,.3);  color: var(--green); }
+  .badge-both { background: rgba(105,48,195,.1);border: 1px solid rgba(105,48,195,.3);color: var(--purple); }
+  .badge-rec  { background: rgba(199,48,0,.1);  border: 1px solid rgba(199,48,0,.3);  color: var(--red); }
+
+  /* ── VERIFY BOX ── */
+  .verify {
+    background: #f0faf5; border: 1px solid var(--border);
+    border-top: 3px solid var(--green); border-radius: 5px;
+    padding: 18px 20px; margin-top: 16px;
+  }
+  .verify-title {
+    font-size: 9px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--green); font-weight: 700; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .verify-title::before { content: '✓'; }
+
+  /* ── FOOTER ── */
+  footer {
+    background: var(--ink); border-top: 2px solid var(--red);
+    padding: 26px 28px;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 10px; margin-top: 60px;
+    font-size: 10px; color: #4a4840; letter-spacing: .05em;
+  }
+  footer .fb { color: var(--red); font-weight: 700; font-size: 12px; letter-spacing: .1em; }
+  footer .fr { text-align: right; line-height: 1.8; }
+
+  @media(max-width:660px) {
+    .hero { grid-template-columns: 1fr; }
+    .meta-box { display: none; }
+    .page, .topbar, .nav { padding-left: 16px; padding-right: 16px; }
+    footer { padding: 18px 16px; }
+  }
+</style>
+</head>
+<body>
+<!-- Sister-page banner -->
+<div style="background:#1a4fd6;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.05em;padding:7px 28px;display:flex;justify-content:space-between;align-items:center;">
+  <span>📖 PerfStack Documentation</span>
+  <span>
+    <a href="/index.html" style="color:#a8d4ff;text-decoration:none;font-weight:700">← Workshop Guide</a>
+    <span style="opacity:.5;margin-left:12px">Local Setup (Windows &amp; Mac)</span>
+  </span>
+</div>
+
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="tl">
+    <span class="t-brand">PerfStack</span>
+    <span class="t-sep">/</span>
+    <span class="t-path">local-setup</span>
+    <span class="t-sep">/</span>
+    <span class="t-path">windows-&amp;-mac</span>
+  </div>
+  <div class="tr">
+    <span class="t-badge">Post-Workshop</span>
+    <span class="t-dim">take-home guide</span>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav class="nav">
+  <a class="ntab active" href="#overview"><span class="n">00</span> Overview</a>
+  <a class="ntab" href="#tools"><span class="n">01</span> Required Tools</a>
+  <a class="ntab" href="#mac"><span class="n">02</span> macOS Setup</a>
+  <a class="ntab" href="#windows"><span class="n">03</span> Windows Setup</a>
+  <a class="ntab" href="#cluster"><span class="n">04</span> Start the Cluster</a>
+  <a class="ntab" href="#perfstack"><span class="n">05</span> Build PerfStack</a>
+  <a class="ntab" href="#verify"><span class="n">06</span> Verify &amp; Run</a>
+  <a class="ntab" href="#troubleshoot"><span class="n">07</span> Troubleshooting</a>
+</nav>
+
+<div class="page">
+
+  <!-- ══════════════════════════════════════ HERO -->
+  <div class="hero" id="overview">
+    <div>
+      <div class="eyebrow">Post-Workshop · Local Setup Guide</div>
+      <h1>
+        <span class="r">PerfStack</span><br>
+        on your <span class="g">laptop</span>
+      </h1>
+      <p class="hero-desc">
+        This guide walks you through installing PerfStack locally on your own machine —
+        Windows or macOS. Once set up, you have a permanent local Kubernetes environment
+        to keep building with Claude Code, no cloud dependency needed.
+      </p>
+      <div class="tags">
+        <span class="tag">Windows 10/11</span>
+        <span class="tag">macOS 12+</span>
+        <span class="tag">Docker Desktop</span>
+        <span class="tag">Minikube</span>
+        <span class="tag">Claude Code</span>
+        <span class="tag">K6 + Grafana</span>
+      </div>
+    </div>
+    <div class="meta-box">
+      <div class="mr"><div class="ml">Setup time</div><div class="mv r">~30 min</div></div>
+      <div class="mr"><div class="ml">First-time only</div><div class="mv">Yes</div></div>
+      <div class="mr"><div class="ml">macOS</div><div class="mv g">Homebrew</div></div>
+      <div class="mr"><div class="ml">Windows</div><div class="mv b">Winget / WSL2</div></div>
+      <div class="mr"><div class="ml">RAM required</div><div class="mv">8 GB min</div></div>
+      <div class="mr"><div class="ml">Disk space</div><div class="mv">~6 GB</div></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════ REQUIRED TOOLS -->
+  <div class="section" id="tools">
+    <div class="sec-hdr"><span class="sec-n">01</span><h2>Required Tools</h2></div>
+
+    <p class="body" style="margin-bottom:18px">
+      These are the tools you need on your laptop. The table below shows the recommended install method for each platform — sections 02 and 03 walk through them step by step.
+    </p>
+
+    <div class="comp">
+      <table>
+        <thead>
+          <tr>
+            <th>Tool</th>
+            <th>Purpose</th>
+            <th>macOS</th>
+            <th>Windows</th>
+            <th>Version</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Docker Desktop</strong></td>
+            <td class="m">Container runtime for Minikube</td>
+            <td><span class="badge badge-mac">Homebrew</span></td>
+            <td><span class="badge badge-win">Winget</span></td>
+            <td class="b">4.x+</td>
+          </tr>
+          <tr>
+            <td><strong>Minikube</strong></td>
+            <td class="m">Local Kubernetes cluster</td>
+            <td><span class="badge badge-mac">Homebrew</span></td>
+            <td><span class="badge badge-win">Winget</span></td>
+            <td class="b">1.32+</td>
+          </tr>
+          <tr>
+            <td><strong>kubectl</strong></td>
+            <td class="m">K8s CLI</td>
+            <td><span class="badge badge-mac">Homebrew</span></td>
+            <td><span class="badge badge-win">Winget</span></td>
+            <td class="b">1.28+</td>
+          </tr>
+          <tr>
+            <td><strong>Node.js 18+</strong></td>
+            <td class="m">Required by Claude Code</td>
+            <td><span class="badge badge-mac">Homebrew</span></td>
+            <td><span class="badge badge-win">Winget</span></td>
+            <td class="b">18 LTS</td>
+          </tr>
+          <tr>
+            <td><strong>Python 3.11+</strong></td>
+            <td class="m">FastAPI backend</td>
+            <td><span class="badge badge-mac">Homebrew</span></td>
+            <td><span class="badge badge-win">python.org</span></td>
+            <td class="b">3.11+</td>
+          </tr>
+          <tr>
+            <td><strong>Claude Code</strong></td>
+            <td class="m">AI dev copilot</td>
+            <td><span class="badge badge-both">npm</span></td>
+            <td><span class="badge badge-both">npm</span></td>
+            <td class="b">latest</td>
+          </tr>
+          <tr>
+            <td><strong>Git</strong></td>
+            <td class="m">Clone the repo</td>
+            <td><span class="badge badge-mac">Homebrew / Xcode</span></td>
+            <td><span class="badge badge-win">git-scm.com</span></td>
+            <td class="b">any</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="info" style="margin-top:14px">
+      Your machine needs at least <strong>8 GB RAM</strong> and <strong>6 GB free disk space</strong>. Minikube will use 4 GB RAM and 2 CPUs by default. On a 16 GB machine it runs comfortably alongside a browser and your editor.
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ══════════════════════════════════════ MAC SETUP -->
+  <div class="section" id="mac">
+    <div class="sec-hdr"><span class="sec-n">02</span><h2>macOS Setup</h2></div>
+
+    <p class="body" style="margin-bottom:18px">
+      We use <strong>Homebrew</strong> as the package manager. If you already have Homebrew, skip step 1. All commands run in <strong>Terminal.app</strong> or iTerm2.
+    </p>
+
+    <div class="steps">
+
+      <div class="step">
+        <div class="sn">01</div>
+        <div class="sb">
+          <h3>Install Homebrew</h3>
+          <p class="sd">The missing package manager for macOS. Skip if already installed.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</span>
+
+<span class="c1"># Verify</span>
+<span class="c2">$</span> <span class="c3">brew --version</span>
+<span class="c2">Homebrew 4.x.x</span></pre>
+          </div>
+          <div class="tip">On Apple Silicon (M1/M2/M3) Homebrew installs to /opt/homebrew. Add it to your PATH if the shell doesn't find brew after install: <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile</code></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">02</div>
+        <div class="sb">
+          <h3>Install Docker Desktop</h3>
+          <p class="sd">Docker Desktop provides the container runtime that Minikube uses as its driver on macOS.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">brew install --cask docker</span>
+
+<span class="c1"># Open Docker Desktop from Applications and complete the setup wizard</span>
+<span class="c1"># Wait until the Docker icon in the menu bar shows "Docker Desktop is running"</span>
+
+<span class="c1"># Verify</span>
+<span class="c2">$</span> <span class="c3">docker --version</span>
+<span class="c2">Docker version 24.x.x</span></pre>
+          </div>
+          <div class="warn">Docker Desktop must be <strong>running</strong> before you start Minikube. Check the whale icon in the menu bar — it must be steady, not animated.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">03</div>
+        <div class="sb">
+          <h3>Install Minikube + kubectl</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">brew install minikube kubectl</span>
+
+<span class="c1"># Verify both</span>
+<span class="c2">$</span> <span class="c3">minikube version</span>
+<span class="c2">minikube version: v1.32.x</span>
+
+<span class="c2">$</span> <span class="c3">kubectl version --client</span>
+<span class="c2">Client Version: v1.28.x</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">04</div>
+        <div class="sb">
+          <h3>Install Node.js, Python 3.11 and Git</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">brew install node@18 <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="a7d7ded3cfc8c9e794899696">[email&#160;protected]</a> git</span>
+
+<span class="c1"># Link node 18 if you have multiple versions</span>
+<span class="c2">$</span> <span class="c3">brew link node@18 --force --overwrite</span>
+
+<span class="c1"># Verify</span>
+<span class="c2">$</span> <span class="c3">node --version</span>   <span class="c1"># → v18.x.x</span>
+<span class="c2">$</span> <span class="c3">python3 --version</span> <span class="c1"># → Python 3.11.x</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">05</div>
+        <div class="sb">
+          <h3>Install Claude Code</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">npm install -g @anthropic-ai/claude-code</span>
+
+<span class="c1"># Verify</span>
+<span class="c2">$</span> <span class="c3">claude --version</span>
+<span class="c2">claude 1.x.x</span>
+
+<span class="c1"># Set your Anthropic API key (add to ~/.zshrc or ~/.bash_profile to persist)</span>
+<span class="c2">$</span> <span class="c3">export ANTHROPIC_API_KEY=sk-ant-...</span></pre>
+          </div>
+          <div class="tip">To make the API key permanent on macOS, add the export line to your <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">~/.zshrc</code> file and run <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">source ~/.zshrc</code>.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ══════════════════════════════════════ WINDOWS SETUP -->
+  <div class="section" id="windows">
+    <div class="sec-hdr"><span class="sec-n">03</span><h2>Windows Setup</h2></div>
+
+    <p class="body" style="margin-bottom:18px">
+      We use <strong>winget</strong> (built into Windows 10/11) and <strong>WSL2</strong> for the best experience.
+      All commands run in <strong>PowerShell</strong> (run as Administrator where noted) or the WSL2 terminal.
+    </p>
+
+    <div class="warn" style="margin-bottom:18px">
+      Windows requires <strong>WSL2</strong> (Windows Subsystem for Linux 2) so Docker Desktop can run Linux containers properly. This is a one-time setup that takes about 5 minutes.
+    </div>
+
+    <div class="steps">
+
+      <div class="step">
+        <div class="sn">01</div>
+        <div class="sb">
+          <h3>Enable WSL2</h3>
+          <p class="sd">Open PowerShell as Administrator (right-click Start → Windows PowerShell (Admin)).</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell (Administrator)</span></div><span class="flang">powershell</span></div>
+            <pre><span class="c1"># Install WSL2 with Ubuntu — this will require a restart</span>
+<span class="c2">PS></span> <span class="c3">wsl --install</span>
+
+<span class="c1"># After restart, verify WSL2 is the default</span>
+<span class="c2">PS></span> <span class="c3">wsl --set-default-version 2</span>
+<span class="c2">PS></span> <span class="c3">wsl --list --verbose</span>
+<span class="c2">  NAME      STATE   VERSION</span>
+<span class="c2">* Ubuntu    Running 2</span></pre>
+          </div>
+          <div class="tip">After the restart, Windows will open Ubuntu and ask you to create a Linux username and password. Set something simple — you'll use it for sudo commands inside WSL.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">02</div>
+        <div class="sb">
+          <h3>Install Docker Desktop</h3>
+          <p class="sd">Docker Desktop for Windows uses the WSL2 backend automatically.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
+            <pre><span class="c2">PS></span> <span class="c3">winget install Docker.DockerDesktop</span>
+
+<span class="c1"># After install, open Docker Desktop</span>
+<span class="c1"># Settings → General → ✓ "Use WSL 2 based engine" (should be checked by default)</span>
+<span class="c1"># Settings → Resources → WSL Integration → Enable for Ubuntu</span>
+
+<span class="c1"># Restart Docker Desktop, then verify from PowerShell</span>
+<span class="c2">PS></span> <span class="c3">docker --version</span>
+<span class="c2">Docker version 24.x.x</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">03</div>
+        <div class="sb">
+          <h3>Install Minikube + kubectl</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
+            <pre><span class="c2">PS></span> <span class="c3">winget install Kubernetes.minikube</span>
+<span class="c2">PS></span> <span class="c3">winget install Kubernetes.kubectl</span>
+
+<span class="c1"># Close and reopen PowerShell, then verify</span>
+<span class="c2">PS></span> <span class="c3">minikube version</span>
+<span class="c2">minikube version: v1.32.x</span>
+
+<span class="c2">PS></span> <span class="c3">kubectl version --client</span>
+<span class="c2">Client Version: v1.28.x</span></pre>
+          </div>
+          <div class="warn">On Windows, Minikube uses the <strong>docker</strong> driver (which requires Docker Desktop running). Do not use the Hyper-V driver — it conflicts with WSL2.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">04</div>
+        <div class="sb">
+          <h3>Install Node.js 18 and Python 3.11</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
+            <pre><span class="c2">PS></span> <span class="c3">winget install OpenJS.NodeJS.LTS</span>
+<span class="c2">PS></span> <span class="c3">winget install Python.Python.3.11</span>
+
+<span class="c1"># Close and reopen PowerShell to refresh PATH, then verify</span>
+<span class="c2">PS></span> <span class="c3">node --version</span>   <span class="c1"># → v18.x.x</span>
+<span class="c2">PS></span> <span class="c3">python --version</span>  <span class="c1"># → Python 3.11.x</span></pre>
+          </div>
+          <div class="tip">If python command is not found after install, look for it as <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">py</code> or <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">python3</code> — Windows sometimes registers Python under those aliases.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">05</div>
+        <div class="sb">
+          <h3>Install Claude Code</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
+            <pre><span class="c2">PS></span> <span class="c3">npm install -g @anthropic-ai/claude-code</span>
+
+<span class="c1"># Verify</span>
+<span class="c2">PS></span> <span class="c3">claude --version</span>
+<span class="c2">claude 1.x.x</span>
+
+<span class="c1"># Set your API key (for the current session)</span>
+<span class="c2">PS></span> <span class="c3">$env:ANTHROPIC_API_KEY="sk-ant-..."</span>
+
+<span class="c1"># To persist it across sessions, set it via System Environment Variables:</span>
+<span class="c1"># Start → "Edit the system environment variables" → Environment Variables</span>
+<span class="c1"># → New (User variables) → Name: ANTHROPIC_API_KEY · Value: sk-ant-...</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">06</div>
+        <div class="sb">
+          <h3>Install Git</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell</span></div><span class="flang">powershell</span></div>
+            <pre><span class="c2">PS></span> <span class="c3">winget install Git.Git</span>
+
+<span class="c1"># Reopen PowerShell, then verify</span>
+<span class="c2">PS></span> <span class="c3">git --version</span>
+<span class="c2">git version 2.x.x.windows.x</span></pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ══════════════════════════════════════ START CLUSTER -->
+  <div class="section" id="cluster">
+    <div class="sec-hdr"><span class="sec-n">04</span><h2>Start the Kubernetes Cluster</h2></div>
+
+    <p class="body" style="margin-bottom:18px">
+      Same commands on both platforms. Make sure <strong>Docker Desktop is running</strong> before executing these.
+    </p>
+
+    <div class="steps">
+
+      <div class="step">
+        <div class="sn">01</div>
+        <div class="sb">
+          <h3>Start Minikube</h3>
+          <p class="sd">Allocate at least 4 GB RAM and 2 CPUs. First start downloads the base image (~600 MB).</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
+            <pre><span class="c1"># Start with Docker driver (works on both Mac and Windows)</span>
+<span class="c2">$</span> <span class="c3">minikube start --driver=docker --memory=4096 --cpus=2</span>
+
+<span class="c1">😄  minikube v1.32.x</span>
+<span class="c1">✨  Using the docker driver</span>
+<span class="c1">🔥  Creating docker container (CPUs=2, Memory=4096MB)</span>
+<span class="c2">🏄  Done! kubectl is now configured to use "minikube"</span></pre>
+          </div>
+          <div class="tip">On a machine with 16 GB+ RAM, use <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">--memory=6144 --cpus=4</code> for better performance with all PerfStack pods running simultaneously.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">02</div>
+        <div class="sb">
+          <h3>Verify the cluster</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">kubectl get nodes</span>
+<span class="c2">NAME       STATUS   ROLES           AGE   VERSION</span>
+<span class="c2">minikube   Ready    control-plane   30s   v1.28.x</span>
+
+<span class="c2">$</span> <span class="c3">minikube status</span>
+<span class="c2">minikube: Running</span>
+<span class="c2">kubelet:  Running</span>
+<span class="c2">apiserver: Running</span>
+
+<span class="c1"># Point Docker CLI to Minikube's daemon</span>
+<span class="c1"># macOS / Linux:</span>
+<span class="c2">$</span> <span class="c3">eval $(minikube docker-env)</span>
+<span class="c1"># Windows PowerShell:</span>
+<span class="c2">PS></span> <span class="c3">minikube docker-env | Invoke-Expression</span></pre>
+          </div>
+          <div class="warn">The <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">eval $(minikube docker-env)</code> command only applies to your current terminal session. You need to run it every time you open a new terminal before building Docker images.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="verify">
+      <div class="verify-title">Environment ready checklist</div>
+      <ul class="chk">
+        <li><strong>docker ps</strong> returns an empty table (no error)</li>
+        <li><strong>minikube status</strong> shows Running on all three lines</li>
+        <li><strong>kubectl get nodes</strong> shows minikube with STATUS=Ready</li>
+        <li><strong>claude --version</strong> returns a version number</li>
+        <li><strong>ANTHROPIC_API_KEY</strong> is set in the environment</li>
+      </ul>
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ══════════════════════════════════════ BUILD PERFSTACK -->
+  <div class="section" id="perfstack">
+    <div class="sec-hdr"><span class="sec-n">05</span><h2>Build PerfStack with Claude Code</h2></div>
+
+    <p class="body" style="margin-bottom:18px">
+      With the cluster running, you can now reproduce everything from the workshop on your own machine.
+      Start Claude Code in your project directory and follow the lab steps from the workshop guide.
+    </p>
+
+    <div class="steps">
+
+      <div class="step">
+        <div class="sn">01</div>
+        <div class="sb">
+          <h3>Clone the workshop repo (if shared) or start fresh</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
+            <pre><span class="c1"># Option A — clone the workshop repo</span>
+<span class="c2">$</span> <span class="c3">git clone https://github.com/your-org/perfstack.git</span>
+<span class="c2">$</span> <span class="c3">cd perfstack</span>
+
+<span class="c1"># Option B — start from scratch (recommended: build it yourself!)</span>
+<span class="c2">$</span> <span class="c3">mkdir perfstack && cd perfstack</span>
+<span class="c2">$</span> <span class="c3">claude</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">02</div>
+        <div class="sb">
+          <h3>Run the deploy script</h3>
+          <p class="sd">Build and deploy all services to your local Minikube cluster.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">macOS / Linux</span></div><span class="flang">bash</span></div>
+            <pre><span class="c1"># Make sure Docker is pointing at Minikube first</span>
+<span class="c2">$</span> <span class="c3">eval $(minikube docker-env)</span>
+<span class="c2">$</span> <span class="c3">chmod +x deploy.sh && ./deploy.sh</span></pre>
+          </div>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Windows PowerShell</span></div><span class="flang">powershell</span></div>
+            <pre><span class="c1"># Point Docker at Minikube</span>
+<span class="c2">PS></span> <span class="c3">minikube docker-env | Invoke-Expression</span>
+
+<span class="c1"># Build images manually (deploy.sh is a bash script)</span>
+<span class="c2">PS></span> <span class="c3">docker build -t perfstack-backend:latest ./backend</span>
+<span class="c2">PS></span> <span class="c3">docker build -t perfstack-frontend:latest ./frontend</span>
+<span class="c2">PS></span> <span class="c3">kubectl apply -f k8s/</span>
+<span class="c2">PS></span> <span class="c3">kubectl rollout status deployment/backend -n perfstack</span>
+<span class="c2">PS></span> <span class="c3">kubectl rollout status deployment/frontend -n perfstack</span></pre>
+          </div>
+          <div class="tip">Windows users: ask Claude Code to generate a <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">deploy.ps1</code> PowerShell script equivalent to the bash deploy.sh — it will handle the syntax differences automatically.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">03</div>
+        <div class="sb">
+          <h3>Open the services in your browser</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
+            <pre><span class="c1"># Get Minikube IP</span>
+<span class="c2">$</span> <span class="c3">minikube ip</span>
+<span class="c2">192.168.49.2</span>
+
+<span class="c1"># Or open services directly in the browser (minikube handles the tunnel)</span>
+<span class="c2">$</span> <span class="c3">minikube service frontend -n perfstack</span>
+<span class="c2">$</span> <span class="c3">minikube service grafana  -n perfstack</span>
+
+<span class="c1"># All services at once</span>
+<span class="c2">$</span> <span class="c3">minikube service list -n perfstack</span>
+<span class="c2">|-----------|----------|-------------|--------------------------|</span>
+<span class="c2">| NAMESPACE |   NAME   | TARGET PORT |            URL           |</span>
+<span class="c2">|-----------|----------|-------------|--------------------------|</span>
+<span class="c2">| perfstack | frontend |        3000 | http://192.168.49.2:30080|</span>
+<span class="c2">| perfstack | grafana  |        3000 | http://192.168.49.2:30300|</span>
+<span class="c2">| perfstack | backend  |        8000 | http://192.168.49.2:30800|</span>
+<span class="c2">|-----------|----------|-------------|--------------------------|</span></pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ══════════════════════════════════════ VERIFY -->
+  <div class="section" id="verify">
+    <div class="sec-hdr"><span class="sec-n">06</span><h2>Verify Everything is Working</h2></div>
+
+    <div class="steps">
+
+      <div class="step">
+        <div class="sn">01</div>
+        <div class="sb">
+          <h3>Check all pods are running</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">kubectl get pods -n perfstack</span>
+
+<span class="c2">NAME                        READY   STATUS    RESTARTS   AGE</span>
+<span class="c2">backend-xxxxxxxxx-xxxxx     1/1     Running   0          2m</span>
+<span class="c2">frontend-xxxxxxxxx-xxxxx    1/1     Running   0          2m</span>
+<span class="c2">grafana-xxxxxxxxx-xxxxx     1/1     Running   0          2m</span>
+<span class="c2">influxdb-xxxxxxxxx-xxxxx    1/1     Running   0          2m</span>
+
+<span class="c1"># All pods should show STATUS=Running and READY=1/1</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">02</div>
+        <div class="sb">
+          <h3>Verify the backend API</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Terminal / PowerShell</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">curl http://$(minikube ip):30800/health</span>
+<span class="c2">{"status":"ok"}</span>
+
+<span class="c1"># Windows PowerShell alternative:</span>
+<span class="c2">PS></span> <span class="c3">Invoke-RestMethod http://$(minikube ip):30800/health</span>
+<span class="c2">status : ok</span>
+
+<span class="c1"># Interactive API docs</span>
+<span class="c1"># Open in browser: http://&lt;minikube-ip&gt;:30800/docs</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">03</div>
+        <div class="sb">
+          <h3>Open Grafana and confirm the dashboard</h3>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">browser</span></div><span class="flang">url</span></div>
+            <pre><span class="c1"># Open Grafana</span>
+<span class="c4">http://&lt;minikube-ip&gt;:30300</span>
+
+<span class="c1"># Login: admin / admin</span>
+<span class="c1"># Navigate to Dashboards → PerfStack Metrics</span>
+<span class="c1"># The dashboard will show data as soon as a K6 test runs</span></pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ══════════════════════════════════════ TROUBLESHOOTING -->
+  <div class="section" id="troubleshoot">
+    <div class="sec-hdr"><span class="sec-n">07</span><h2>Troubleshooting</h2></div>
+
+    <div class="steps">
+
+      <div class="step">
+        <div class="sn">!</div>
+        <div class="sb">
+          <h3>Minikube won't start — "Docker is not running"</h3>
+          <p class="sd">Docker Desktop must be running before minikube start. Check the system tray / menu bar icon.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
+            <pre><span class="c1"># Start Docker Desktop, wait for it to be fully running, then:</span>
+<span class="c2">$</span> <span class="c3">minikube delete && minikube start --driver=docker --memory=4096 --cpus=2</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">!</div>
+        <div class="sb">
+          <h3>Pods stuck in ImagePullBackOff</h3>
+          <p class="sd">The Docker images were built on the host daemon, not Minikube's. You forgot eval $(minikube docker-env) before building.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
+            <pre><span class="c1"># macOS/Linux</span>
+<span class="c2">$</span> <span class="c3">eval $(minikube docker-env)</span>
+<span class="c2">$</span> <span class="c3">docker build -t perfstack-backend:latest ./backend</span>
+<span class="c2">$</span> <span class="c3">docker build -t perfstack-frontend:latest ./frontend</span>
+<span class="c2">$</span> <span class="c3">kubectl rollout restart deployment/backend deployment/frontend -n perfstack</span>
+
+<span class="c1"># Windows PowerShell</span>
+<span class="c2">PS></span> <span class="c3">minikube docker-env | Invoke-Expression</span>
+<span class="c2">PS></span> <span class="c3">docker build -t perfstack-backend:latest ./backend</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">!</div>
+        <div class="sb">
+          <h3>Windows: "execution of scripts is disabled on this system"</h3>
+          <p class="sd">PowerShell script execution policy is restricted by default on Windows.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">PowerShell (Administrator)</span></div><span class="flang">powershell</span></div>
+            <pre><span class="c1"># Allow local scripts (safe — only affects local, unsigned scripts)</span>
+<span class="c2">PS></span> <span class="c3">Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">!</div>
+        <div class="sb">
+          <h3>Not enough memory — pods in Pending state</h3>
+          <p class="sd">Minikube doesn't have enough RAM allocated. Delete and recreate with more memory.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">fix</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">minikube stop</span>
+<span class="c2">$</span> <span class="c3">minikube delete</span>
+<span class="c2">$</span> <span class="c3">minikube start --driver=docker --memory=6144 --cpus=4</span></pre>
+          </div>
+          <div class="warn">You need at least 8 GB total RAM on your machine to allocate 6 GB to Minikube. Close other memory-heavy apps (browsers with many tabs, other VMs) before starting.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">!</div>
+        <div class="sb">
+          <h3>Ask Claude Code to debug</h3>
+          <p class="sd">When something is broken, Claude Code can inspect the cluster state and propose a fix.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="chl"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Claude Code prompts for debugging</span></div><span class="flang">prompts</span></div>
+            <pre><span class="c4">"Run kubectl get pods -n perfstack and kubectl describe pod
+ &lt;pod-name&gt; -n perfstack for any pod not in Running state.
+ Tell me what is wrong and how to fix it."</span>
+
+<span class="c4">"Run kubectl logs deployment/backend -n perfstack --tail=50
+ and identify any startup errors."</span>
+
+<span class="c4">"Run kubectl get events -n perfstack --sort-by=.lastTimestamp
+ and summarise what went wrong."</span></pre>
+          </div>
+          <div class="tip">This is a great live demo of Claude Code's power — it reads the actual cluster state, understands the error context, and proposes a specific fix rather than generic advice.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div>
+    <div class="fb">PERFSTACK // LOCAL SETUP</div>
+    <div style="margin-top:5px;color:#3a3830">Windows &amp; macOS · Post-Workshop Guide</div>
+  </div>
+  <div class="fr" style="color:#3a3830">
+    Setup time ~30 min · One-time only<br>
+    Solution Architect Track · Anthropic
+  </div>
+</footer>
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+  const sections = document.querySelectorAll('[id]');
+  const tabs = document.querySelectorAll('.ntab');
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting

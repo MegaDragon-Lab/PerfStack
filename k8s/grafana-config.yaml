@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource
+  namespace: perfstack
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: InfluxDB-K6
+        type: influxdb
+        access: proxy
+        url: http://influxdb:8086
+        database: k6
+        isDefault: true
+        editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: perfstack
+data:
+  provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: PerfStack
+        folder: PerfStack
+        type: file
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-json
+  namespace: perfstack
+data:
+  perfstack.json: |
+    {
+      "title": "PerfStack Metrics",
+      "uid": "perfstack-k6",
+      "panels": [
+        {
+          "id": 1, "type": "stat", "title": "Requests / sec",
+          "gridPos": {"x":0,"y":0,"w":6,"h":4},
+          "targets": [{"rawQuery":true,"query":"SELECT mean(\"value\") FROM \"http_reqs\" WHERE $timeFilter GROUP BY time($__interval)","refId":"A"}]
+        },
+        {
+          "id": 2, "type": "stat", "title": "Active VUs",
+          "gridPos": {"x":6,"y":0,"w":6,"h":4},
+          "targets": [{"rawQuery":true,"query":"SELECT last(\"value\") FROM \"vus\" WHERE $timeFilter","refId":"A"}]
+        },
+        {
+          "id": 3, "type": "stat", "title": "Error Rate",
+          "gridPos": {"x":12,"y":0,"w":6,"h":4},
+          "targets": [{"rawQuery":true,"query":"SELECT mean(\"value\") FROM \"http_req_failed\" WHERE $timeFilter GROUP BY time($__interval)","refId":"A"}]
+        },
+        {
+          "id": 4, "type": "timeseries", "title": "Response Time p95",
+          "gridPos": {"x":0,"y":4,"w":24,"h":8},
+          "targets": [
+            {"rawQuery":true,"query":"SELECT percentile(\"value\",95) FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval)","refId":"p95","legendFormat":"p95"},
+            {"rawQuery":true,"query":"SELECT percentile(\"value\",50) FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval)","refId":"p50","legendFormat":"p50"},
+            {"rawQuery":true,"query":"SELECT percentile(\"value\",99) FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval)","refId":"p99","legendFormat":"p99"}
+          ]
+        }
+      ],
+      "refresh": "5s",
+      "time": {"from":"now-5m","to":"now"},
+      "schemaVersion": 38
+    }

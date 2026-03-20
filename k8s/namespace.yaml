@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: perfstack
+  labels:
+    app.kubernetes.io/name: perfstack
+    app.kubernetes.io/managed-by: claude-code

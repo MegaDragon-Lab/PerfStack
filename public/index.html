@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PerfStack — Claude Code Hands-On Lab</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #f7f6f2;
+    --surface:  #ffffff;
+    --surface2: #efede8;
+    --border:   #d8d4cc;
+    --border2:  #b8b2a8;
+    --red:      #c73000;
+    --blue:     #1747c8;
+    --green:    #007040;
+    --amber:    #a06000;
+    --text:     #181614;
+    --muted:    #6a6460;
+    --ink:      #0d1117;
+    --ink2:     #161b22;
+    --ink3:     #21262d;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  /* scanlines */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,.012) 3px, rgba(0,0,0,.012) 4px);
+    pointer-events: none;
+    z-index: 9000;
+  }
+
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── TOPBAR ── */
+  .topbar {
+    position: sticky; top: 0; z-index: 200;
+    height: 40px;
+    background: var(--ink);
+    border-bottom: 2px solid var(--red);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 28px;
+    font-size: 11px;
+    letter-spacing: .05em;
+  }
+  .topbar-l { display: flex; align-items: center; gap: 6px; color: #6a6460; }
+  .topbar-brand { color: var(--red); font-weight: 700; font-size: 12px; letter-spacing: .08em; }
+  .topbar-sep { color: #2e2c28; }
+  .topbar-path { color: #5a5650; }
+  .topbar-r { display: flex; align-items: center; gap: 12px; }
+  .tb-badge {
+    background: rgba(199,48,0,.18); border: 1px solid rgba(199,48,0,.35);
+    color: var(--red); border-radius: 3px; padding: 2px 7px;
+    font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  }
+  .tb-dim { color: #3a3830; font-size: 10px; }
+
+  /* ── NAV ── */
+  .nav {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-end;
+    padding: 0 28px; gap: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+
+  .ntab {
+    display: flex; align-items: center; gap: 5px;
+    padding: 9px 14px 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px; letter-spacing: .03em;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    cursor: pointer; white-space: nowrap;
+    text-decoration: none;
+    transition: color .12s, border-color .12s;
+  }
+  .ntab:hover { color: var(--text); text-decoration: none; }
+  .ntab.active { color: var(--red); border-bottom-color: var(--red); }
+  .ntab .n { color: var(--border2); font-size: 9px; }
+
+  /* ── PAGE ── */
+  .page { max-width: 1040px; margin: 0 auto; padding: 0 28px 100px; }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 56px 0 44px;
+    border-bottom: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: 1fr 190px;
+    gap: 32px;
+    align-items: start;
+  }
+
+  .eyebrow {
+    font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--red); margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .eyebrow::before { content: ''; width: 20px; height: 1px; background: var(--red); display: block; }
+
+  h1 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: clamp(26px, 3.8vw, 44px);
+    font-weight: 600;
+    line-height: 1.08;
+    letter-spacing: -.025em;
+    color: var(--text);
+    margin-bottom: 18px;
+  }
+  h1 .r  { color: var(--red); }
+  h1 .b  { color: var(--blue); }
+  h1 .g  { color: var(--green); }
+
+  .hero-desc {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 14px; color: var(--muted); font-weight: 300;
+    max-width: 500px; line-height: 1.65; margin-bottom: 24px;
+  }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 7px; }
+  .tag {
+    font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+    border: 1px solid var(--border); border-radius: 3px; padding: 3px 9px;
+    color: var(--muted); background: var(--surface);
+  }
+
+  .meta-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 18px 16px;
+    font-size: 11px;
+  }
+  .meta-row { margin-bottom: 13px; }
+  .meta-row:last-child { margin-bottom: 0; }
+  .meta-lbl { font-size: 8px; letter-spacing: .14em; text-transform: uppercase; color: var(--border2); margin-bottom: 2px; }
+  .meta-val { font-size: 13px; font-weight: 500; color: var(--text); }
+  .meta-val.r { color: var(--red); }
+  .meta-val.b { color: var(--blue); }
+
+  /* ── SECTION ── */
+  .section { padding: 44px 0 0; }
+
+  .sec-hdr {
+    display: flex; align-items: baseline; gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 22px;
+  }
+  .sec-n { font-size: 9px; color: var(--red); letter-spacing: .1em; font-weight: 700; flex-shrink: 0; }
+
+  h2 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 16px; font-weight: 600;
+    letter-spacing: -.01em; color: var(--text);
+  }
+
+  h3 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .05em;
+    color: var(--text); margin-bottom: 5px;
+  }
+
+  p.body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 13px; color: var(--muted); font-weight: 300; line-height: 1.7;
+  }
+
+  hr.div { border: none; border-top: 1px solid var(--border); margin: 40px 0 0; }
+
+  /* ── FLOW ── */
+  .flow {
+    display: flex; align-items: center; gap: 0;
+    overflow-x: auto; padding: 20px 0 4px;
+  }
+  .flow::-webkit-scrollbar { height: 4px; }
+  .flow::-webkit-scrollbar-track { background: var(--surface2); }
+  .flow::-webkit-scrollbar-thumb { background: var(--border2); }
+
+  .fn {
+    flex-shrink: 0; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 11px 14px; text-align: center; min-width: 96px;
+  }
+  .fn.r { border-color: var(--red); border-width: 2px; }
+  .fn.b { border-color: var(--blue); border-width: 2px; }
+  .fn.g { border-color: var(--green); border-width: 2px; }
+  .fn .fi { font-size: 17px; display: block; margin-bottom: 3px; }
+  .fn .fl { font-size: 10px; font-weight: 600; letter-spacing: .03em; color: var(--text); display: block; }
+  .fn .fs { font-size: 9px; color: var(--muted); display: block; margin-top: 1px; }
+  .farr { flex-shrink: 0; color: var(--border2); font-size: 13px; padding: 0 3px; }
+
+  /* ── GRID CARDS ── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+    border: 1px solid var(--border);
+    border-radius: 5px; overflow: hidden;
+  }
+
+  .gc {
+    background: var(--surface);
+    padding: 18px 16px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    transition: background .12s;
+  }
+  .gc:hover { background: var(--surface2); }
+  .gc .gi { font-size: 18px; margin-bottom: 9px; display: block; }
+  .gc h3 { font-size: 10px; margin-bottom: 4px; }
+  .gc p  { font-size: 11px; color: var(--muted); font-family: 'IBM Plex Sans', sans-serif; font-weight: 300; line-height: 1.5; }
+
+  /* ── OUTCOME CARDS ── */
+  .out-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(195px,1fr));
+    gap: 10px; margin-top: 22px;
+  }
+  .oc {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 5px; padding: 18px 16px;
+    transition: border-color .14s, transform .14s;
+  }
+  .oc:hover { border-color: var(--red); transform: translateY(-2px); }
+  .oc .on { font-size: 9px; letter-spacing: .1em; color: var(--red); font-weight: 700; margin-bottom: 8px; }
+  .oc h3 { font-size: 10px; margin-bottom: 5px; }
+  .oc p  { font-size: 11px; color: var(--muted); font-family: 'IBM Plex Sans', sans-serif; font-weight: 300; line-height: 1.55; }
+
+  /* ── STEPS ── */
+  .steps { display: flex; flex-direction: column; }
+
+  .step {
+    display: grid; grid-template-columns: 46px 1fr;
+    border: 1px solid var(--border); border-bottom: none;
+    background: var(--surface); transition: background .12s;
+  }
+  .step:first-child { border-radius: 5px 5px 0 0; }
+  .step:last-child  { border-bottom: 1px solid var(--border); border-radius: 0 0 5px 5px; }
+  .step:hover { background: #faf9f6; }
+
+  .sn {
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: 18px;
+    font-size: 9px; color: var(--red); font-weight: 700; letter-spacing: .06em;
+    border-right: 1px solid var(--border); background: var(--surface2);
+  }
+
+  .sb { padding: 16px 20px; }
+  .sb h3 { font-size: 11px; margin-bottom: 5px; }
+  .sb .sd { font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; color: var(--muted); margin-bottom: 11px; font-weight: 300; }
+
+  /* ── CODE ── */
+  .code {
+    background: var(--ink); border: 1px solid #2e2c28;
+    border-radius: 5px; overflow: hidden; margin: 9px 0 3px;
+  }
+  .code-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 12px; background: var(--ink2);
+    border-bottom: 1px solid #2e2c28;
+  }
+  .code-hdr-l { display: flex; align-items: center; gap: 9px; }
+  .dots { display: flex; gap: 4px; }
+  .dots span { width: 8px; height: 8px; border-radius: 50%; }
+  .dr { background: #ff5f57; } .dy { background: #febc2e; } .dg { background: #28c840; }
+  .fname { font-size: 10px; color: #4a4840; letter-spacing: .05em; }
+  .flang { font-size: 9px; color: #2e2c28; letter-spacing: .08em; text-transform: uppercase; }
+
+  pre {
+    padding: 13px 16px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11.5px;
+    line-height: 1.75; overflow-x: auto; color: #c9d1d9;
+  }
+
+  .c1 { color: #3a3830; }   /* dim */
+  .c2 { color: #3dffc0; }   /* green */
+  .c3 { color: #79c0ff; }   /* blue cmd */
+  .c4 { color: #ffa657; }   /* orange string */
+  .c5 { color: #ff7b72; }   /* red keyword */
+  .c6 { color: #a5d6ff; }   /* light blue */
+  .c7 { color: #febc2e; }   /* amber */
+  .c8 { color: #d2a8ff; }   /* purple */
+
+  /* ── PROMPT BOX ── */
+  .pb {
+    background: #f0f3ff;
+    border: 1px solid #c4cef5;
+    border-left: 3px solid var(--blue);
+    border-radius: 4px; padding: 13px 15px; margin: 9px 0;
+  }
+  .pb::before {
+    content: 'CLAUDE CODE PROMPT';
+    display: block; font-size: 8px; letter-spacing: .14em;
+    color: var(--blue); margin-bottom: 7px; font-weight: 700;
+  }
+  .pb p {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 12.5px; color: #1e2a56; line-height: 1.65; font-weight: 300;
+  }
+  .pb strong { color: var(--blue); font-weight: 600; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+
+  /* ── CALLOUTS ── */
+  .tip {
+    background: #f0faf5; border: 1px solid #a8dfc0; border-left: 3px solid var(--green);
+    border-radius: 4px; padding: 9px 13px; margin-top: 7px;
+    font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; color: #1a4032;
+    font-weight: 300; display: flex; gap: 8px;
+  }
+  .tip::before { content: '→'; font-family: 'IBM Plex Mono', monospace; color: var(--green); flex-shrink: 0; font-weight: 600; }
+
+  .warn {
+    background: #fff8f0; border: 1px solid #f0d0a8; border-left: 3px solid var(--amber);
+    border-radius: 4px; padding: 9px 13px; margin-top: 7px;
+    font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; color: #5a3200;
+    font-weight: 300; display: flex; gap: 8px;
+  }
+  .warn::before { content: '!'; font-family: 'IBM Plex Mono', monospace; color: var(--amber); flex-shrink: 0; font-weight: 700; }
+
+  .info {
+    background: #f0f3ff; border: 1px solid #c4cef5; border-left: 3px solid var(--blue);
+    border-radius: 4px; padding: 9px 13px; margin-top: 7px;
+    font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; color: #1a2a5a;
+    font-weight: 300; display: flex; gap: 8px;
+  }
+  .info::before { content: 'i'; font-family: 'IBM Plex Mono', monospace; color: var(--blue); flex-shrink: 0; font-weight: 700; }
+
+  /* ── CHECKLIST ── */
+  .chk { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .chk li {
+    display: flex; align-items: flex-start; gap: 9px;
+    font-size: 12px; color: var(--muted);
+    font-family: 'IBM Plex Sans', sans-serif; font-weight: 300;
+    padding: 8px 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  }
+  .chk li::before { content: '[ ]'; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--border2); flex-shrink: 0; margin-top: 1px; }
+  .chk li strong { color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; }
+  .chk li code { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--blue); background: #eef1ff; padding: 1px 5px; border-radius: 3px; }
+
+  /* ── TABLE ── */
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin: 14px 0; }
+  th { text-align: left; font-size: 8px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 7px 11px; border-bottom: 2px solid var(--border); }
+  td { padding: 8px 11px; border-bottom: 1px solid var(--border); font-family: 'IBM Plex Mono', monospace; vertical-align: top; }
+  td.m { color: var(--muted); }
+  td.r { color: var(--red); font-weight: 600; }
+  td.b { color: var(--blue); }
+  td.g { color: var(--green); }
+  td.a { color: var(--amber); }
+  tr:hover td { background: var(--surface2); }
+
+  /* ── COMPARE TABLE (cloud options) ── */
+  .comp { border: 1px solid var(--border); border-radius: 5px; overflow: hidden; margin-top: 18px; }
+  .comp table { margin: 0; }
+  .comp th { background: var(--surface2); border-bottom: 1px solid var(--border); padding: 10px 14px; font-size: 9px; }
+  .comp td { padding: 10px 14px; font-size: 11px; }
+  .badge-rec {
+    display: inline-block; font-size: 8px; letter-spacing: .1em; text-transform: uppercase;
+    background: rgba(0,112,64,.12); border: 1px solid rgba(0,112,64,.3);
+    color: var(--green); border-radius: 3px; padding: 2px 6px; margin-left: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .badge-free {
+    display: inline-block; font-size: 8px; letter-spacing: .1em; text-transform: uppercase;
+    background: rgba(23,71,200,.1); border: 1px solid rgba(23,71,200,.25);
+    color: var(--blue); border-radius: 3px; padding: 2px 6px; margin-left: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    background: var(--ink); border-top: 2px solid var(--red);
+    padding: 26px 28px;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 10px;
+    margin-top: 60px;
+    font-size: 10px; color: #4a4840; letter-spacing: .05em;
+  }
+  footer .fb { color: var(--red); font-weight: 700; font-size: 12px; letter-spacing: .1em; }
+  footer .fr { text-align: right; line-height: 1.8; }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .cur::after { content: '_'; animation: blink 1s step-end infinite; color: var(--red); }
+
+  @media(max-width:660px) {
+    .hero { grid-template-columns: 1fr; }
+    .meta-box { display: none; }
+    .page, .topbar, .nav { padding-left: 16px; padding-right: 16px; }
+    footer { padding: 18px 16px; }
+  }
+</style>
+</head>
+<body>
+<!-- Sister-page banner -->
+<div style="background:#1a4fd6;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.05em;padding:7px 28px;display:flex;justify-content:space-between;align-items:center;">
+  <span>📖 PerfStack Documentation</span>
+  <span>
+    <span style="opacity:.5;margin-right:12px">Workshop Guide</span>
+    <a href="/local-setup.html" style="color:#a8d4ff;text-decoration:none;font-weight:700">Local Setup (Windows &amp; Mac) →</a>
+  </span>
+</div>
+
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-l">
+    <span class="topbar-brand">PerfStack</span>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-path">hands-on-lab</span>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-path">claude-code-workshop</span>
+  </div>
+  <div class="topbar-r">
+    <span class="tb-badge">Live Lab</span>
+    <span class="tb-dim">~90 min</span>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav class="nav">
+  <a class="ntab active" href="#overview"><span class="n">00</span> Overview</a>
+  <a class="ntab" href="#cloud-k8s"><span class="n">01</span> Cloud K8s</a>
+  <a class="ntab" href="#architecture"><span class="n">02</span> Architecture</a>
+  <a class="ntab" href="#prereqs"><span class="n">03</span> Prerequisites</a>
+  <a class="ntab" href="#lab"><span class="n">04</span> Lab Steps</a>
+  <a class="ntab" href="#deploy"><span class="n">05</span> Deploy</a>
+  <a class="ntab" href="#tips"><span class="n">06</span> Claude Code Tips</a>
+</nav>
+
+<div class="page">
+
+  <!-- ═══════════════════════════════════════════════ HERO -->
+  <div class="hero" id="overview">
+    <div>
+      <div class="eyebrow">Hands-On Lab · Solution Architect Track</div>
+      <h1>
+        <span class="r">PerfStack</span><br>
+        Load Testing with<br>
+        <span class="b">Claude Code</span><span class="cur"></span>
+      </h1>
+      <p class="hero-desc">
+        Build a production-grade load testing platform from scratch — K6 + Grafana
+        deployed on Kubernetes — using Claude Code as your AI development copilot.
+        OAuth2 auth, dynamic script generation, real-time metrics. No boilerplate, no setup hell.
+      </p>
+      <div class="tags">
+        <span class="tag">Claude Code</span>
+        <span class="tag">K6 Load Testing</span>
+        <span class="tag">Grafana · InfluxDB</span>
+        <span class="tag">OAuth2 Bearer Token</span>
+        <span class="tag">FastAPI · React</span>
+        <span class="tag">Kubernetes</span>
+      </div>
+    </div>
+    <div class="meta-box">
+      <div class="meta-row"><div class="meta-lbl">Duration</div><div class="meta-val r">~90 min</div></div>
+      <div class="meta-row"><div class="meta-lbl">Level</div><div class="meta-val">Intermediate</div></div>
+      <div class="meta-row"><div class="meta-lbl">Lab Steps</div><div class="meta-val b">8 steps</div></div>
+      <div class="meta-row"><div class="meta-lbl">K8s Pods</div><div class="meta-val">6 services</div></div>
+      <div class="meta-row"><div class="meta-lbl">Auth Flow</div><div class="meta-val">OAuth2 CC</div></div>
+      <div class="meta-row"><div class="meta-lbl">Zero install</div><div class="meta-val">✓ Cloud K8s</div></div>
+    </div>
+  </div>
+
+  <!-- what we build -->
+  <div class="section">
+    <div class="sec-hdr"><span class="sec-n">00.1</span><h2>What we're building</h2></div>
+
+    <div class="flow">
+      <div class="fn r"><span class="fi">⚛️</span><span class="fl">React UI</span><span class="fs">Config panel</span></div>
+      <div class="farr">──▶</div>
+      <div class="fn b"><span class="fi">🐍</span><span class="fl">FastAPI</span><span class="fs">Orchestrator</span></div>
+      <div class="farr">──▶</div>
+      <div class="fn"><span class="fi">🔐</span><span class="fl">IAM / OAuth2</span><span class="fs">Bearer token</span></div>
+      <div class="farr">──▶</div>
+      <div class="fn g"><span class="fi">⚡</span><span class="fl">K6 Job</span><span class="fs">Load engine</span></div>
+      <div class="farr">──▶</div>
+      <div class="fn"><span class="fi">🗄️</span><span class="fl">InfluxDB</span><span class="fs">Metrics store</span></div>
+      <div class="farr">──▶</div>
+      <div class="fn b"><span class="fi">📊</span><span class="fl">Grafana</span><span class="fs">Dashboards</span></div>
+    </div>
+
+    <div class="out-grid">
+      <div class="oc"><div class="on">01 // UI</div><h3>Config Panel</h3><p>Form for IAM URL, client_id/secret, target URL, JSON payload, VUs and duration.</p></div>
+      <div class="oc"><div class="on">02 // AUTH</div><h3>Auto Auth</h3><p>Backend fetches Bearer token via OAuth2 client credentials before every test run.</p></div>
+      <div class="oc"><div class="on">03 // INFRA</div><h3>K6 on K8s</h3><p>Dynamic K6 script generated per-run and executed as a Kubernetes Job.</p></div>
+      <div class="oc"><div class="on">04 // OBS</div><h3>Live Grafana</h3><p>Real-time RPS, p50/p95/p99 latency and error rate via InfluxDB output.</p></div>
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ═══════════════════════════════════════════════ CLOUD K8S -->
+  <div class="section" id="cloud-k8s">
+    <div class="sec-hdr"><span class="sec-n">01</span><h2>Cloud Kubernetes — zero local install</h2></div>
+
+    <p class="body" style="margin-bottom:18px">
+      No Minikube, no Docker Desktop, no surprises. Pick one of the options below — everyone
+      gets a live Kubernetes cluster in the browser within 60 seconds, with kubectl, Helm
+      and container runtimes already available.
+    </p>
+
+    <div class="comp">
+      <table>
+        <thead>
+          <tr>
+            <th>Option</th>
+            <th>How to start</th>
+            <th>K8s access</th>
+            <th>Session limit</th>
+            <th>Best for</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Killercoda</strong><span class="badge-rec">recommended</span></td>
+            <td class="m">killercoda.com/playgrounds → Kubernetes</td>
+            <td class="g">Full cluster — kubectl ready</td>
+            <td class="m">60 min (free) · 4h (paid)</td>
+            <td class="m">No signup needed, instant</td>
+          </tr>
+          <tr>
+            <td><strong>GitHub Codespaces</strong><span class="badge-free">free tier</span></td>
+            <td class="m">Open repo → Code → Codespaces → New</td>
+            <td class="g">k3d inside container</td>
+            <td class="m">120 core-h/month free</td>
+            <td class="m">Best IDE experience (VS Code)</td>
+          </tr>
+          <tr>
+            <td><strong>Play with K8s</strong></td>
+            <td class="m">labs.play-with-k8s.com</td>
+            <td class="g">Multi-node cluster</td>
+            <td class="m">4h per session</td>
+            <td class="m">Docker-provided, no account</td>
+          </tr>
+          <tr>
+            <td><strong>Local Minikube</strong></td>
+            <td class="m">minikube start --driver=docker</td>
+            <td class="g">Full cluster</td>
+            <td class="a">Requires local install</td>
+            <td class="m">Offline / full control</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top:20px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+
+      <!-- KILLERCODA -->
+      <div>
+        <h3 style="margin-bottom:10px">Option 1 · Killercoda <span style="color:var(--green);font-size:10px">(recommended for workshops)</span></h3>
+        <p class="body" style="margin-bottom:10px">Browser-based Ubuntu VM with a fully provisioned K8s cluster. No account required. kubectl, docker and Helm are pre-installed.</p>
+        <div class="code">
+          <div class="code-hdr">
+            <div class="code-hdr-l"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">Killercoda — steps</span></div>
+            <span class="flang">browser</span>
+          </div>
+          <pre><span class="c1"># 1. Open in browser — no account needed</span>
+<span class="c4">https://killercoda.com/playgrounds/scenario/kubernetes</span>
+
+<span class="c1"># 2. Click "START" — cluster ready in ~20s</span>
+
+<span class="c1"># 3. Verify in the terminal tab</span>
+<span class="c2">$</span> <span class="c3">kubectl get nodes</span>
+<span class="c2">NAME       STATUS   ROLES    AGE</span>
+<span class="c2">node01     Ready    master   30s</span>
+
+<span class="c1"># 4. Install Claude Code</span>
+<span class="c2">$</span> <span class="c3">npm install -g @anthropic-ai/claude-code</span>
+<span class="c2">$</span> <span class="c3">export ANTHROPIC_API_KEY=sk-ant-...</span></pre>
+        </div>
+        <div class="tip">Killercoda lets you create <strong>custom scenarios</strong> (free for creators) — you can pre-install Claude Code, the repo and all dependencies so attendees just click "Start" and everything is ready.</div>
+      </div>
+
+      <!-- CODESPACES -->
+      <div>
+        <h3 style="margin-bottom:10px">Option 2 · GitHub Codespaces <span style="color:var(--blue);font-size:10px">(best IDE experience)</span></h3>
+        <p class="body" style="margin-bottom:10px">Full VS Code in the browser with a k3d Kubernetes cluster auto-provisioned via devcontainer. Attendees need a GitHub account.</p>
+        <div class="code">
+          <div class="code-hdr">
+            <div class="code-hdr-l"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">.devcontainer/devcontainer.json</span></div>
+            <span class="flang">json</span>
+          </div>
+          <pre>{
+  <span class="c5">"name"</span>: <span class="c4">"PerfStack Lab"</span>,
+  <span class="c5">"image"</span>: <span class="c4">"mcr.microsoft.com/devcontainers/universal:2"</span>,
+  <span class="c5">"features"</span>: {
+    <span class="c4">"ghcr.io/devcontainers/features/kubectl-helm-minikube"</span>: {},
+    <span class="c4">"ghcr.io/devcontainers/features/node:1"</span>: { <span class="c5">"version"</span>: <span class="c4">"18"</span> },
+    <span class="c4">"ghcr.io/devcontainers/features/python:1"</span>: { <span class="c5">"version"</span>: <span class="c4">"3.11"</span> }
+  },
+  <span class="c5">"postCreateCommand"</span>: <span class="c4">"npm i -g @anthropic-ai/claude-code && minikube start --driver=docker"</span>,
+  <span class="c5">"forwardPorts"</span>: [<span class="c7">3000</span>, <span class="c7">8000</span>, <span class="c7">30080</span>, <span class="c7">30300</span>]
+}</pre>
+        </div>
+        <div class="tip">Push this devcontainer.json to the PerfStack repo. Attendees click "Open in Codespaces" — minikube starts automatically, Claude Code is installed, ports are forwarded. Ready in ~90 seconds.</div>
+      </div>
+
+    </div>
+
+    <div class="info" style="margin-top:16px">
+      For a workshop with 10+ attendees, <strong>Killercoda custom scenarios</strong> are the smoothest option — you build the scenario once (free), share a single URL, and everyone gets an identical pre-configured environment with one click. No GitHub accounts, no local installs, no API key ceremony during the session.
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ═══════════════════════════════════════════════ ARCHITECTURE -->
+  <div class="section" id="architecture">
+    <div class="sec-hdr"><span class="sec-n">02</span><h2>Architecture</h2></div>
+
+    <div class="grid">
+      <div class="gc"><span class="gi">⚛️</span><h3>Frontend</h3><p>React + Vite. Config panel and real-time job status polling every 3s.</p></div>
+      <div class="gc"><span class="gi">🐍</span><h3>FastAPI</h3><p>REST API. IAM auth, K6 script templating, Kubernetes job lifecycle management.</p></div>
+      <div class="gc"><span class="gi">🔑</span><h3>IAM / OAuth2</h3><p>POST client_id + client_secret to IAM URL → access_token (cached with TTL).</p></div>
+      <div class="gc"><span class="gi">⚡</span><h3>K6</h3><p>Runs as a K8s Job. Script + Bearer token injected at runtime via ConfigMap.</p></div>
+      <div class="gc"><span class="gi">🗄️</span><h3>InfluxDB</h3><p>Time-series store. Receives K6 metrics in real-time via remote write output.</p></div>
+      <div class="gc"><span class="gi">📊</span><h3>Grafana</h3><p>Dashboard pre-provisioned via ConfigMap. VUs, RPS, latency buckets, errors.</p></div>
+    </div>
+
+    <div class="code" style="margin-top:18px">
+      <div class="code-hdr">
+        <div class="code-hdr-l"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">project tree — generated by Claude Code</span></div>
+        <span class="flang">tree</span>
+      </div>
+      <pre><span class="c2">perfstack/</span>
+├── <span class="c6">frontend/</span>               <span class="c1"># React + Vite</span>
+│   ├── src/App.jsx         <span class="c1"># Config panel + status polling</span>
+│   ├── Dockerfile
+│   └── package.json
+├── <span class="c6">backend/</span>                <span class="c1"># FastAPI</span>
+│   ├── main.py             <span class="c1"># API routes: /run-test · /test-status/{name}</span>
+│   ├── auth.py             <span class="c1"># OAuth2 client credentials + token cache</span>
+│   ├── k8s_runner.py       <span class="c1"># Create / query Kubernetes Jobs</span>
+│   ├── k6_template.js      <span class="c1"># Jinja2 template → rendered per run</span>
+│   ├── requirements.txt
+│   └── Dockerfile
+└── <span class="c6">k8s/</span>                    <span class="c1"># Kubernetes manifests (namespace: perfstack)</span>
+    ├── namespace.yaml
+    ├── backend.yaml        <span class="c1"># Deployment + NodePort 30800</span>
+    ├── frontend.yaml       <span class="c1"># Deployment + NodePort 30080</span>
+    ├── influxdb.yaml       <span class="c1"># Deployment + ClusterIP 8086</span>
+    ├── grafana.yaml        <span class="c1"># Deployment + NodePort 30300</span>
+    ├── rbac.yaml           <span class="c1"># SA + Role: create/get Jobs</span>
+    └── grafana-config.yaml <span class="c1"># Datasource + Dashboard ConfigMaps</span></pre>
+    </div>
+
+    <table>
+      <thead><tr><th>Component</th><th>Image</th><th>Port</th><th>NodePort</th><th>Namespace</th></tr></thead>
+      <tbody>
+        <tr><td>Frontend</td><td class="m">perfstack-frontend:latest</td><td class="b">3000</td><td class="r">30080</td><td class="g">perfstack</td></tr>
+        <tr><td>Backend</td><td class="m">perfstack-backend:latest</td><td class="b">8000</td><td class="r">30800</td><td class="g">perfstack</td></tr>
+        <tr><td>Grafana</td><td class="m">grafana/grafana:10.2.0</td><td class="b">3000</td><td class="r">30300</td><td class="g">perfstack</td></tr>
+        <tr><td>InfluxDB</td><td class="m">influxdb:1.8</td><td class="b">8086</td><td class="m">internal</td><td class="g">perfstack</td></tr>
+        <tr><td>K6 (Job)</td><td class="m">grafana/k6:latest</td><td class="m">—</td><td class="m">—</td><td class="g">perfstack</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <hr class="div">
+
+  <!-- ═══════════════════════════════════════════════ PREREQS -->
+  <div class="section" id="prereqs">
+    <div class="sec-hdr"><span class="sec-n">03</span><h2>Prerequisites</h2></div>
+
+    <ul class="chk">
+      <li><strong>Claude Code</strong> — <code>npm install -g @anthropic-ai/claude-code</code> — requires Node 18+</li>
+      <li><strong>ANTHROPIC_API_KEY</strong> — export it in your shell before starting the lab</li>
+      <li><strong>Kubernetes cluster</strong> — use any Cloud K8s option from section 01, or local Minikube</li>
+      <li><strong>kubectl</strong> — pre-installed on all cloud playground options above</li>
+      <li><strong>Docker</strong> — needed to build images (pre-installed on Killercoda and Codespaces)</li>
+    </ul>
+
+    <div class="code" style="margin-top:14px">
+      <div class="code-hdr">
+        <div class="code-hdr-l"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">environment check</span></div>
+        <span class="flang">bash</span>
+      </div>
+      <pre><span class="c1"># Verify cluster is healthy</span>
+<span class="c2">$</span> <span class="c3">kubectl get nodes</span>
+<span class="c2">NAME     STATUS   ROLES           AGE</span>
+<span class="c2">node01   Ready    control-plane   2m</span>
+
+<span class="c1"># Confirm Claude Code</span>
+<span class="c2">$</span> <span class="c3">claude --version</span>
+<span class="c2">claude 1.x.x</span>
+
+<span class="c1"># Set your API key</span>
+<span class="c2">$</span> <span class="c3">export ANTHROPIC_API_KEY=sk-ant-...</span>
+
+<span class="c1"># Start Claude Code in the project directory</span>
+<span class="c2">$</span> <span class="c3">mkdir perfstack && cd perfstack && claude</span></pre>
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ═══════════════════════════════════════════════ LAB STEPS -->
+  <div class="section" id="lab">
+    <div class="sec-hdr"><span class="sec-n">04</span><h2>Lab Steps</h2></div>
+
+    <div class="steps">
+
+      <!-- 01 -->
+      <div class="step">
+        <div class="sn">01</div>
+        <div class="sb">
+          <h3>Scaffold the project</h3>
+          <p class="sd">Start Claude Code and generate the full folder structure, virtualenv and package files in one shot.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="code-hdr-l"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">terminal</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">mkdir perfstack && cd perfstack && claude</span>
+<span class="c1">↳ Claude Code starts in interactive mode</span></pre>
+          </div>
+          <div class="pb">
+            <p>"<strong>Scaffold a full load-testing platform called PerfStack.</strong> Create directories: frontend/, backend/ and k8s/. Add README.md with a quick-start section and a root .gitignore for Python + Node. Initialize a Python venv in backend/ with a requirements.txt containing: fastapi uvicorn httpx kubernetes jinja2 pydantic. Run <strong>npm create vite@latest frontend -- --template react</strong> to bootstrap the React app."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 02 -->
+      <div class="step">
+        <div class="sn">02</div>
+        <div class="sb">
+          <h3>IAM authentication module</h3>
+          <p class="sd">OAuth2 client credentials flow with automatic token caching and renewal.</p>
+          <div class="pb">
+            <p>"<strong>Create backend/auth.py</strong> with a Python dataclass IamAuthClient that accepts iam_url, client_id and client_secret. Implement async get_bearer_token() — it must POST to iam_url with Content-Type application/x-www-form-urlencoded and body: grant_type=client_credentials, client_id, client_secret. Cache the token internally and refresh 30 seconds before expiry. Use structured logging. Never log the secret value or the token itself."</p>
+          </div>
+          <div class="code">
+            <div class="code-hdr"><div class="code-hdr-l"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">backend/auth.py — Claude Code output</span></div><span class="flang">python</span></div>
+            <pre><span class="c5">@dataclass</span>
+<span class="c5">class</span> <span class="c2">IamAuthClient</span>:
+    iam_url: str
+    client_id: str
+    client_secret: str
+    _token: str    = field(default=<span class="c4">""</span>, repr=False)
+    _expires_at: float = field(default=<span class="c7">0.0</span>, repr=False)
+
+    <span class="c5">async def</span> <span class="c2">get_bearer_token</span>(self) -> str:
+        <span class="c5">if</span> self._token <span class="c5">and</span> time.time() < self._expires_at - 30:
+            <span class="c5">return</span> self._token     <span class="c1"># cached ✓</span>
+        <span class="c5">return await</span> self._fetch_token()
+    <span class="c1"># ... Claude Code completes the full implementation</span></pre>
+          </div>
+          <div class="tip">Follow up: "Add pytest unit tests for auth.py in backend/tests/ using pytest-asyncio and respx to mock HTTP calls. Include a test for the cache hit and one for token refresh."</div>
+        </div>
+      </div>
+
+      <!-- 03 -->
+      <div class="step">
+        <div class="sn">03</div>
+        <div class="sb">
+          <h3>FastAPI backend — orchestration API</h3>
+          <p class="sd">The backend ties IAM auth, K6 script generation and Kubernetes job lifecycle together.</p>
+          <div class="pb">
+            <p>"<strong>Create backend/main.py</strong> with FastAPI. Endpoints: POST /api/run-test accepting {iam_url, client_id, client_secret, target_url, payload, vus, duration} — fetch Bearer token via IamAuthClient, render a K6 script via Jinja2 and create a Kubernetes Job. GET /api/test-status/{job_name} returns {status, message}. Add CORS for localhost:3000, a /health endpoint, and Pydantic models for all request/response bodies."</p>
+          </div>
+          <div class="code">
+            <div class="code-hdr"><div class="code-hdr-l"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">backend/main.py — POST /api/run-test</span></div><span class="flang">python</span></div>
+            <pre><span class="c5">@app</span>.post(<span class="c4">"/api/run-test"</span>)
+<span class="c5">async def</span> <span class="c2">run_test</span>(config: TestConfig):
+    <span class="c1"># 1. Bearer token from IAM</span>
+    auth  = IamAuthClient(config.iam_url, config.client_id, config.client_secret)
+    token = <span class="c5">await</span> auth.get_bearer_token()
+
+    <span class="c1"># 2. Render K6 script template with live token + config</span>
+    script = render_k6_script(token, config)
+
+    <span class="c1"># 3. Launch Kubernetes Job</span>
+    job_name = <span class="c5">await</span> create_k6_job(script, config)
+    <span class="c5">return</span> {<span class="c4">"job_name"</span>: job_name, <span class="c4">"status"</span>: <span class="c4">"created"</span>}</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- 04 -->
+      <div class="step">
+        <div class="sn">04</div>
+        <div class="sb">
+          <h3>Dynamic K6 script with Bearer auth</h3>
+          <p class="sd">A Jinja2 template rendered per test run — Bearer token, URL and payload injected at runtime.</p>
+          <div class="pb">
+            <p>"<strong>Create backend/k6_template.js</strong> as a Jinja2 template. It must: inject Bearer token in Authorization header, POST to {{ target_url }} with {{ payload | tojson }}, use ramp-up stages with {{ vus }} VUs and {{ duration }}s, set thresholds p95 &lt; 2000ms and error rate &lt; 5%, output metrics to InfluxDB at http://influxdb:8086/k6."</p>
+          </div>
+          <div class="code">
+            <div class="code-hdr"><div class="code-hdr-l"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">backend/k6_template.js</span></div><span class="flang">javascript</span></div>
+            <pre><span class="c5">import</span> http  <span class="c5">from</span> <span class="c4">'k6/http'</span>;
+<span class="c5">import</span> { check, sleep } <span class="c5">from</span> <span class="c4">'k6'</span>;
+
+<span class="c5">export const</span> options = {
+  stages: [
+    { duration: <span class="c4">'30s'</span>,          target: <span class="c8">{{ vus }}</span> },
+    { duration: <span class="c4">'{{ duration }}s'</span>, target: <span class="c8">{{ vus }}</span> },
+    { duration: <span class="c4">'10s'</span>,          target: <span class="c7">0</span> },
+  ],
+  thresholds: {
+    <span class="c4">'http_req_duration'</span>: [<span class="c4">'p(95)&lt;2000'</span>],
+    <span class="c4">'http_req_failed'</span>:   [<span class="c4">'rate&lt;0.05'</span>],
+  },
+};
+
+<span class="c5">export default function</span>() {
+  <span class="c5">const</span> res = http.post(<span class="c4">'{{ target_url }}'</span>, JSON.stringify(<span class="c8">{{ payload }}</span>), {
+    headers: {
+      <span class="c4">'Authorization'</span>: <span class="c4">'Bearer {{ bearer_token }}'</span>,
+      <span class="c4">'Content-Type'</span>:  <span class="c4">'application/json'</span>,
+    }
+  });
+  check(res, { <span class="c4">'status 2xx'</span>: r => r.status >= 200 && r.status < 300 });
+  sleep(1);
+}</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- 05 -->
+      <div class="step">
+        <div class="sn">05</div>
+        <div class="sb">
+          <h3>React config panel — frontend</h3>
+          <p class="sd">Dark panel to configure and fire tests. Live status polling via the backend.</p>
+          <div class="pb">
+            <p>"<strong>Create frontend/src/App.jsx.</strong> Build a dark config panel with fields: IAM URL, Client ID, Client Secret (password input), Target URL, JSON Payload (textarea), VUs (range slider 1–500 with live value label), Duration in seconds (range slider 10–600). A 'Run Load Test' button calls POST /api/run-test. Poll GET /api/test-status/{job_name} every 3 seconds and show a status badge. When status is 'running', show a link to Grafana at port 30300. Validate JSON payload client-side before submitting. Use Tailwind CSS."</p>
+          </div>
+          <div class="tip">Follow up: "Add a collapsible 'Advanced' section with fields for custom K6 thresholds (p95 target ms, max error rate %) that get passed to the backend."</div>
+        </div>
+      </div>
+
+      <!-- 06 -->
+      <div class="step">
+        <div class="sn">06</div>
+        <div class="sb">
+          <h3>Kubernetes manifests + Grafana dashboard</h3>
+          <p class="sd">All K8s resources: namespace, deployments, services, RBAC and a pre-provisioned Grafana dashboard.</p>
+          <div class="pb">
+            <p>"<strong>Generate all files under k8s/</strong> in namespace 'perfstack'. Create: namespace.yaml, Deployments + Services for backend (NodePort 30800), frontend (NodePort 30080), InfluxDB (ClusterIP 8086), Grafana (NodePort 30300). Add a ServiceAccount 'k6-runner-sa' with a Role allowing create/get/list/watch on batch/jobs and get/list on pods. Add ConfigMaps for Grafana: one datasource pointing to InfluxDB db=k6, one dashboard JSON showing RPS, active VUs, p50/p95/p99 latency and error rate."</p>
+          </div>
+          <div class="warn">The backend pod uses python-kubernetes to create Jobs — it needs a ServiceAccount bound to a Role with batch permissions. Claude Code will generate the full RBAC chain automatically.</div>
+        </div>
+      </div>
+
+      <!-- 07 -->
+      <div class="step">
+        <div class="sn">07</div>
+        <div class="sb">
+          <h3>Build images and deploy</h3>
+          <p class="sd">Ask Claude Code to generate and run the deploy script.</p>
+          <div class="pb">
+            <p>"<strong>Create deploy.sh.</strong> It must: run eval $(minikube docker-env) to point Docker at the cluster daemon, build perfstack-backend:latest and perfstack-frontend:latest, apply all k8s/ manifests with kubectl apply, wait for all Deployments to be Ready via kubectl rollout status, then print the access URLs using minikube ip or kubectl get nodes -o wide."</p>
+          </div>
+          <div class="code">
+            <div class="code-hdr"><div class="code-hdr-l"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">terminal — deploy output</span></div><span class="flang">bash</span></div>
+            <pre><span class="c2">$</span> <span class="c3">chmod +x deploy.sh && ./deploy.sh</span>
+
+<span class="c2">✓</span> Docker env        → Minikube daemon
+<span class="c2">✓</span> Built              perfstack-backend:latest
+<span class="c2">✓</span> Built              perfstack-frontend:latest
+<span class="c2">✓</span> Applied            k8s/ (9 resources)
+<span class="c2">✓</span> Ready              backend · frontend · grafana · influxdb
+
+<span class="c2">PerfStack UI  →</span>  <span class="c4">http://192.168.x.x:30080</span>
+<span class="c2">Grafana       →</span>  <span class="c4">http://192.168.x.x:30300</span>  <span class="c1">(admin / admin)</span>
+<span class="c2">API Docs      →</span>  <span class="c4">http://192.168.x.x:30800/docs</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- 08 -->
+      <div class="step">
+        <div class="sn">08</div>
+        <div class="sb">
+          <h3>Run the first load test</h3>
+          <p class="sd">Open the UI, fill in the parameters, fire the test and watch Grafana update live.</p>
+          <div class="code">
+            <div class="code-hdr"><div class="code-hdr-l"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">example configuration</span></div><span class="flang">config</span></div>
+            <pre><span class="c5">IAM URL       </span>  <span class="c4">https://iam.example.com/oauth2/token</span>
+<span class="c5">Client ID     </span>  <span class="c4">my-client-id</span>
+<span class="c5">Client Secret </span>  <span class="c1">••••••••••••</span>
+<span class="c5">Target URL    </span>  <span class="c4">https://api.example.com/v1/endpoint</span>
+<span class="c5">Payload       </span>  <span class="c7">{ "key": "value", "test": true }</span>
+<span class="c5">VUs           </span>  <span class="c7">50</span>
+<span class="c5">Duration      </span>  <span class="c7">120</span>s</pre>
+          </div>
+          <div class="tip">Open Grafana → "PerfStack Metrics" dashboard. RPS, p95 latency and error rate update in real-time as K6 pushes metrics into InfluxDB during the test run.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ═══════════════════════════════════════════════ DEPLOY GUIDE -->
+  <div class="section" id="deploy">
+    <div class="sec-hdr"><span class="sec-n">05</span><h2>Deploy this guide to Vercel</h2></div>
+
+    <p class="body" style="margin-bottom:14px">PerfStack's hands-on guide is a self-contained static HTML file. Deploy it to Vercel and share a single URL with all attendees — no server needed.</p>
+
+    <div class="code">
+      <div class="code-hdr"><div class="code-hdr-l"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">deploy to Vercel — 3 options</span></div><span class="flang">bash</span></div>
+      <pre><span class="c1"># Option A — Vercel CLI (30 seconds)</span>
+<span class="c2">$</span> <span class="c3">npm i -g vercel</span>
+<span class="c2">$</span> <span class="c3">vercel deploy --name perfstack-lab</span>
+<span class="c2">✓  Production: https://perfstack-lab.vercel.app</span>
+
+<span class="c1"># Option B — drag and drop index.html at vercel.com/new</span>
+
+<span class="c1"># Option C — GitHub auto-deploy</span>
+<span class="c1">#   Push repo to GitHub → import at vercel.com → auto-deploys on every push</span></pre>
+    </div>
+
+    <div class="info" style="margin-top:10px">The <code style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--blue)">vercel.json</code> file with rewrite rules is included alongside this guide. No framework or build step required — Vercel serves it as a static site instantly.</div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ═══════════════════════════════════════════════ TIPS -->
+  <div class="section" id="tips">
+    <div class="sec-hdr"><span class="sec-n">06</span><h2>Claude Code — key capabilities to demo</h2></div>
+
+    <div class="grid">
+      <div class="gc"><span class="gi">📂</span><h3>Full project context</h3><p>Reads every file automatically. Can refactor backend + frontend in one prompt, across all files.</p></div>
+      <div class="gc"><span class="gi">⚙️</span><h3>Command execution</h3><p>Runs kubectl, docker build, pytest directly from chat. Reads output and self-corrects on errors.</p></div>
+      <div class="gc"><span class="gi">🐛</span><h3>In-context debug</h3><p>"The K6 Job has status Failed" → Claude reads kubectl logs and proposes the exact fix.</p></div>
+      <div class="gc"><span class="gi">✅</span><h3>Auto test generation</h3><p>"Add pytest unit tests for auth.py with mocked HTTP" — generates and immediately runs them.</p></div>
+      <div class="gc"><span class="gi">📝</span><h3>Docs on demand</h3><p>"Add docstrings + type hints and generate a Mermaid sequence diagram in the README."</p></div>
+      <div class="gc"><span class="gi">🔄</span><h3>Safe iteration</h3><p>"Add rate limiting to /run-test" — understands existing code and makes the minimal change.</p></div>
+    </div>
+
+    <div class="code" style="margin-top:18px">
+      <div class="code-hdr"><div class="code-hdr-l"><div class="dots"><span class="dr"></span><span class="dy"></span><span class="dg"></span></div><span class="fname">advanced demo prompts</span></div><span class="flang">prompts</span></div>
+      <pre><span class="c1"># Live debug</span>
+<span class="c4">"The K6 Job is stuck in Pending. Run: kubectl describe pod -l app=k6-runner
+ -n perfstack — tell me what is wrong and how to fix it."</span>
+
+<span class="c1"># Architectural refactor</span>
+<span class="c4">"The K6 script is passed as an env var (32KB limit). Refactor k8s_runner.py
+ to store it in a ConfigMap and mount it as a file at /scripts/test.js."</span>
+
+<span class="c1"># New feature</span>
+<span class="c4">"Add GET /api/history that lists all previous K6 Jobs with their final
+ status and p95 latency summary queried from InfluxDB."</span>
+
+<span class="c1"># Security audit</span>
+<span class="c4">"Scan every Python file for any place where client_secret or bearer_token
+ could appear in logs or exceptions. Fix every occurrence."</span>
+
+<span class="c1"># Documentation</span>
+<span class="c4">"Update README.md: add a Mermaid sequence diagram of the full OAuth2 flow
+ from UI submit to K6 Job completion, with InfluxDB write shown."</span></pre>
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div>
+    <div class="fb">PERFSTACK // CLAUDE CODE LAB</div>
+    <div style="margin-top:5px;color:#3a3830">Load Testing Platform · K6 + Grafana + Kubernetes</div>
+  </div>
+  <div class="fr" style="color:#3a3830">
+    Duration ~90 min · Intermediate level<br>
+    Solution Architect Track · Anthropic
+  </div>
+</footer>
+
+<script>
+  const sections = document.querySelectorAll('[id]');
+  const tabs = document.querySelectorAll('.ntab');
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        tabs.forEach(t => t.classList.toggle('active', t.getAttribute('href') === '#' + e.target.id));
+      }
+    });
+  }, { rootMargin: '-35% 0px -60% 0px' });
+  sections.forEach(s => io.observe(s));
+</script>
+</body>
+</html>
