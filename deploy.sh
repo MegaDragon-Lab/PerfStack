@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # PerfStack — Deploy script (macOS / Linux)
+# Zscaler-aware: injects the corporate CA cert into Minikube and Docker builds
 # Usage: chmod +x deploy.sh && ./deploy.sh
 set -euo pipefail
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
+AMBER='\033[0;33m'
 DIM='\033[2m'
 NC='\033[0m'
 
@@ -13,6 +15,7 @@ NS="perfstack"
 
 log()  { echo -e "${BLUE}▶${NC} $1"; }
 ok()   { echo -e "${GREEN}✓${NC} $1"; }
+warn() { echo -e "${AMBER}!${NC} $1"; }
 err()  { echo -e "${RED}✗${NC} $1"; exit 1; }
 dim()  { echo -e "${DIM}  $1${NC}"; }
 
@@ -28,32 +31,79 @@ echo "  Load Testing Platform — Deploy Script"
 echo "  ─────────────────────────────────────"
 echo ""
 
-# ── Preflight checks ─────────────────────────────────────────────────────────
+# ── Zscaler cert config ───────────────────────────────────────────────────────
+# Place your zscaler.pem in the project root, or set ZSCALER_CERT env var
+ZSCALER_CERT="${ZSCALER_CERT:-./zscaler.pem}"
+
+# ── Preflight checks ──────────────────────────────────────────────────────────
 log "Running preflight checks..."
-
-command -v docker    >/dev/null 2>&1 || err "Docker not found. Install Docker Desktop first."
-command -v minikube  >/dev/null 2>&1 || err "Minikube not found. Run: brew install minikube"
-command -v kubectl   >/dev/null 2>&1 || err "kubectl not found. Run: brew install kubectl"
-
-docker info >/dev/null 2>&1 || err "Docker daemon is not running. Start Docker Desktop first."
-minikube status | grep -q "Running" || err "Minikube is not running. Run: minikube start --driver=docker --memory=4096 --cpus=2"
-
+command -v docker   >/dev/null 2>&1 || err "Docker not found. Install Docker Desktop first."
+command -v minikube >/dev/null 2>&1 || err "Minikube not found. Run: brew install minikube"
+command -v kubectl  >/dev/null 2>&1 || err "kubectl not found. Run: brew install kubectl"
+docker info >/dev/null 2>&1          || err "Docker daemon is not running. Start Docker Desktop first."
+minikube status | grep -q "Running"  || err "Minikube is not running. Run: minikube start --driver=docker --memory=4096 --cpus=2"
 ok "Preflight checks passed"
 echo ""
 
-# ── Point Docker at Minikube daemon ─────────────────────────────────────────
+# ── Zscaler cert check ────────────────────────────────────────────────────────
+log "Checking Zscaler certificate..."
+if [[ -f "$ZSCALER_CERT" ]]; then
+  ok "Found Zscaler cert: $ZSCALER_CERT"
+  ZSCALER_FOUND=true
+else
+  warn "zscaler.pem not found at $ZSCALER_CERT"
+  warn "Docker pulls may fail with x509 errors behind Zscaler proxy."
+  warn "To fix: copy your zscaler.pem into the project root and re-run."
+  warn "  cp /path/to/zscaler.pem ./zscaler.pem"
+  ZSCALER_FOUND=false
+fi
+echo ""
+
+# ── Inject Zscaler cert into Minikube ────────────────────────────────────────
+if [[ "$ZSCALER_FOUND" == "true" ]]; then
+  log "Injecting Zscaler cert into Minikube VM..."
+
+  # Copy cert into the minikube node
+  minikube cp "$ZSCALER_CERT" /etc/ssl/certs/zscaler.pem
+
+  # Update the CA bundle inside the minikube node
+  minikube ssh "sudo cp /etc/ssl/certs/zscaler.pem /usr/local/share/ca-certificates/zscaler.crt && sudo update-ca-certificates" >/dev/null 2>&1
+
+  # Restart the Docker daemon inside Minikube so it picks up the new cert
+  minikube ssh "sudo systemctl restart docker" >/dev/null 2>&1 || true
+
+  ok "Zscaler cert injected into Minikube"
+  echo ""
+fi
+
+# ── Point Docker CLI to Minikube daemon ───────────────────────────────────────
 log "Configuring Docker → Minikube daemon..."
 eval "$(minikube docker-env)"
 ok "Docker env configured"
 echo ""
 
-# ── Build images ─────────────────────────────────────────────────────────────
+# ── Build backend ─────────────────────────────────────────────────────────────
 log "Building perfstack-backend:latest..."
-docker build -t perfstack-backend:latest ./backend -q
+if [[ "$ZSCALER_FOUND" == "true" ]]; then
+  docker build \
+    --platform linux/arm64 \
+    --build-arg CERT_FILE=zscaler.pem \
+    -t perfstack-backend:latest ./backend -q
+else
+  docker build --platform linux/arm64 -t perfstack-backend:latest ./backend -q
+fi
 ok "perfstack-backend:latest built"
 
+# ── Build frontend ────────────────────────────────────────────────────────────
 log "Building perfstack-frontend:latest..."
-docker build -t perfstack-frontend:latest ./frontend -q
+if [[ "$ZSCALER_FOUND" == "true" ]]; then
+  docker build \
+    --platform linux/arm64 \
+    --build-arg CERT_FILE=zscaler.pem \
+    -t perfstack-frontend:latest ./frontend -q
+else
+  docker build --platform linux/arm64 -t perfstack-frontend:latest ./frontend -q
+fi
 ok "perfstack-frontend:latest built"
 echo ""
 

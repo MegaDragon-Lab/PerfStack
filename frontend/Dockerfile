@@ -1,13 +1,22 @@
-# Build stage
-FROM node:18-alpine AS builder
-WORKDIR /app
-COPY package.json .
-RUN npm install
-COPY . .
-RUN npm run build
+# ── Build stage ───────────────────────────────────────────────────────────────
+FROM --platform=linux/arm64 node:18-alpine AS builder
 
-# Serve stage
-FROM nginx:alpine
+# Zscaler / corporate CA cert (optional)
+ARG CERT_FILE=""
+WORKDIR /app
+COPY . .
+
+RUN if [ -n "$CERT_FILE" ] && [ -f "$CERT_FILE" ]; then \
+      cp "$CERT_FILE" /usr/local/share/ca-certificates/zscaler.crt && \
+      apk add --no-cache ca-certificates && \
+      update-ca-certificates && \
+      npm config set cafile "$CERT_FILE"; \
+    fi
+
+RUN npm install && npm run build
+
+# ── Serve stage ───────────────────────────────────────────────────────────────
+FROM --platform=linux/arm64 nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 3000
