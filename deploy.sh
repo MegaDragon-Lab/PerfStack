@@ -84,7 +84,7 @@ INGRESS_IMAGES=(
 )
 INFRA_IMAGES=(
   "influxdb:1.8"
-  "grafana/grafana:10.2.0"
+  "grafana/grafana:12.2.0"
   "grafana/k6:latest"
 )
 
@@ -127,22 +127,20 @@ mirrors:
       - "http://k3d-${REG_NAME}:5000"
 EOF
 
-# ── Create k3d cluster ────────────────────────────────────────────────────────
-log "Checking k3d cluster..."
-if k3d cluster list 2>/dev/null | grep -q "^${CLUSTER_NAME}"; then
-  ok "Cluster '${CLUSTER_NAME}' already exists"
-else
-  log "Creating k3d cluster '${CLUSTER_NAME}'..."
-  k3d cluster create ${CLUSTER_NAME} \
-    --port "80:80@loadbalancer" \
-    --port "443:443@loadbalancer" \
-    --k3s-arg "--disable=traefik@server:0" \
-    --agents 2 \
-    --registry-use k3d-${REG_NAME}:${REG_PORT} \
-    --registry-config /tmp/perfstack-registries.yaml \
-    --timeout 120s 2>&1 | grep -E "Cluster|error|Error" || true
-  ok "Cluster '${CLUSTER_NAME}' created"
-fi
+# ── Create k3d cluster (always fresh) ────────────────────────────────────────
+log "Deleting existing cluster (if any)..."
+k3d cluster delete ${CLUSTER_NAME} 2>/dev/null && ok "Old cluster deleted" || true
+
+log "Creating k3d cluster '${CLUSTER_NAME}'..."
+k3d cluster create ${CLUSTER_NAME} \
+  --port "80:80@loadbalancer" \
+  --port "443:443@loadbalancer" \
+  --k3s-arg "--disable=traefik@server:0" \
+  --agents 2 \
+  --registry-use k3d-${REG_NAME}:${REG_PORT} \
+  --registry-config /tmp/perfstack-registries.yaml \
+  --timeout 120s 2>&1 | grep -E "Cluster|error|Error" || true
+ok "Cluster '${CLUSTER_NAME}' created"
 echo ""
 
 # ── Set kubectl context ───────────────────────────────────────────────────────
@@ -170,30 +168,34 @@ echo ""
 # ── Build app images ──────────────────────────────────────────────────────────
 log "Building perfstack-backend:latest..."
 if [[ "$ZSCALER_FOUND" == "true" ]]; then
+  cp "$ZSCALER_CERT" ./backend/zscaler.pem
   docker build --platform linux/arm64 --build-arg CERT_FILE=zscaler.pem \
-    -t perfstack-backend:latest ./backend -q
+    -t perfstack-backend:latest ./backend
+  rm -f ./backend/zscaler.pem
 else
-  docker build --platform linux/arm64 -t perfstack-backend:latest ./backend -q
+  docker build --platform linux/arm64 -t perfstack-backend:latest ./backend
 fi
 ok "perfstack-backend:latest built"
 
 log "Pushing perfstack-backend to local registry..."
 docker tag perfstack-backend:latest localhost:${REG_PORT}/library/perfstack-backend:latest
-docker push localhost:${REG_PORT}/library/perfstack-backend:latest -q >/dev/null 2>&1
+docker push localhost:${REG_PORT}/library/perfstack-backend:latest
 ok "Backend image pushed to registry"
 
 log "Building perfstack-frontend:latest..."
 if [[ "$ZSCALER_FOUND" == "true" ]]; then
+  cp "$ZSCALER_CERT" ./frontend/zscaler.pem
   docker build --platform linux/arm64 --build-arg CERT_FILE=zscaler.pem \
-    -t perfstack-frontend:latest ./frontend -q
+    -t perfstack-frontend:latest ./frontend
+  rm -f ./frontend/zscaler.pem
 else
-  docker build --platform linux/arm64 -t perfstack-frontend:latest ./frontend -q
+  docker build --platform linux/arm64 -t perfstack-frontend:latest ./frontend
 fi
 ok "perfstack-frontend:latest built"
 
 log "Pushing perfstack-frontend to local registry..."
 docker tag perfstack-frontend:latest localhost:${REG_PORT}/library/perfstack-frontend:latest
-docker push localhost:${REG_PORT}/library/perfstack-frontend:latest -q >/dev/null 2>&1
+docker push localhost:${REG_PORT}/library/perfstack-frontend:latest
 ok "Frontend image pushed to registry"
 echo ""
 

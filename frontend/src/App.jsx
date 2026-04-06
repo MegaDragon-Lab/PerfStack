@@ -240,6 +240,296 @@ export default function App() {
   const canRun = !loading && status !== "running" && !jsonError &&
     form.iam_url && form.client_id && form.client_secret && form.target_url;
 
+  const downloadReport = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/test-summary/${jobName}`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      openHtmlReport(data);
+    } catch (e) {
+      alert(`Could not fetch report: ${e.message}`);
+    }
+  };
+
+  const openHtmlReport = (data) => {
+    const m = data.meta || {};
+    const metrics = data.metrics || {};
+    const ms = (v) => v == null ? "—" : `${Number(v).toFixed(2)} ms`;
+    const num = (v, d = 2) => v == null ? "—" : Number(v).toFixed(d);
+
+    const dur     = metrics["http_req_duration"] || {};
+    const reqs    = metrics["http_reqs"] || {};
+    const failed  = metrics["http_req_failed"] || {};
+    const vusMax  = metrics["vus_max"] || {};
+    const blocked = metrics["http_req_blocked"] || {};
+    const connect = metrics["http_req_connecting"] || {};
+    const waiting = metrics["http_req_waiting"] || {};
+    const recv    = metrics["http_req_receiving"] || {};
+    const send    = metrics["http_req_sending"] || {};
+    const tls     = metrics["http_req_tls_handshaking"] || {};
+    const iters   = metrics["iterations"] || {};
+    const iterDur = metrics["iteration_duration"] || {};
+
+    const errorRate  = (failed.rate || 0) * 100;
+    const errorColor = errorRate === 0 ? "#29BEB0" : errorRate < 5 ? "#F5A623" : "#F25B2A";
+
+    // Threshold badges
+    const thresholds = data.thresholds || {};
+    const threshBadges = Object.entries(thresholds).map(([metric, results]) =>
+      Object.entries(results).map(([expr, ok]) =>
+        `<div class="thresh-badge ${ok ? "pass" : "fail"}">
+           <span class="thresh-icon">${ok ? "✓" : "✗"}</span>
+           <span class="thresh-metric">${metric}</span>
+           <span class="thresh-expr">${expr}</span>
+         </div>`
+      ).join("")
+    ).join("") || '<div class="thresh-badge pass"><span class="thresh-icon">—</span><span class="thresh-metric">No thresholds defined</span></div>';
+
+    // Waterfall timing breakdown (avg values)
+    const waterfall = [
+      { label: "DNS Lookup",     val: blocked.avg  || 0, color: "#7D64FF" },
+      { label: "TCP Connect",    val: connect.avg  || 0, color: "#5794F2" },
+      { label: "TLS Handshake",  val: tls.avg      || 0, color: "#73BF69" },
+      { label: "Req Send",       val: send.avg     || 0, color: "#F2CC0C" },
+      { label: "Waiting (TTFB)", val: waiting.avg  || 0, color: "#F25B2A" },
+      { label: "Receiving",      val: recv.avg     || 0, color: "#29BEB0" },
+    ];
+    const totalWf = waterfall.reduce((a, b) => a + b.val, 0) || 1;
+    const wfBars = waterfall.map(w => {
+      const pct = Math.max(1, (w.val / totalWf) * 100).toFixed(1);
+      return `<div class="wf-row">
+        <span class="wf-label">${w.label}</span>
+        <div class="wf-bar-wrap">
+          <div class="wf-bar" style="width:${pct}%;background:${w.color}"></div>
+        </div>
+        <span class="wf-val">${w.val.toFixed(2)} ms</span>
+      </div>`;
+    }).join("");
+
+    // All metrics table
+    const skipInTable = new Set(["http_req_duration","http_reqs","http_req_failed","vus","vus_max",
+      "http_req_blocked","http_req_connecting","http_req_waiting","http_req_receiving",
+      "http_req_sending","http_req_tls_handshaking","iterations","iteration_duration"]);
+    const extraRows = Object.entries(metrics)
+      .filter(([k]) => !skipInTable.has(k))
+      .map(([key, val]) => {
+        const v = val || {};
+        const cells = ["avg","min","med","max","p(90)","p(95)","p(99)","count","rate","value"]
+          .filter(k => v[k] != null)
+          .map(k => `<td>${typeof v[k] === "number" ? v[k].toFixed(3) : v[k]}</td>`)
+          .join("");
+        const headers = ["avg","min","med","max","p(90)","p(95)","p(99)","count","rate","value"]
+          .filter(k => v[k] != null);
+        return `<tr><td class="mt-name">${key}</td>${cells}</tr>`;
+      }).join("");
+
+    const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>k6 Report — ${m.target_url || "PerfStack"}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:#0E0E1A;color:#D8D9E4;font-size:13px}
+  a{color:#7D64FF}
+
+  /* ── Header ── */
+  .hdr{background:#15151F;border-bottom:1px solid #22224A;padding:18px 32px;display:flex;align-items:center;justify-content:space-between}
+  .hdr-logo{display:flex;align-items:center;gap:10px}
+  .hdr-logo svg{flex-shrink:0}
+  .hdr-title{font-size:18px;font-weight:700;color:#fff;letter-spacing:-.01em}
+  .hdr-sub{font-size:11px;color:#666;margin-top:2px}
+  .hdr-btn{background:#7D64FF;color:#fff;border:none;border-radius:6px;padding:8px 20px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.04em}
+  .hdr-btn:hover{background:#9175FF}
+
+  /* ── Layout ── */
+  .page{max-width:1100px;margin:0 auto;padding:28px 32px}
+
+  /* ── Test Info ── */
+  .info-bar{background:#15151F;border:1px solid #22224A;border-radius:8px;padding:16px 20px;display:flex;gap:32px;flex-wrap:wrap;margin-bottom:24px}
+  .info-item label{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:3px}
+  .info-item span{font-size:12px;font-family:'Courier New',monospace;color:#C0C0D0;word-break:break-all}
+
+  /* ── Hero KPIs ── */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+  .kpi{background:#15151F;border:1px solid #22224A;border-radius:8px;padding:18px 20px;position:relative;overflow:hidden}
+  .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--accent,#7D64FF)}
+  .kpi-label{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+  .kpi-value{font-size:26px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums;line-height:1}
+  .kpi-unit{font-size:12px;color:#555;margin-top:4px}
+  .kpi-sub{font-size:11px;color:#444;margin-top:6px;font-family:monospace}
+
+  /* ── Section ── */
+  .section{margin-bottom:24px}
+  .section-title{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#555;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #1A1A2E}
+
+  /* ── Response Time Panel ── */
+  .rt-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px}
+  .rt-card{background:#15151F;border:1px solid #22224A;border-radius:6px;padding:14px 16px;text-align:center}
+  .rt-card .label{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .rt-card .value{font-size:20px;font-weight:700;color:#7D64FF;font-variant-numeric:tabular-nums}
+  .rt-card .unit{font-size:11px;color:#444}
+
+  /* ── Gauge bar ── */
+  .gauge-row{display:flex;align-items:center;gap:12px;background:#15151F;border:1px solid #22224A;border-radius:6px;padding:12px 16px;margin-bottom:8px}
+  .gauge-name{width:80px;font-size:11px;color:#888;flex-shrink:0}
+  .gauge-wrap{flex:1;background:#1E1E30;border-radius:100px;height:8px;overflow:hidden}
+  .gauge-fill{height:8px;border-radius:100px;transition:width .4s}
+  .gauge-val{width:80px;text-align:right;font-size:11px;font-family:monospace;color:#C0C0D0;flex-shrink:0}
+
+  /* ── Waterfall ── */
+  .wf-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .wf-label{width:140px;font-size:11px;color:#888;flex-shrink:0}
+  .wf-bar-wrap{flex:1;background:#1E1E30;border-radius:3px;height:18px;overflow:hidden}
+  .wf-bar{height:18px;border-radius:3px;min-width:2px}
+  .wf-val{width:80px;text-align:right;font-size:11px;font-family:monospace;color:#C0C0D0;flex-shrink:0}
+
+  /* ── Thresholds ── */
+  .thresh-grid{display:flex;flex-wrap:wrap;gap:8px}
+  .thresh-badge{display:flex;align-items:center;gap:8px;background:#15151F;border:1px solid #22224A;border-radius:6px;padding:8px 14px;font-size:11px}
+  .thresh-badge.pass{border-color:#29BEB044}
+  .thresh-badge.fail{border-color:#F25B2A44;background:#1F1510}
+  .thresh-icon{font-size:14px;font-weight:700}
+  .thresh-badge.pass .thresh-icon{color:#29BEB0}
+  .thresh-badge.fail .thresh-icon{color:#F25B2A}
+  .thresh-metric{color:#C0C0D0;font-weight:600}
+  .thresh-expr{color:#555;font-family:monospace}
+
+  /* ── All Metrics Table ── */
+  .mt{width:100%;border-collapse:collapse;font-size:11px}
+  .mt th{text-align:left;padding:6px 10px;color:#444;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #1A1A2E;font-weight:500}
+  .mt td{padding:7px 10px;border-bottom:1px solid #15151F;font-family:monospace;color:#9090A0}
+  .mt td.mt-name{color:#7D64FF;font-weight:600}
+  .mt tr:hover td{background:#15151F}
+
+  /* ── Print ── */
+  @media print{
+    body{background:#fff;color:#000}
+    .hdr{background:#fff;border-color:#ddd}
+    .hdr-title{color:#000}
+    .hdr-btn{display:none}
+    .page{padding:16px}
+    .kpi,.rt-card,.info-bar,.thresh-badge,.gauge-row{background:#f9f9f9;border-color:#ddd}
+    .kpi-value,.rt-card .value{color:#7D64FF}
+    .gauge-wrap,.wf-bar-wrap{background:#eee}
+    .mt td,.mt th{border-color:#eee}
+    .section-title{color:#888;border-color:#ddd}
+  }
+</style></head>
+<body>
+<div class="hdr">
+  <div class="hdr-logo">
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+      <rect width="32" height="32" rx="8" fill="#7D64FF"/>
+      <path d="M8 22L13 12L17 18L20 14L24 22" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div>
+      <div class="hdr-title">k6 Performance Report</div>
+      <div class="hdr-sub">Generated by PerfStack · ${new Date().toLocaleString()}</div>
+    </div>
+  </div>
+  <button class="hdr-btn no-print" onclick="window.print()">⬇ Save as PDF</button>
+</div>
+
+<div class="page">
+
+  <!-- Test Info -->
+  <div class="info-bar">
+    <div class="info-item"><label>Target URL</label><span>${m.target_url || "—"}</span></div>
+    <div class="info-item"><label>Scenario</label><span>${m.scenario || "—"}</span></div>
+    <div class="info-item"><label>Virtual Users</label><span>${m.vus || "—"} VUs</span></div>
+    <div class="info-item"><label>Duration</label><span>${m.duration || "—"} s</span></div>
+    <div class="info-item"><label>Timestamp</label><span>${m.timestamp ? new Date(m.timestamp).toLocaleString() : "—"}</span></div>
+  </div>
+
+  <!-- Hero KPIs -->
+  <div class="kpis">
+    <div class="kpi" style="--accent:#7D64FF">
+      <div class="kpi-label">Total Requests</div>
+      <div class="kpi-value">${reqs.count != null ? Math.round(reqs.count).toLocaleString() : "—"}</div>
+      <div class="kpi-unit">requests</div>
+      <div class="kpi-sub">${num(reqs.rate)} req/s avg</div>
+    </div>
+    <div class="kpi" style="--accent:${errorColor}">
+      <div class="kpi-label">Error Rate</div>
+      <div class="kpi-value" style="color:${errorColor}">${errorRate.toFixed(2)}<span style="font-size:16px">%</span></div>
+      <div class="kpi-unit">of requests failed</div>
+      <div class="kpi-sub">${failed.fails != null ? Math.round(failed.fails) : "—"} failed requests</div>
+    </div>
+    <div class="kpi" style="--accent:#5794F2">
+      <div class="kpi-label">Avg Response Time</div>
+      <div class="kpi-value">${dur.avg != null ? Math.round(dur.avg) : "—"}</div>
+      <div class="kpi-unit">milliseconds</div>
+      <div class="kpi-sub">p95 = ${ms(dur["p(95)"])}</div>
+    </div>
+    <div class="kpi" style="--accent:#29BEB0">
+      <div class="kpi-label">Peak VUs</div>
+      <div class="kpi-value">${vusMax.max != null ? Math.round(vusMax.max) : "—"}</div>
+      <div class="kpi-unit">virtual users</div>
+      <div class="kpi-sub">${iters.count != null ? Math.round(iters.count).toLocaleString() : "—"} iterations</div>
+    </div>
+  </div>
+
+  <!-- Response Time -->
+  <div class="section">
+    <div class="section-title">Response Time Distribution</div>
+    <div class="rt-grid">
+      <div class="rt-card"><div class="label">Min</div><div class="value">${dur.min != null ? Math.round(dur.min) : "—"}</div><div class="unit">ms</div></div>
+      <div class="rt-card"><div class="label">Median (p50)</div><div class="value">${dur.med != null ? Math.round(dur.med) : "—"}</div><div class="unit">ms</div></div>
+      <div class="rt-card"><div class="label">p90</div><div class="value">${dur["p(90)"] != null ? Math.round(dur["p(90)"]) : "—"}</div><div class="unit">ms</div></div>
+      <div class="rt-card"><div class="label">p95</div><div class="value">${dur["p(95)"] != null ? Math.round(dur["p(95)"]) : "—"}</div><div class="unit">ms</div></div>
+      <div class="rt-card"><div class="label">p99</div><div class="value">${dur["p(99)"] != null ? Math.round(dur["p(99)"]) : "—"}</div><div class="unit">ms</div></div>
+      <div class="rt-card"><div class="label">Avg</div><div class="value">${dur.avg != null ? Math.round(dur.avg) : "—"}</div><div class="unit">ms</div></div>
+      <div class="rt-card"><div class="label">Max</div><div class="value" style="color:#F25B2A">${dur.max != null ? Math.round(dur.max) : "—"}</div><div class="unit">ms</div></div>
+      <div class="rt-card"><div class="label">Iter Duration</div><div class="value">${iterDur.avg != null ? Math.round(iterDur.avg) : "—"}</div><div class="unit">ms avg</div></div>
+    </div>
+  </div>
+
+  <!-- Request Rate Gauges -->
+  <div class="section">
+    <div class="section-title">Request Throughput</div>
+    ${[
+      { label: "Total req/s", val: reqs.rate || 0, max: (reqs.rate || 0) * 1.5, color: "#7D64FF" },
+      { label: "Success/s",   val: (reqs.rate || 0) * (1 - (failed.rate || 0)), max: (reqs.rate || 0) * 1.5, color: "#29BEB0" },
+      { label: "Failed/s",    val: (reqs.rate || 0) * (failed.rate || 0), max: Math.max((reqs.rate || 0) * 0.2, 1), color: "#F25B2A" },
+    ].map(g => {
+      const pct = Math.min(100, ((g.val / (g.max || 1)) * 100)).toFixed(1);
+      return `<div class="gauge-row">
+        <span class="gauge-name">${g.label}</span>
+        <div class="gauge-wrap"><div class="gauge-fill" style="width:${pct}%;background:${g.color}"></div></div>
+        <span class="gauge-val">${g.val.toFixed(2)} /s</span>
+      </div>`;
+    }).join("")}
+  </div>
+
+  <!-- Timing Waterfall -->
+  <div class="section">
+    <div class="section-title">Request Timing Breakdown (avg)</div>
+    ${wfBars}
+    <div style="margin-top:6px;font-size:10px;color:#444">Total avg: ${totalWf.toFixed(2)} ms</div>
+  </div>
+
+  <!-- Thresholds -->
+  <div class="section">
+    <div class="section-title">Thresholds</div>
+    <div class="thresh-grid">${threshBadges}</div>
+  </div>
+
+  <!-- All Metrics -->
+  ${extraRows ? `<div class="section">
+    <div class="section-title">Custom Metrics</div>
+    <table class="mt">
+      <tr><th>Metric</th><th>avg</th><th>min</th><th>med</th><th>max</th><th>p(90)</th><th>p(95)</th><th>p(99)</th><th>count/rate</th></tr>
+      ${extraRows}
+    </table>
+  </div>` : ""}
+
+</div>
+</body></html>`;
+
+    const win = window.open("", "_blank");
+    win.document.write(html);
+    win.document.close();
+  };
+
   return (
     <>
       <style>{`
@@ -538,11 +828,18 @@ export default function App() {
             </div>
 
             {(status === "running" || status === "completed") && (
-              <div className="grafana-link">
-                📊 View live metrics in Grafana →{" "}
-                <a href={`http://${window.location.hostname}:30300`} target="_blank" rel="noreferrer">
-                  Grafana Dashboard
-                </a>
+              <div className="grafana-link" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                <span>
+                  📊 View live metrics in Grafana →{" "}
+                  <a href={`${window.location.origin}/grafana/d/k6/k6-load-testing-results?orgId=1&refresh=1s`} target="_blank" rel="noreferrer">
+                    Grafana Dashboard
+                  </a>
+                </span>
+                {status === "completed" && (
+                  <button className="run-btn" style={{ background: "#1f6feb", borderColor: "#388bfd", padding: "6px 16px", fontSize: 11 }} onClick={downloadReport}>
+                    📄 Download Report
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -551,7 +848,7 @@ export default function App() {
         {showGrafana && (
           <div className="grafana-iframe-panel">
             <iframe
-              src={`${window.location.origin}/grafana/d/k6/k6-load-testing-results?orgId=1&refresh=5s&kiosk=tv`}
+              src={`${window.location.origin}/grafana/d/k6/k6-load-testing-results?orgId=1&refresh=1s&kiosk=tv`}
               title="k6 Load Testing Results"
             />
           </div>

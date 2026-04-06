@@ -47,3 +47,35 @@ export default function () {
 
   sleep(0.1);
 }
+
+export function handleSummary(data) {
+  const report = {
+    meta: {
+      target_url: TARGET_URL,
+      vus: {{ vus }},
+      duration: {{ duration }},
+      scenario: '{{ scenario }}',
+      timestamp: new Date().toISOString(),
+    },
+    metrics: {},
+    thresholds: {},
+  };
+
+  for (const [key, metric] of Object.entries(data.metrics)) {
+    report.metrics[key] = metric.values;
+  }
+
+  if (data.root_group && data.root_group.checks) {
+    report.checks = data.root_group.checks;
+  }
+
+  for (const [key, threshold] of Object.entries(data.metrics)) {
+    if (threshold.thresholds) {
+      report.thresholds[key] = threshold.thresholds;
+    }
+  }
+
+  return {
+    stdout: '\n__PERFSTACK_SUMMARY_START__\n' + JSON.stringify(report) + '\n__PERFSTACK_SUMMARY_END__\n',
+  };
+}

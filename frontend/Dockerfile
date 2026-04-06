@@ -5,14 +5,7 @@ ARG CERT_FILE=""
 WORKDIR /app
 COPY . .
 
-# Inject cert + set npm trusted hosts for Zscaler
-RUN if [ -n "$CERT_FILE" ] && [ -f "$CERT_FILE" ]; then \
-      apk add --no-cache ca-certificates && \
-      cp "$CERT_FILE" /usr/local/share/ca-certificates/zscaler.crt && \
-      update-ca-certificates; \
-    fi
-
-# Tell npm to skip strict SSL (equivalent of --trusted-host for pip)
+# npm: skip strict SSL (Zscaler intercepts TLS)
 RUN npm config set strict-ssl false && \
     npm install && \
     npm run build

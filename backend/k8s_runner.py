@@ -116,6 +116,31 @@ async def create_k6_job(
     logger.info("K6 Job '%s' created in namespace '%s'", job_name, NAMESPACE)
 
 
+async def get_job_summary(job_name: str) -> dict:
+    """Read k6 summary JSON from completed job pod logs."""
+    core_v1 = client.CoreV1Api()
+
+    pods = core_v1.list_namespaced_pod(
+        namespace=NAMESPACE,
+        label_selector=f"job-name={job_name}",
+    )
+    if not pods.items:
+        raise ValueError(f"No pod found for job '{job_name}'")
+
+    pod_name = pods.items[0].metadata.name
+    logs = core_v1.read_namespaced_pod_log(name=pod_name, namespace=NAMESPACE)
+
+    start_marker = "__PERFSTACK_SUMMARY_START__"
+    end_marker = "__PERFSTACK_SUMMARY_END__"
+    start = logs.find(start_marker)
+    end = logs.find(end_marker)
+    if start == -1 or end == -1:
+        raise ValueError("Summary not found in pod logs — test may still be running or failed before completion")
+
+    json_str = logs[start + len(start_marker):end].strip()
+    return json.loads(json_str)
+
+
 async def get_job_status(job_name: str) -> tuple[str, str]:
     """Returns (status, message) for a given Job name."""
     batch_v1 = client.BatchV1Api()

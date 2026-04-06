@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from auth import IamAuthClient
-from k8s_runner import create_k6_job, get_job_status
+from k8s_runner import create_k6_job, get_job_status, get_job_summary
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,7 +69,7 @@ async def health():
     return {"status": "ok"}
 
 
-@app.post("/api/run-test", response_model=TestResult, summary="Start a load test")
+@app.post("/run-test", response_model=TestResult, summary="Start a load test")
 async def run_test(config: TestConfig):
     """
     1. Fetches a Bearer token from the IAM endpoint (OAuth2 client credentials)
@@ -112,12 +112,32 @@ async def run_test(config: TestConfig):
     )
 
 
-@app.get("/api/test-status/{job_name}", response_model=TestResult, summary="Get test status")
+@app.get("/test-status/{job_name}", response_model=TestResult, summary="Get test status")
 async def test_status(job_name: str):
     """Poll the status of a running or completed K6 Job."""
     try:
         status, message = await get_job_status(job_name)
         return TestResult(job_name=job_name, status=status, message=message)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/test-summary/{job_name}", summary="Get k6 summary metrics for a completed test")
+async def test_summary(job_name: str):
+    """Returns the structured k6 summary JSON captured from pod logs."""
+    try:
+        status, _ = await get_job_status(job_name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    if status not in ("completed", "failed"):
+        raise HTTPException(status_code=409, detail="Test not yet completed")
+
+    try:
+        summary = await get_job_summary(job_name)
+        return summary
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

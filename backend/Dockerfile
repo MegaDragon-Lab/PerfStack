@@ -12,11 +12,12 @@ RUN if [ -n "$CERT_FILE" ] && [ -f "$CERT_FILE" ]; then \
       update-ca-certificates; \
     fi
 
-# pip: trust PyPI explicitly (Zscaler intercepts TLS to pypi.org)
+# pip: trust PyPI explicitly and use system CA bundle (Zscaler intercepts TLS)
 RUN pip install --no-cache-dir \
       --trusted-host pypi.org \
       --trusted-host pypi.python.org \
       --trusted-host files.pythonhosted.org \
+      --cert /etc/ssl/certs/ca-certificates.crt \
       -r requirements.txt
 
 # Runtime SSL env — so the app itself trusts Zscaler when making HTTP calls
