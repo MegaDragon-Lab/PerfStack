@@ -15,6 +15,14 @@ data:
         uid: P76A45B24F43298D1
         isDefault: true
         editable: false
+        jsonData:
+          version: InfluxQL
+          organization: perfstack
+          defaultBucket: k6
+          tlsSkipVerify: true
+          httpHeaderName1: "Authorization"
+        secureJsonData:
+          httpHeaderValue1: "Token perfstack-token"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -28,6 +36,9 @@ data:
       - name: PerfStack
         folder: PerfStack
         type: file
+        disableDeletion: false
+        updateIntervalSeconds: 5
+        allowUiUpdates: false
         options:
           path: /var/lib/grafana/dashboards
 ---
@@ -67,7 +78,7 @@ data:
           ]
         }
       ],
-      "refresh": "5s",
+      "refresh": "1s",
       "time": {"from":"now-5m","to":"now"},
       "schemaVersion": 38
     }
@@ -82,7 +93,7 @@ data:
       "links": [],
       "panels": [
         {"collapsed": false,"gridPos": {"h": 1,"w": 24,"x": 0,"y": 0},"id": 18,"panels": [],"title": "Dashboard Row","type": "row"},
-        {"datasource": {"type": "influxdb","uid": "P76A45B24F43298D1"},"fieldConfig": {"defaults": {"color": {"mode": "palette-classic"},"custom": {"axisBorderShow": false,"axisCenteredZero": false,"axisColorMode": "text","axisLabel": "","axisPlacement": "auto","barAlignment": 0,"barWidthFactor": 0.6,"drawStyle": "bars","fillOpacity": 100,"gradientMode": "none","hideFrom": {"legend": false,"tooltip": false,"viz": false},"insertNulls": false,"lineInterpolation": "linear","lineWidth": 1,"pointSize": 5,"scaleDistribution": {"type": "linear"},"showPoints": "never","showValues": false,"spanNulls": false,"stacking": {"group": "A","mode": "none"},"thresholdsStyle": {"mode": "off"}},"mappings": [],"thresholds": {"mode": "absolute","steps": [{"color": "green","value": 0},{"color": "red","value": 80}]},"unit": "short"},"overrides": []},"gridPos": {"h": 7,"w": 6,"x": 0,"y": 1},"id": 1,"interval": "1s","options": {"alertThreshold": true,"legend": {"calcs": ["max","min"],"displayMode": "table","placement": "bottom","showLegend": true},"tooltip": {"hideZeros": false,"mode": "multi","sort": "none"}},"pluginVersion": "12.2.0","targets": [{"alias": "Active VUs","dsType": "influxdb","groupBy": [{"params": ["$__interval"],"type": "time"},{"params": ["none"],"type": "fill"}],"measurement": "vus","orderByTime": "ASC","policy": "default","refId": "A","resultFormat": "time_series","select": [[{"params": ["value"],"type": "field"},{"params": [],"type": "mean"}]],"tags": []}],"title": "Virtual Users","type": "timeseries"},
+        {"datasource": {"type": "influxdb","uid": "P76A45B24F43298D1"},"fieldConfig": {"defaults": {"color": {"mode": "palette-classic"},"custom": {"axisBorderShow": false,"axisCenteredZero": false,"axisColorMode": "text","axisLabel": "","axisPlacement": "auto","barAlignment": 0,"barWidthFactor": 0.6,"drawStyle": "bars","fillOpacity": 100,"gradientMode": "none","hideFrom": {"legend": false,"tooltip": false,"viz": false},"insertNulls": false,"lineInterpolation": "linear","lineWidth": 1,"pointSize": 5,"scaleDistribution": {"type": "linear"},"showPoints": "never","showValues": false,"spanNulls": false,"stacking": {"group": "A","mode": "none"},"thresholdsStyle": {"mode": "off"}},"mappings": [],"thresholds": {"mode": "absolute","steps": [{"color": "green","value": 0},{"color": "red","value": 80}]},"unit": "short"},"overrides": []},"gridPos": {"h": 7,"w": 6,"x": 0,"y": 1},"id": 1,"interval": "1s","options": {"alertThreshold": true,"legend": {"calcs": ["max","min"],"displayMode": "table","placement": "bottom","showLegend": true},"tooltip": {"hideZeros": false,"mode": "multi","sort": "none"}},"pluginVersion": "12.2.0","targets": [{"alias": "Active VUs","dsType": "influxdb","groupBy": [{"params": ["$__interval"],"type": "time"},{"params": ["none"],"type": "fill"}],"measurement": "vus","orderByTime": "ASC","policy": "default","rawQuery": true,"query": "SELECT sum(\"value\") FROM \"vus\" WHERE $timeFilter GROUP BY time($__interval) fill(0)","refId": "A","resultFormat": "time_series","select": [[{"params": ["value"],"type": "field"},{"params": [],"type": "sum"}]],"tags": []}],"title": "Virtual Users","type": "timeseries"},
         {"datasource": {"type": "influxdb","uid": "P76A45B24F43298D1"},"fieldConfig": {"defaults": {"color": {"mode": "palette-classic"},"custom": {"axisBorderShow": false,"axisCenteredZero": false,"axisColorMode": "text","axisLabel": "","axisPlacement": "auto","barAlignment": 0,"barWidthFactor": 0.6,"drawStyle": "bars","fillOpacity": 100,"gradientMode": "none","hideFrom": {"legend": false,"tooltip": false,"viz": false},"insertNulls": false,"lineInterpolation": "linear","lineWidth": 1,"pointSize": 5,"scaleDistribution": {"type": "linear"},"showPoints": "never","showValues": false,"spanNulls": false,"stacking": {"group": "A","mode": "none"},"thresholdsStyle": {"mode": "off"}},"mappings": [],"thresholds": {"mode": "absolute","steps": [{"color": "green","value": 0},{"color": "red","value": 80}]},"unit": "short"},"overrides": []},"gridPos": {"h": 7,"w": 6,"x": 6,"y": 1},"id": 17,"interval": "1s","options": {"alertThreshold": true,"legend": {"calcs": ["mean","max"],"displayMode": "table","placement": "bottom","showLegend": true},"tooltip": {"hideZeros": false,"mode": "multi","sort": "none"}},"pluginVersion": "12.2.0","targets": [{"alias": "Requests per Second","datasource": {"type": "influxdb","uid": "P76A45B24F43298D1"},"dsType": "influxdb","groupBy": [{"params": ["$__interval"],"type": "time"},{"params": ["null"],"type": "fill"}],"measurement": "http_2xx","orderByTime": "ASC","policy": "default","query": "SELECT sum(\"value\") FROM \"http_2xx\" WHERE $timeFilter GROUP BY time($__interval) fill(null)","rawQuery": true,"refId": "A","resultFormat": "time_series","select": [[{"params": ["value"],"type": "field"},{"params": [],"type": "sum"}]],"tags": []}],"title": "Requests per Second","type": "timeseries"},
         {"datasource": {"type": "influxdb","uid": "P76A45B24F43298D1"},"fieldConfig": {"defaults": {"color": {"mode": "palette-classic"},"custom": {"axisBorderShow": false,"axisCenteredZero": false,"axisColorMode": "text","axisLabel": "","axisPlacement": "auto","barAlignment": 0,"barWidthFactor": 0.6,"drawStyle": "bars","fillOpacity": 100,"gradientMode": "none","hideFrom": {"legend": false,"tooltip": false,"viz": false},"insertNulls": false,"lineInterpolation": "linear","lineWidth": 1,"pointSize": 5,"scaleDistribution": {"type": "linear"},"showPoints": "never","showValues": false,"spanNulls": false,"stacking": {"group": "A","mode": "normal"},"thresholdsStyle": {"mode": "off"}},"mappings": [],"thresholds": {"mode": "absolute","steps": [{"color": "green","value": 0},{"color": "red","value": 80}]},"unit": "short"},"overrides": [{"matcher": {"id": "byName","options": "Num Errors"},"properties": [{"id": "color","value": {"fixedColor": "#BF1B00","mode": "fixed"}}]}]},"gridPos": {"h": 7,"w": 6,"x": 12,"y": 1},"id": 7,"interval": "1s","options": {"alertThreshold": true,"legend": {"calcs": ["mean","sum"],"displayMode": "table","placement": "bottom","showLegend": true},"tooltip": {"hideZeros": false,"mode": "multi","sort": "none"}},"pluginVersion": "12.2.0","targets": [{"alias": "Num Errors","datasource": {"type": "influxdb","uid": "P76A45B24F43298D1"},"dsType": "influxdb","groupBy": [{"params": ["$__interval"],"type": "time"},{"params": ["none"],"type": "fill"}],"measurement": "http_503","orderByTime": "ASC","policy": "default","refId": "C","resultFormat": "time_series","select": [[{"params": ["value"],"type": "field"},{"params": [],"type": "count"}]],"tags": []}],"title": "Errors Per Second","type": "timeseries"},
         {"datasource": {"type": "influxdb","uid": "P76A45B24F43298D1"},"fieldConfig": {"defaults": {"color": {"mode": "palette-classic"},"custom": {"axisBorderShow": false,"axisCenteredZero": false,"axisColorMode": "text","axisLabel": "","axisPlacement": "auto","barAlignment": 0,"barWidthFactor": 0.6,"drawStyle": "bars","fillOpacity": 100,"gradientMode": "none","hideFrom": {"legend": false,"tooltip": false,"viz": false},"insertNulls": false,"lineInterpolation": "linear","lineWidth": 1,"pointSize": 5,"scaleDistribution": {"type": "linear"},"showPoints": "never","showValues": false,"spanNulls": false,"stacking": {"group": "A","mode": "normal"},"thresholdsStyle": {"mode": "off"}},"mappings": [],"thresholds": {"mode": "absolute","steps": [{"color": "green","value": 0},{"color": "red","value": 80}]},"unit": "none"},"overrides": [{"matcher": {"id": "byName","options": "Num Errors"},"properties": [{"id": "color","value": {"fixedColor": "#BF1B00","mode": "fixed"}}]}]},"gridPos": {"h": 7,"w": 6,"x": 18,"y": 1},"id": 10,"interval": "1s","options": {"alertThreshold": true,"legend": {"calcs": ["mean","sum"],"displayMode": "table","placement": "bottom","showLegend": true},"tooltip": {"hideZeros": false,"mode": "multi","sort": "none"}},"pluginVersion": "12.2.0","targets": [{"alias": "$tag_check","dsType": "influxdb","groupBy": [{"params": ["$__interval"],"type": "time"},{"params": ["check"],"type": "tag"},{"params": ["none"],"type": "fill"}],"measurement": "checks","orderByTime": "ASC","policy": "default","refId": "C","resultFormat": "time_series","select": [[{"params": ["value"],"type": "field"},{"params": [],"type": "sum"}]],"tags": []}],"title": "Checks Per Second","type": "timeseries"},
@@ -98,7 +109,7 @@ data:
         {"collapsed": false,"gridPos": {"h": 1,"w": 24,"x": 0,"y": 19},"id": 20,"panels": [],"title": "Dashboard Row","type": "row"}
       ],
       "preload": false,
-      "refresh": "5s",
+      "refresh": "1s",
       "schemaVersion": 42,
       "tags": [],
       "templating": {"list": [{"current": {"tags": [],"text": "http_req_duration + http_req_blocked","value": ["http_req_duration","http_req_blocked"]},"includeAll": true,"multi": true,"name": "Measurement","options": [{"selected": false,"text": "All","value": "$__all"},{"selected": true,"text": "http_req_duration","value": "http_req_duration"},{"selected": true,"text": "http_req_blocked","value": "http_req_blocked"},{"selected": false,"text": "http_req_connecting","value": "http_req_connecting"},{"selected": false,"text": "http_req_looking_up","value": "http_req_looking_up"},{"selected": false,"text": "http_req_receiving","value": "http_req_receiving"},{"selected": false,"text": "http_req_sending","value": "http_req_sending"},{"selected": false,"text": "http_req_waiting","value": "http_req_waiting"}],"query": "http_req_duration,http_req_blocked,http_req_connecting,http_req_looking_up,http_req_receiving,http_req_sending,http_req_waiting","type": "custom"}]},
@@ -107,5 +118,5 @@ data:
       "timezone": "browser",
       "title": "k6 Load Testing Results",
       "uid": "k6",
-      "version": 1
+      "version": 2
     }

@@ -29,6 +29,12 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "500m"
+          env:
+            - name: DATA_DIR
+              value: "/data"
+          volumeMounts:
+            - name: backend-data
+              mountPath: /data
           livenessProbe:
             httpGet:
               path: /health
@@ -41,6 +47,10 @@ spec:
               port: 8000
             initialDelaySeconds: 5
             periodSeconds: 10
+      volumes:
+        - name: backend-data
+          persistentVolumeClaim:
+            claimName: backend-data
 ---
 apiVersion: v1
 kind: Service

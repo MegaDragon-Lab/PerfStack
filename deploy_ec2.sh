@@ -50,6 +50,12 @@ else
 fi
 echo ""
 
+# ── Persistent data directory (survives cluster delete) ───────────────────────
+PERSIST_DIR="${HOME}/.perfstack/data"
+log "Ensuring persistent data dir: ${PERSIST_DIR}..."
+mkdir -p "${PERSIST_DIR}"
+ok "Persistent data dir ready"
+
 # ── Delete old cluster ───────────────────────────────────────────────────────
 log "Deleting old cluster (if any)..."
 k3d cluster delete ${CLUSTER_NAME} 2>/dev/null || true
@@ -64,6 +70,7 @@ k3d cluster create ${CLUSTER_NAME} \
   --k3s-arg "--disable=traefik@server:0" \
   --agents 2 \
   --registry-use k3d-${REG_NAME}:${REG_PORT} \
+  --volume "${PERSIST_DIR}:/host-data/perfstack@all" \
   --timeout 120s >/dev/null
 ok "Cluster '${CLUSTER_NAME}' created"
 echo ""
@@ -91,6 +98,17 @@ kubectl wait --namespace ingress-nginx \
 ok "Ingress controller ready"
 echo ""
 
+# ── Install k6 Operator ───────────────────────────────────────────────────────
+log "Installing k6 Operator..."
+curl -s "https://raw.githubusercontent.com/grafana/k6-operator/main/bundle.yaml" \
+  | kubectl apply -f - >/dev/null
+log "Waiting for k6 Operator to be ready..."
+kubectl wait --namespace k6-operator-system \
+  --for=condition=available deployment/k6-operator-controller-manager \
+  --timeout=120s || true
+ok "k6 Operator ready"
+echo ""
+
 # ── Build and push backend ───────────────────────────────────────────────────
 log "Building perfstack-backend:latest (amd64)..."
 docker build --platform linux/amd64 -t perfstack-backend:latest ./backend
@@ -107,9 +125,17 @@ docker push localhost:${REG_PORT}/library/perfstack-frontend:latest
 ok "Frontend image built and pushed"
 echo ""
 
+# ── Build and push k6 (custom xk6-output-influxdb) ───────────────────────────
+log "Building perfstack-k6:latest (amd64, xk6-output-influxdb)..."
+docker build --platform linux/amd64 -t perfstack-k6:latest ./k6
+docker tag perfstack-k6:latest localhost:${REG_PORT}/library/perfstack-k6:latest
+docker push localhost:${REG_PORT}/library/perfstack-k6:latest
+ok "k6 image built and pushed"
+echo ""
+
 # ── Apply Kubernetes manifests ───────────────────────────────────────────────
 log "Applying Kubernetes manifests..."
-for f in k8s/namespace.yaml k8s/rbac.yaml k8s/influxdb.yaml k8s/grafana-config.yaml k8s/grafana.yaml k8s/backend.yaml k8s/frontend.yaml k8s/ingress.yaml; do
+for f in k8s/namespace.yaml k8s/rbac.yaml k8s/backend-pvc.yaml k8s/influxdb.yaml k8s/grafana-config.yaml k8s/grafana.yaml k8s/backend.yaml k8s/frontend.yaml k8s/ingress.yaml; do
   kubectl apply -f $f >/dev/null
 done
 ok "All manifests applied"

@@ -83,9 +83,8 @@ INGRESS_IMAGES=(
   "registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.4.1"
 )
 INFRA_IMAGES=(
-  "influxdb:1.8"
+  "influxdb:2.7"
   "grafana/grafana:12.2.0"
-  "grafana/k6:latest"
 )
 
 for img in "${INGRESS_IMAGES[@]}" "${INFRA_IMAGES[@]}"; do
@@ -127,6 +126,12 @@ mirrors:
       - "http://k3d-${REG_NAME}:5000"
 EOF
 
+# ── Persistent data directory (survives cluster delete) ───────────────────────
+PERSIST_DIR="${HOME}/.perfstack/data"
+log "Ensuring persistent data dir: ${PERSIST_DIR}..."
+mkdir -p "${PERSIST_DIR}"
+ok "Persistent data dir ready"
+
 # ── Create k3d cluster (always fresh) ────────────────────────────────────────
 log "Deleting existing cluster (if any)..."
 k3d cluster delete ${CLUSTER_NAME} 2>/dev/null && ok "Old cluster deleted" || true
@@ -139,6 +144,7 @@ k3d cluster create ${CLUSTER_NAME} \
   --agents 2 \
   --registry-use k3d-${REG_NAME}:${REG_PORT} \
   --registry-config /tmp/perfstack-registries.yaml \
+  --volume "${PERSIST_DIR}:/host-data/perfstack@all" \
   --timeout 120s 2>&1 | grep -E "Cluster|error|Error" || true
 ok "Cluster '${CLUSTER_NAME}' created"
 echo ""
@@ -163,6 +169,17 @@ kubectl wait --namespace ingress-nginx \
   --selector=app.kubernetes.io/component=controller \
   --timeout=120s >/dev/null 2>&1
 ok "Ingress controller ready"
+echo ""
+
+# ── Install k6 Operator ───────────────────────────────────────────────────────
+log "Installing k6 Operator..."
+curl "${CURL_OPTS[@]}" "https://raw.githubusercontent.com/grafana/k6-operator/main/bundle.yaml" \
+  | kubectl apply -f - >/dev/null 2>&1
+log "Waiting for k6 Operator to be ready..."
+kubectl wait --namespace k6-operator-system \
+  --for=condition=available deployment/k6-operator-controller-manager \
+  --timeout=120s >/dev/null 2>&1 || true
+ok "k6 Operator ready"
 echo ""
 
 # ── Build app images ──────────────────────────────────────────────────────────
@@ -197,12 +214,29 @@ log "Pushing perfstack-frontend to local registry..."
 docker tag perfstack-frontend:latest localhost:${REG_PORT}/library/perfstack-frontend:latest
 docker push localhost:${REG_PORT}/library/perfstack-frontend:latest
 ok "Frontend image pushed to registry"
+
+log "Building perfstack-k6:latest (custom k6 + xk6-output-influxdb)..."
+if [[ "$ZSCALER_FOUND" == "true" ]]; then
+  cp "$ZSCALER_CERT" ./k6/zscaler.pem
+  docker build --platform linux/arm64 --build-arg CERT_FILE=zscaler.pem \
+    -t perfstack-k6:latest ./k6
+  rm -f ./k6/zscaler.pem
+else
+  docker build --platform linux/arm64 -t perfstack-k6:latest ./k6
+fi
+ok "perfstack-k6:latest built"
+
+log "Pushing perfstack-k6 to local registry..."
+docker tag perfstack-k6:latest localhost:${REG_PORT}/library/perfstack-k6:latest
+docker push localhost:${REG_PORT}/library/perfstack-k6:latest
+ok "k6 image pushed to registry"
 echo ""
 
 # ── Apply Kubernetes manifests ────────────────────────────────────────────────
 log "Applying Kubernetes manifests..."
 kubectl apply -f k8s/namespace.yaml       >/dev/null
 kubectl apply -f k8s/rbac.yaml            >/dev/null
+kubectl apply -f k8s/backend-pvc.yaml     >/dev/null
 kubectl apply -f k8s/influxdb.yaml        >/dev/null
 kubectl apply -f k8s/grafana-config.yaml  >/dev/null
 kubectl apply -f k8s/grafana.yaml         >/dev/null
