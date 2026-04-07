@@ -1,26 +1,27 @@
-FROM --platform=linux/arm64 python:3.11-slim
-
+# ── Multi-arch friendly + optional Zscaler support
 ARG CERT_FILE=""
+FROM python:3.11-slim
 
 WORKDIR /app
-
 COPY . .
 
-# Inject Zscaler cert into system bundle
+# --- Optional Zscaler cert injection ---
 RUN if [ -n "$CERT_FILE" ] && [ -f "$CERT_FILE" ]; then \
+      echo "Injecting Zscaler cert: $CERT_FILE"; \
       cp "$CERT_FILE" /usr/local/share/ca-certificates/zscaler.crt && \
       update-ca-certificates; \
+    else \
+      echo "No Zscaler cert provided, skipping..."; \
     fi
 
-# pip: trust PyPI explicitly and use system CA bundle (Zscaler intercepts TLS)
+# pip install dependencies
 RUN pip install --no-cache-dir \
       --trusted-host pypi.org \
       --trusted-host pypi.python.org \
       --trusted-host files.pythonhosted.org \
-      --cert /etc/ssl/certs/ca-certificates.crt \
       -r requirements.txt
 
-# Runtime SSL env — so the app itself trusts Zscaler when making HTTP calls
+# SSL runtime env
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
