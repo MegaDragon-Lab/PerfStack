@@ -1,8 +1,9 @@
 #!/bin/sh
-# Run k6 with all arguments passed by the k6 Operator, then emit the HTML
-# report to stdout so the backend can read it from pod logs (exec is unavailable
-# on completed/Succeeded pods).
-/usr/bin/k6 "$@"
+# Transparent wrapper for k6. Installed as /usr/bin/k6 (real binary at /usr/bin/k6-real).
+# The k6 Operator calls `k6 run ...` — it gets this wrapper instead.
+# After k6 finishes, emits /tmp/k6-report.html to stdout so the backend can
+# read it from pod logs (kubectl exec is unavailable on Succeeded pods).
+/usr/bin/k6-real "$@"
 EXIT_CODE=$?
 if [ -f /tmp/k6-report.html ]; then
   printf '\n__K6_HTML_REPORT_START__\n'

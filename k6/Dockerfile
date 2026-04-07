@@ -19,7 +19,7 @@ RUN xk6 build --with github.com/grafana/xk6-output-influxdb@latest --output /k6
 FROM alpine:3.19
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
 COPY --from=builder /usr/local/share/ca-certificates /usr/local/share/ca-certificates
-COPY --from=builder /k6 /usr/bin/k6
-COPY k6-wrapper.sh /usr/bin/k6-wrapper.sh
-RUN chmod +x /usr/bin/k6-wrapper.sh
-ENTRYPOINT ["/usr/bin/k6-wrapper.sh"]
+COPY --from=builder /k6 /usr/bin/k6-real
+COPY k6-wrapper.sh /usr/bin/k6
+RUN chmod +x /usr/bin/k6
+ENTRYPOINT ["/usr/bin/k6"]
