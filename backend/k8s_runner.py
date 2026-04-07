@@ -124,10 +124,13 @@ async def create_k6_job(
                 "image": "k3d-perfstack-registry:5000/library/perfstack-k6:latest",
                 "imagePullPolicy": "Always",
                 "env": [
-                    {"name": "K6_INFLUXDB_ADDR",   "value": INFLUXDB_ADDR},
-                    {"name": "K6_INFLUXDB_TOKEN",  "value": INFLUXDB_TOKEN},
+                    {"name": "K6_INFLUXDB_ADDR",         "value": INFLUXDB_ADDR},
+                    {"name": "K6_INFLUXDB_TOKEN",        "value": INFLUXDB_TOKEN},
                     {"name": "K6_INFLUXDB_ORGANIZATION", "value": INFLUXDB_ORG},
-                    {"name": "K6_INFLUXDB_BUCKET", "value": INFLUXDB_BUCKET},
+                    {"name": "K6_INFLUXDB_BUCKET",       "value": INFLUXDB_BUCKET},
+                    {"name": "K6_WEB_DASHBOARD",         "value": "true"},
+                    {"name": "K6_WEB_DASHBOARD_EXPORT",  "value": "/tmp/k6-report.html"},
+                    {"name": "K6_WEB_DASHBOARD_OPEN",    "value": "false"},
                 ],
                 "serviceAccountName": "k6-runner-sa",
                 "resources": {
@@ -296,3 +299,48 @@ async def get_job_pods(job_name: str) -> list[dict]:
 
     result.sort(key=lambda p: p["instance"])
     return result
+
+
+async def get_k6_html_report(job_name: str) -> str:
+    """Read the k6 web-dashboard HTML export from the first completed runner pod."""
+    from kubernetes.stream import stream as k8s_stream
+
+    core_v1 = client.CoreV1Api()
+
+    pods = core_v1.list_namespaced_pod(
+        namespace=NAMESPACE,
+        label_selector=f"k6_cr={job_name},role=runner",
+    )
+    if not pods.items:
+        pods = core_v1.list_namespaced_pod(
+            namespace=NAMESPACE,
+            label_selector=f"k6_cr={job_name}",
+        )
+
+    runner_pods = [
+        p for p in pods.items
+        if "initializer" not in p.metadata.name
+        and "starter" not in p.metadata.name
+    ]
+    if not runner_pods:
+        raise ValueError(f"No runner pods found for TestRun '{job_name}'")
+
+    for pod in runner_pods:
+        try:
+            html = k8s_stream(
+                core_v1.connect_get_namespaced_pod_exec,
+                pod.metadata.name,
+                NAMESPACE,
+                command=["/bin/sh", "-c", "cat /tmp/k6-report.html"],
+                stderr=False, stdin=False, stdout=True, tty=False,
+            )
+            if html and "<html" in html.lower():
+                logger.info("k6 HTML report read from pod '%s'", pod.metadata.name)
+                return html
+        except Exception:
+            continue
+
+    raise ValueError(
+        "k6 HTML report not found — test may not have completed or "
+        "K6_WEB_DASHBOARD_EXPORT was not set"
+    )
