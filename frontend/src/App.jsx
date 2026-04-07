@@ -662,19 +662,8 @@ export default function App() {
     const errorRate  = (failed.rate || 0) * 100;
     const errorColor = errorRate === 0 ? "#29BEB0" : errorRate < 5 ? "#F5A623" : "#F25B2A";
 
-    // Threshold badges
     const thresholds = data.thresholds || {};
-    const threshBadges = Object.entries(thresholds).map(([metric, results]) =>
-      Object.entries(results).map(([expr, ok]) =>
-        `<div class="thresh-badge ${ok ? "pass" : "fail"}">
-           <span class="thresh-icon">${ok ? "✓" : "✗"}</span>
-           <span class="thresh-metric">${metric}</span>
-           <span class="thresh-expr">${expr}</span>
-         </div>`
-      ).join("")
-    ).join("") || '<div class="thresh-badge pass"><span class="thresh-icon">—</span><span class="thresh-metric">No thresholds defined</span></div>';
 
-    // Waterfall timing breakdown (avg values)
     const waterfall = [
       { label: "DNS Lookup",     val: blocked.avg  || 0, color: "#7D64FF" },
       { label: "TCP Connect",    val: connect.avg  || 0, color: "#5794F2" },
@@ -684,16 +673,6 @@ export default function App() {
       { label: "Receiving",      val: recv.avg     || 0, color: "#29BEB0" },
     ];
     const totalWf = waterfall.reduce((a, b) => a + b.val, 0) || 1;
-    const wfBars = waterfall.map(w => {
-      const pct = Math.max(1, (w.val / totalWf) * 100).toFixed(1);
-      return `<div class="wf-row">
-        <span class="wf-label">${w.label}</span>
-        <div class="wf-bar-wrap">
-          <div class="wf-bar" style="width:${pct}%;background:${w.color}"></div>
-        </div>
-        <span class="wf-val">${w.val.toFixed(2)} ms</span>
-      </div>`;
-    }).join("");
 
     // All metrics table
     const skipInTable = new Set(["http_req_duration","http_reqs","http_req_failed","vus","vus_max",
@@ -712,204 +691,327 @@ export default function App() {
         return `<tr><td class="mt-name">${key}</td>${cells}</tr>`;
       }).join("");
 
+    // ── SVG Response Time Histogram ─────────────────────────────────────────
+    const rtPoints = [
+      { label: "min",  pct: 0,   val: dur.min           || 0 },
+      { label: "p50",  pct: 50,  val: dur.med            || 0 },
+      { label: "p90",  pct: 90,  val: dur["p(90)"]       || 0 },
+      { label: "p95",  pct: 95,  val: dur["p(95)"]       || 0 },
+      { label: "p99",  pct: 99,  val: dur["p(99)"] || dur.max || 0 },
+      { label: "max",  pct: 100, val: dur.max            || 0 },
+    ];
+    const maxVal = rtPoints[rtPoints.length - 1].val || 1;
+    const svgW = 520, svgH = 110, padL = 48, padR = 10, padT = 8, padB = 28;
+    const chartW = svgW - padL - padR;
+    const chartH = svgH - padT - padB;
+    const buckets = [
+      { from: rtPoints[0], to: rtPoints[1], freq: 50,  color: "#73BF69" },
+      { from: rtPoints[1], to: rtPoints[2], freq: 40,  color: "#5794F2" },
+      { from: rtPoints[2], to: rtPoints[3], freq: 5,   color: "#F2CC0C" },
+      { from: rtPoints[3], to: rtPoints[4], freq: 4,   color: "#F25B2A" },
+      { from: rtPoints[4], to: rtPoints[5], freq: 1,   color: "#E02F44" },
+    ];
+    const maxFreq = 50;
+    const xOf  = v => padL + (v / maxVal) * chartW;
+    const yOf  = f => padT + chartH - (f / maxFreq) * chartH;
+    const bars  = buckets.map(b => {
+      const x1 = xOf(b.from.val), x2 = xOf(b.to.val);
+      const bw  = Math.max(2, x2 - x1 - 1);
+      const bh  = (b.freq / maxFreq) * chartH;
+      return `<rect x="${x1.toFixed(1)}" y="${(padT + chartH - bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${b.color}" opacity="0.85" rx="2"/>
+              <title>${b.from.label}–${b.to.label}: ${b.freq}% of requests (${Math.round(b.from.val)}–${Math.round(b.to.val)} ms)</title>`;
+    }).join("");
+    const yTicks = [0, 25, 50].map(f => {
+      const y = yOf(f);
+      return `<line x1="${padL}" x2="${svgW - padR}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#1E1E30" stroke-width="1"/>
+              <text x="${(padL - 4).toFixed(1)}" y="${(y + 4).toFixed(1)}" fill="#555" font-size="9" text-anchor="end">${f}%</text>`;
+    }).join("");
+    const xLabels = [rtPoints[0], rtPoints[1], rtPoints[2], rtPoints[4], rtPoints[5]].map(p => {
+      const x = xOf(p.val);
+      return `<text x="${x.toFixed(1)}" y="${(svgH - 4).toFixed(1)}" fill="#555" font-size="9" text-anchor="middle">${Math.round(p.val)}</text>
+              <line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${padT}" y2="${(padT + chartH).toFixed(1)}" stroke="#2A2A40" stroke-width="1" stroke-dasharray="3,3"/>`;
+    }).join("");
+    const svgHistogram = `<svg width="${svgW}" height="${svgH}" style="overflow:visible">
+      <rect x="${padL}" y="${padT}" width="${chartW}" height="${chartH}" fill="#111122" rx="3"/>
+      ${yTicks}${xLabels}${bars}
+      <line x1="${padL}" x2="${padL}" y1="${padT}" y2="${padT + chartH}" stroke="#333" stroke-width="1"/>
+      <line x1="${padL}" x2="${svgW - padR}" y1="${padT + chartH}" y2="${padT + chartH}" stroke="#333" stroke-width="1"/>
+      <text x="${(padL + chartW / 2).toFixed(1)}" y="${svgH}" fill="#444" font-size="9" text-anchor="middle">Response Time (ms)</text>
+    </svg>`;
+
+    // ── Legend ───────────────────────────────────────────────────────────────
+    const legendItems = [
+      { color: "#73BF69", label: `≤ p50  (${Math.round(dur.med || 0)} ms)` },
+      { color: "#5794F2", label: `p50–p90  (${Math.round(dur["p(90)"] || 0)} ms)` },
+      { color: "#F2CC0C", label: `p90–p95  (${Math.round(dur["p(95)"] || 0)} ms)` },
+      { color: "#F25B2A", label: `p95–p99  (${Math.round(dur["p(99)"] || dur.max || 0)} ms)` },
+      { color: "#E02F44", label: `> p99  (max ${Math.round(dur.max || 0)} ms)` },
+    ].map(l => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#888;margin-right:14px">
+      <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${l.color};flex-shrink:0"></span>${l.label}
+    </span>`).join("");
+
     const html = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
-<title>k6 Report — ${m.target_url || "PerfStack"}</title>
+<title>k6 Report — PerfStack</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Segoe UI',system-ui,sans-serif;background:#0E0E1A;color:#D8D9E4;font-size:13px}
-  a{color:#7D64FF}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;background:#111117;color:#D8D9E4;font-size:13px;line-height:1.5}
 
   /* ── Header ── */
-  .hdr{background:#15151F;border-bottom:1px solid #22224A;padding:18px 32px;display:flex;align-items:center;justify-content:space-between}
-  .hdr-logo{display:flex;align-items:center;gap:10px}
-  .hdr-logo svg{flex-shrink:0}
-  .hdr-title{font-size:18px;font-weight:700;color:#fff;letter-spacing:-.01em}
-  .hdr-sub{font-size:11px;color:#666;margin-top:2px}
-  .hdr-btn{background:#7D64FF;color:#fff;border:none;border-radius:6px;padding:8px 20px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.04em}
-  .hdr-btn:hover{background:#9175FF}
+  .hdr{background:#141419;border-bottom:1px solid #1e1e2e;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+  .hdr-left{display:flex;align-items:center;gap:12px}
+  .k6-badge{background:#F25B2A;color:#fff;font-weight:800;font-size:13px;padding:3px 9px;border-radius:5px;letter-spacing:.02em}
+  .hdr-title{font-size:15px;font-weight:700;color:#fff}
+  .hdr-sub{font-size:11px;color:#555;margin-top:1px}
+  .pdf-btn{background:#1e1e2e;color:#aaa;border:1px solid #2e2e4e;border-radius:6px;padding:6px 16px;font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.03em;transition:all .15s}
+  .pdf-btn:hover{background:#2e2e4e;color:#fff}
 
   /* ── Layout ── */
-  .page{max-width:1100px;margin:0 auto;padding:28px 32px}
+  .page{max-width:1120px;margin:0 auto;padding:24px 28px}
 
-  /* ── Test Info ── */
-  .info-bar{background:#15151F;border:1px solid #22224A;border-radius:8px;padding:16px 20px;display:flex;gap:32px;flex-wrap:wrap;margin-bottom:24px}
-  .info-item label{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:3px}
-  .info-item span{font-size:12px;font-family:'Courier New',monospace;color:#C0C0D0;word-break:break-all}
+  /* ── Test meta bar ── */
+  .meta{background:#141419;border:1px solid #1e1e2e;border-radius:8px;padding:14px 20px;display:flex;gap:0;margin-bottom:20px;overflow:hidden}
+  .meta-item{flex:1;padding:0 18px;border-right:1px solid #1e1e2e}
+  .meta-item:first-child{padding-left:0}
+  .meta-item:last-child{border-right:none}
+  .meta-label{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px}
+  .meta-val{font-size:12px;color:#C0C0D0;font-family:'Courier New',monospace;word-break:break-all}
 
-  /* ── Hero KPIs ── */
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
-  .kpi{background:#15151F;border:1px solid #22224A;border-radius:8px;padding:18px 20px;position:relative;overflow:hidden}
-  .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--accent,#7D64FF)}
-  .kpi-label{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
-  .kpi-value{font-size:26px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums;line-height:1}
-  .kpi-unit{font-size:12px;color:#555;margin-top:4px}
-  .kpi-sub{font-size:11px;color:#444;margin-top:6px;font-family:monospace}
+  /* ── Stat cards ── */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+  .stat{background:#141419;border:1px solid #1e1e2e;border-radius:8px;padding:16px 18px;position:relative;overflow:hidden}
+  .stat::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--c,#5794F2)}
+  .stat-label{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+  .stat-val{font-size:28px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums;line-height:1.1}
+  .stat-unit{font-size:11px;color:#444;margin-top:3px}
+  .stat-hint{font-size:10px;color:#444;margin-top:5px;font-family:monospace}
 
-  /* ── Section ── */
-  .section{margin-bottom:24px}
-  .section-title{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#555;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #1A1A2E}
+  /* ── Panels ── */
+  .panels{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
+  .panel{background:#141419;border:1px solid #1e1e2e;border-radius:8px;overflow:hidden}
+  .panel-full{grid-column:1/-1}
+  .panel-hdr{padding:10px 16px;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between}
+  .panel-title{font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.08em}
+  .panel-body{padding:16px}
 
-  /* ── Response Time Panel ── */
-  .rt-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px}
-  .rt-card{background:#15151F;border:1px solid #22224A;border-radius:6px;padding:14px 16px;text-align:center}
-  .rt-card .label{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
-  .rt-card .value{font-size:20px;font-weight:700;color:#7D64FF;font-variant-numeric:tabular-nums}
-  .rt-card .unit{font-size:11px;color:#444}
+  /* ── Response time table ── */
+  .rt-table{width:100%;border-collapse:collapse}
+  .rt-table td{padding:8px 12px;border-bottom:1px solid #1a1a28;font-variant-numeric:tabular-nums}
+  .rt-table tr:last-child td{border-bottom:none}
+  .rt-table td:first-child{color:#666;font-size:11px;text-transform:uppercase;letter-spacing:.06em;width:90px}
+  .rt-table td:nth-child(2){color:#e0e0f0;font-family:monospace;font-size:13px;font-weight:600}
+  .rt-table .bar-cell{width:55%}
+  .rt-bar-wrap{background:#1a1a28;border-radius:3px;height:6px;overflow:hidden;margin-top:1px}
+  .rt-bar{height:6px;border-radius:3px}
 
-  /* ── Gauge bar ── */
-  .gauge-row{display:flex;align-items:center;gap:12px;background:#15151F;border:1px solid #22224A;border-radius:6px;padding:12px 16px;margin-bottom:8px}
-  .gauge-name{width:80px;font-size:11px;color:#888;flex-shrink:0}
-  .gauge-wrap{flex:1;background:#1E1E30;border-radius:100px;height:8px;overflow:hidden}
-  .gauge-fill{height:8px;border-radius:100px;transition:width .4s}
-  .gauge-val{width:80px;text-align:right;font-size:11px;font-family:monospace;color:#C0C0D0;flex-shrink:0}
+  /* ── Throughput rows ── */
+  .tp-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #1a1a28}
+  .tp-row:last-child{border-bottom:none}
+  .tp-name{width:90px;font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.05em;flex-shrink:0}
+  .tp-track{flex:1;background:#1a1a28;border-radius:100px;height:7px;overflow:hidden}
+  .tp-fill{height:7px;border-radius:100px}
+  .tp-val{width:90px;text-align:right;font-size:11px;font-family:monospace;color:#C0C0D0;flex-shrink:0}
 
   /* ── Waterfall ── */
-  .wf-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
-  .wf-label{width:140px;font-size:11px;color:#888;flex-shrink:0}
-  .wf-bar-wrap{flex:1;background:#1E1E30;border-radius:3px;height:18px;overflow:hidden}
-  .wf-bar{height:18px;border-radius:3px;min-width:2px}
+  .wf-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #1a1a28}
+  .wf-row:last-child{border-bottom:none}
+  .wf-label{width:130px;font-size:11px;color:#666;flex-shrink:0}
+  .wf-track{flex:1;background:#1a1a28;border-radius:3px;height:14px;overflow:hidden}
+  .wf-fill{height:14px;border-radius:3px;min-width:3px}
   .wf-val{width:80px;text-align:right;font-size:11px;font-family:monospace;color:#C0C0D0;flex-shrink:0}
 
   /* ── Thresholds ── */
-  .thresh-grid{display:flex;flex-wrap:wrap;gap:8px}
-  .thresh-badge{display:flex;align-items:center;gap:8px;background:#15151F;border:1px solid #22224A;border-radius:6px;padding:8px 14px;font-size:11px}
-  .thresh-badge.pass{border-color:#29BEB044}
-  .thresh-badge.fail{border-color:#F25B2A44;background:#1F1510}
-  .thresh-icon{font-size:14px;font-weight:700}
-  .thresh-badge.pass .thresh-icon{color:#29BEB0}
-  .thresh-badge.fail .thresh-icon{color:#F25B2A}
-  .thresh-metric{color:#C0C0D0;font-weight:600}
-  .thresh-expr{color:#555;font-family:monospace}
+  .thresh-list{display:flex;flex-direction:column;gap:6px}
+  .thresh-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;background:#111117;border:1px solid #1e1e2e;font-size:11px}
+  .thresh-row.pass{border-color:#29BEB030;background:#0d1f1a}
+  .thresh-row.fail{border-color:#F25B2A30;background:#1f110a}
+  .thresh-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+  .thresh-metric{color:#C0C0D0;font-weight:600;min-width:160px}
+  .thresh-expr{color:#555;font-family:monospace;flex:1}
+  .thresh-status{font-size:10px;font-weight:700;letter-spacing:.04em}
+  .thresh-row.pass .thresh-status{color:#29BEB0}
+  .thresh-row.fail .thresh-status{color:#F25B2A}
 
-  /* ── All Metrics Table ── */
+  /* ── Extra metrics table ── */
   .mt{width:100%;border-collapse:collapse;font-size:11px}
-  .mt th{text-align:left;padding:6px 10px;color:#444;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #1A1A2E;font-weight:500}
-  .mt td{padding:7px 10px;border-bottom:1px solid #15151F;font-family:monospace;color:#9090A0}
-  .mt td.mt-name{color:#7D64FF;font-weight:600}
-  .mt tr:hover td{background:#15151F}
+  .mt th{text-align:right;padding:7px 10px;color:#444;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #1e1e2e;font-weight:500;font-size:10px}
+  .mt th:first-child{text-align:left}
+  .mt td{padding:7px 10px;border-bottom:1px solid #141419;font-family:monospace;color:#7070A0;text-align:right}
+  .mt td:first-child{color:#5794F2;font-weight:600;text-align:left;font-family:sans-serif}
+  .mt tr:hover td{background:#141419}
 
-  /* ── Print ── */
+  /* ── Footer ── */
+  .footer{margin-top:28px;padding-top:16px;border-top:1px solid #1e1e2e;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#333}
+
   @media print{
-    body{background:#fff;color:#000}
-    .hdr{background:#fff;border-color:#ddd}
-    .hdr-title{color:#000}
-    .hdr-btn{display:none}
-    .page{padding:16px}
-    .kpi,.rt-card,.info-bar,.thresh-badge,.gauge-row{background:#f9f9f9;border-color:#ddd}
-    .kpi-value,.rt-card .value{color:#7D64FF}
-    .gauge-wrap,.wf-bar-wrap{background:#eee}
+    .hdr{position:static}
+    .pdf-btn{display:none}
+    body{background:#fff;color:#111}
+    .hdr,.panel,.stat,.meta{background:#f9f9f9;border-color:#ddd}
+    .stat-val,.hdr-title{color:#111}
+    .rt-bar-wrap,.tp-track,.wf-track{background:#eee}
     .mt td,.mt th{border-color:#eee}
-    .section-title{color:#888;border-color:#ddd}
   }
 </style></head>
 <body>
+
 <div class="hdr">
-  <div class="hdr-logo">
-    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-      <rect width="32" height="32" rx="8" fill="#7D64FF"/>
-      <path d="M8 22L13 12L17 18L20 14L24 22" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
+  <div class="hdr-left">
+    <span class="k6-badge">k6</span>
     <div>
-      <div class="hdr-title">k6 Performance Report</div>
+      <div class="hdr-title">Performance Report</div>
       <div class="hdr-sub">Generated by PerfStack · ${new Date().toLocaleString()}</div>
     </div>
   </div>
-  <button class="hdr-btn no-print" onclick="window.print()">⬇ Save as PDF</button>
+  <button class="pdf-btn" onclick="window.print()">⬇ Save as PDF</button>
 </div>
 
 <div class="page">
 
-  <!-- Test Info -->
-  <div class="info-bar">
-    <div class="info-item"><label>Target URL</label><span>${m.target_url || "—"}</span></div>
-    <div class="info-item"><label>Scenario</label><span>${m.scenario || "—"}</span></div>
-    <div class="info-item"><label>Virtual Users</label><span>${m.vus || "—"} VUs</span></div>
-    <div class="info-item"><label>Duration</label><span>${m.duration || "—"} s</span></div>
-    <div class="info-item"><label>Timestamp</label><span>${m.timestamp ? new Date(m.timestamp).toLocaleString() : "—"}</span></div>
+  <!-- Meta bar -->
+  <div class="meta">
+    <div class="meta-item"><div class="meta-label">Target URL</div><div class="meta-val">${m.target_url || "—"}</div></div>
+    <div class="meta-item"><div class="meta-label">Scenario</div><div class="meta-val">${m.scenario || "—"}</div></div>
+    <div class="meta-item"><div class="meta-label">Virtual Users</div><div class="meta-val">${m.vus || "—"} VUs</div></div>
+    <div class="meta-item"><div class="meta-label">Duration</div><div class="meta-val">${m.duration || "—"} s</div></div>
+    <div class="meta-item"><div class="meta-label">Timestamp</div><div class="meta-val">${m.timestamp ? new Date(m.timestamp).toLocaleString() : "—"}</div></div>
   </div>
 
-  <!-- Hero KPIs -->
-  <div class="kpis">
-    <div class="kpi" style="--accent:#7D64FF">
-      <div class="kpi-label">Total Requests</div>
-      <div class="kpi-value">${reqs.count != null ? Math.round(reqs.count).toLocaleString() : "—"}</div>
-      <div class="kpi-unit">requests</div>
-      <div class="kpi-sub">${num(reqs.rate)} req/s avg</div>
+  <!-- Stat cards -->
+  <div class="stats">
+    <div class="stat" style="--c:#5794F2">
+      <div class="stat-label">Total Requests</div>
+      <div class="stat-val">${reqs.count != null ? Math.round(reqs.count).toLocaleString() : "—"}</div>
+      <div class="stat-unit">requests</div>
+      <div class="stat-hint">${num(reqs.rate)} req/s avg</div>
     </div>
-    <div class="kpi" style="--accent:${errorColor}">
-      <div class="kpi-label">Error Rate</div>
-      <div class="kpi-value" style="color:${errorColor}">${errorRate.toFixed(2)}<span style="font-size:16px">%</span></div>
-      <div class="kpi-unit">of requests failed</div>
-      <div class="kpi-sub">${failed.fails != null ? Math.round(failed.fails) : "—"} failed requests</div>
+    <div class="stat" style="--c:${errorColor}">
+      <div class="stat-label">Error Rate</div>
+      <div class="stat-val" style="color:${errorColor}">${errorRate.toFixed(2)}<span style="font-size:16px;font-weight:400">%</span></div>
+      <div class="stat-unit">of requests failed</div>
+      <div class="stat-hint">${failed.fails != null ? Math.round(failed.fails) : "—"} failed requests</div>
     </div>
-    <div class="kpi" style="--accent:#5794F2">
-      <div class="kpi-label">Avg Response Time</div>
-      <div class="kpi-value">${dur.avg != null ? Math.round(dur.avg) : "—"}</div>
-      <div class="kpi-unit">milliseconds</div>
-      <div class="kpi-sub">p95 = ${ms(dur["p(95)"])}</div>
+    <div class="stat" style="--c:#F25B2A">
+      <div class="stat-label">p95 Response Time</div>
+      <div class="stat-val">${dur["p(95)"] != null ? Math.round(dur["p(95)"]) : "—"}</div>
+      <div class="stat-unit">milliseconds</div>
+      <div class="stat-hint">avg ${ms(dur.avg)} · p50 ${ms(dur.med)}</div>
     </div>
-    <div class="kpi" style="--accent:#29BEB0">
-      <div class="kpi-label">Peak VUs</div>
-      <div class="kpi-value">${vusMax.max != null ? Math.round(vusMax.max) : "—"}</div>
-      <div class="kpi-unit">virtual users</div>
-      <div class="kpi-sub">${iters.count != null ? Math.round(iters.count).toLocaleString() : "—"} iterations</div>
-    </div>
-  </div>
-
-  <!-- Response Time -->
-  <div class="section">
-    <div class="section-title">Response Time Distribution</div>
-    <div class="rt-grid">
-      <div class="rt-card"><div class="label">Min</div><div class="value">${dur.min != null ? Math.round(dur.min) : "—"}</div><div class="unit">ms</div></div>
-      <div class="rt-card"><div class="label">Median (p50)</div><div class="value">${dur.med != null ? Math.round(dur.med) : "—"}</div><div class="unit">ms</div></div>
-      <div class="rt-card"><div class="label">p90</div><div class="value">${dur["p(90)"] != null ? Math.round(dur["p(90)"]) : "—"}</div><div class="unit">ms</div></div>
-      <div class="rt-card"><div class="label">p95</div><div class="value">${dur["p(95)"] != null ? Math.round(dur["p(95)"]) : "—"}</div><div class="unit">ms</div></div>
-      <div class="rt-card"><div class="label">p99</div><div class="value">${dur["p(99)"] != null ? Math.round(dur["p(99)"]) : "—"}</div><div class="unit">ms</div></div>
-      <div class="rt-card"><div class="label">Avg</div><div class="value">${dur.avg != null ? Math.round(dur.avg) : "—"}</div><div class="unit">ms</div></div>
-      <div class="rt-card"><div class="label">Max</div><div class="value" style="color:#F25B2A">${dur.max != null ? Math.round(dur.max) : "—"}</div><div class="unit">ms</div></div>
-      <div class="rt-card"><div class="label">Iter Duration</div><div class="value">${iterDur.avg != null ? Math.round(iterDur.avg) : "—"}</div><div class="unit">ms avg</div></div>
+    <div class="stat" style="--c:#73BF69">
+      <div class="stat-label">Peak VUs</div>
+      <div class="stat-val">${vusMax.max != null ? Math.round(vusMax.max) : "—"}</div>
+      <div class="stat-unit">virtual users</div>
+      <div class="stat-hint">${iters.count != null ? Math.round(iters.count).toLocaleString() : "—"} iterations</div>
     </div>
   </div>
 
-  <!-- Request Rate Gauges -->
-  <div class="section">
-    <div class="section-title">Request Throughput</div>
-    ${[
-      { label: "Total req/s", val: reqs.rate || 0, max: (reqs.rate || 0) * 1.5, color: "#7D64FF" },
-      { label: "Success/s",   val: (reqs.rate || 0) * (1 - (failed.rate || 0)), max: (reqs.rate || 0) * 1.5, color: "#29BEB0" },
-      { label: "Failed/s",    val: (reqs.rate || 0) * (failed.rate || 0), max: Math.max((reqs.rate || 0) * 0.2, 1), color: "#F25B2A" },
-    ].map(g => {
-      const pct = Math.min(100, ((g.val / (g.max || 1)) * 100)).toFixed(1);
-      return `<div class="gauge-row">
-        <span class="gauge-name">${g.label}</span>
-        <div class="gauge-wrap"><div class="gauge-fill" style="width:${pct}%;background:${g.color}"></div></div>
-        <span class="gauge-val">${g.val.toFixed(2)} /s</span>
-      </div>`;
-    }).join("")}
-  </div>
+  <!-- Panels row 1 -->
+  <div class="panels">
+    <!-- Response time histogram -->
+    <div class="panel panel-full">
+      <div class="panel-hdr">
+        <span class="panel-title">Response Time Distribution</span>
+        <span style="font-size:10px;color:#444">${Math.round(dur.min||0)} ms min · ${Math.round(dur.max||0)} ms max</span>
+      </div>
+      <div class="panel-body">
+        <div style="overflow-x:auto">${svgHistogram}</div>
+        <div style="margin-top:10px;display:flex;flex-wrap:wrap">${legendItems}</div>
+      </div>
+    </div>
 
-  <!-- Timing Waterfall -->
-  <div class="section">
-    <div class="section-title">Request Timing Breakdown (avg)</div>
-    ${wfBars}
-    <div style="margin-top:6px;font-size:10px;color:#444">Total avg: ${totalWf.toFixed(2)} ms</div>
+    <!-- Response time table -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Latency Percentiles</span></div>
+      <div class="panel-body" style="padding:0">
+        ${(() => {
+          const maxDur = dur.max || 1;
+          return [
+            { label: "Min",       val: dur.min,       color: "#73BF69" },
+            { label: "Median",    val: dur.med,        color: "#73BF69" },
+            { label: "Avg",       val: dur.avg,        color: "#5794F2" },
+            { label: "p90",       val: dur["p(90)"],   color: "#F2CC0C" },
+            { label: "p95",       val: dur["p(95)"],   color: "#F25B2A" },
+            { label: "p99",       val: dur["p(99)"],   color: "#E02F44" },
+            { label: "Max",       val: dur.max,        color: "#E02F44" },
+            { label: "Iter Avg",  val: iterDur.avg,    color: "#5794F2" },
+          ].map(r => {
+            const pct = r.val != null ? Math.min(100, (r.val / maxDur) * 100).toFixed(1) : 0;
+            return `<table class="rt-table" style="width:100%"><tr>
+              <td>${r.label}</td>
+              <td>${r.val != null ? Math.round(r.val) + " ms" : "—"}</td>
+              <td class="bar-cell"><div class="rt-bar-wrap"><div class="rt-bar" style="width:${pct}%;background:${r.color}"></div></div></td>
+            </tr></table>`;
+          }).join("");
+        })()}
+      </div>
+    </div>
+
+    <!-- Throughput + Waterfall -->
+    <div class="panel">
+      <div class="panel-hdr"><span class="panel-title">Throughput &amp; Timing Breakdown</span></div>
+      <div class="panel-body">
+        ${[
+          { label: "Total",   val: reqs.rate || 0, max: (reqs.rate || 0) * 1.2 || 1, color: "#5794F2" },
+          { label: "Success", val: (reqs.rate || 0) * (1 - (failed.rate || 0)), max: (reqs.rate || 0) * 1.2 || 1, color: "#73BF69" },
+          { label: "Failed",  val: (reqs.rate || 0) * (failed.rate || 0), max: Math.max((reqs.rate || 0) * 0.2, 0.1), color: "#F25B2A" },
+        ].map(g => {
+          const pct = Math.min(100, (g.val / g.max) * 100).toFixed(1);
+          return `<div class="tp-row">
+            <span class="tp-name">${g.label}</span>
+            <div class="tp-track"><div class="tp-fill" style="width:${pct}%;background:${g.color}"></div></div>
+            <span class="tp-val">${g.val.toFixed(2)} /s</span>
+          </div>`;
+        }).join("")}
+        <div style="margin-top:16px;margin-bottom:8px;font-size:10px;color:#444;text-transform:uppercase;letter-spacing:.08em">Request Timing (avg)</div>
+        ${waterfall.map(w => {
+          const pct = Math.max(1, (w.val / totalWf) * 100).toFixed(1);
+          return `<div class="wf-row">
+            <span class="wf-label">${w.label}</span>
+            <div class="wf-track"><div class="wf-fill" style="width:${pct}%;background:${w.color}"></div></div>
+            <span class="wf-val">${w.val.toFixed(2)} ms</span>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>
   </div>
 
   <!-- Thresholds -->
-  <div class="section">
-    <div class="section-title">Thresholds</div>
-    <div class="thresh-grid">${threshBadges}</div>
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-hdr"><span class="panel-title">Thresholds</span></div>
+    <div class="panel-body">
+      <div class="thresh-list">
+        ${Object.entries(thresholds).length > 0
+          ? Object.entries(thresholds).flatMap(([metric, results]) =>
+              Object.entries(results).map(([expr, ok]) =>
+                `<div class="thresh-row ${ok ? "pass" : "fail"}">
+                  <div class="thresh-dot" style="background:${ok ? "#29BEB0" : "#F25B2A"}"></div>
+                  <span class="thresh-metric">${metric}</span>
+                  <span class="thresh-expr">${expr}</span>
+                  <span class="thresh-status">${ok ? "PASSED" : "FAILED"}</span>
+                </div>`
+              )
+            ).join("")
+          : '<div class="thresh-row"><span style="color:#444">No thresholds defined</span></div>'
+        }
+      </div>
+    </div>
   </div>
 
-  <!-- All Metrics -->
-  ${extraRows ? `<div class="section">
-    <div class="section-title">Custom Metrics</div>
-    <table class="mt">
-      <tr><th>Metric</th><th>avg</th><th>min</th><th>med</th><th>max</th><th>p(90)</th><th>p(95)</th><th>p(99)</th><th>count/rate</th></tr>
-      ${extraRows}
-    </table>
+  <!-- Custom metrics -->
+  ${extraRows ? `<div class="panel" style="margin-bottom:20px">
+    <div class="panel-hdr"><span class="panel-title">Custom Metrics</span></div>
+    <div class="panel-body" style="padding:0">
+      <table class="mt">
+        <tr><th>Metric</th><th>avg</th><th>min</th><th>med</th><th>max</th><th>p(90)</th><th>p(95)</th><th>p(99)</th><th>count/rate</th></tr>
+        ${extraRows}
+      </table>
+    </div>
   </div>` : ""}
+
+  <div class="footer">
+    <span>PerfStack · k6 Performance Report</span>
+    <span>${m.target_url || ""}</span>
+  </div>
 
 </div>
 </body></html>`;
