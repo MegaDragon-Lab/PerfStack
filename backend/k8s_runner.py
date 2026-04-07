@@ -302,9 +302,11 @@ async def get_job_pods(job_name: str) -> list[dict]:
 
 
 async def get_k6_html_report(job_name: str) -> str:
-    """Read the k6 web-dashboard HTML export from the first completed runner pod."""
-    from kubernetes.stream import stream as k8s_stream
+    """Read the k6 web-dashboard HTML from pod logs (emitted by k6-wrapper.sh after test ends).
 
+    kubectl exec is unavailable on Succeeded/terminated pods; pod logs remain
+    accessible and contain the HTML between __K6_HTML_REPORT_START/END__ markers.
+    """
     core_v1 = client.CoreV1Api()
 
     pods = core_v1.list_namespaced_pod(
@@ -325,22 +327,25 @@ async def get_k6_html_report(job_name: str) -> str:
     if not runner_pods:
         raise ValueError(f"No runner pods found for TestRun '{job_name}'")
 
+    start_marker = "__K6_HTML_REPORT_START__"
+    end_marker   = "__K6_HTML_REPORT_END__"
+
     for pod in runner_pods:
         try:
-            html = k8s_stream(
-                core_v1.connect_get_namespaced_pod_exec,
-                pod.metadata.name,
-                NAMESPACE,
-                command=["/bin/sh", "-c", "cat /tmp/k6-report.html"],
-                stderr=False, stdin=False, stdout=True, tty=False,
+            logs = core_v1.read_namespaced_pod_log(
+                name=pod.metadata.name, namespace=NAMESPACE
             )
-            if html and "<html" in html.lower():
-                logger.info("k6 HTML report read from pod '%s'", pod.metadata.name)
-                return html
+            start = logs.find(start_marker)
+            end   = logs.find(end_marker)
+            if start != -1 and end != -1:
+                html = logs[start + len(start_marker):end].strip()
+                if html:
+                    logger.info("k6 HTML report read from pod '%s' logs", pod.metadata.name)
+                    return html
         except Exception:
             continue
 
     raise ValueError(
-        "k6 HTML report not found — test may not have completed or "
-        "K6_WEB_DASHBOARD_EXPORT was not set"
+        "k6 HTML report not found in pod logs — test may not have completed or "
+        "the k6-wrapper.sh image has not been rebuilt yet"
     )
