@@ -397,6 +397,9 @@ def _build_report_html(
     peak_vus      = int(m.get("vus_max", {}).get("value", meta.get("vus", 0)))
     checks_pass   = m.get("checks", {}).get("rate", 0) * 100
     iters         = int(m.get("iterations",  {}).get("count", 0))
+    iter_rate     = m.get("iterations",    {}).get("rate",  0)
+    rx_rate       = m.get("data_received", {}).get("rate",  0)
+    tx_rate       = m.get("data_sent",     {}).get("rate",  0)
 
     dur_key = "http_req_duration"
     if dur_key not in m and "custom_req_duration" in m:
@@ -558,9 +561,9 @@ def _build_report_html(
       <thead><tr><th>Metric</th><th class="num">Total</th><th class="num">Rate</th></tr></thead>
       <tbody>
         <tr><td class="hl">HTTP Requests</td><td class="num">{total_reqs:,}</td><td class="num">{avg_rps:.2f} req/s</td></tr>
-        <tr><td class="hl">Iterations</td><td class="num">{iters:,}</td><td class="num">{m.get("iterations",{{}}).get("rate",0):.2f} iter/s</td></tr>
-        <tr><td class="hl">Data Received</td><td class="num">{_fmt_bytes(data_rx)}</td><td class="num">{_fmt_bytes(m.get("data_received",{{}}).get("rate",0))}/s</td></tr>
-        <tr><td class="hl">Data Sent</td><td class="num">{_fmt_bytes(data_tx)}</td><td class="num">{_fmt_bytes(m.get("data_sent",{{}}).get("rate",0))}/s</td></tr>
+        <tr><td class="hl">Iterations</td><td class="num">{iters:,}</td><td class="num">{iter_rate:.2f} iter/s</td></tr>
+        <tr><td class="hl">Data Received</td><td class="num">{_fmt_bytes(data_rx)}</td><td class="num">{_fmt_bytes(rx_rate)}/s</td></tr>
+        <tr><td class="hl">Data Sent</td><td class="num">{_fmt_bytes(data_tx)}</td><td class="num">{_fmt_bytes(tx_rate)}/s</td></tr>
       </tbody>
     </table>
   </div>
