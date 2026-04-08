@@ -211,7 +211,7 @@ function SettingsMenu({ theme, onSelect, t }) {
               <div style={{ color: t.textDim, fontSize: '0.68rem', marginTop: 3, letterSpacing: '0.04em' }}>Load Testing Platform</div>
             </div>
             <div style={{ background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: '0.63rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0 }}>
-              v2.0.3
+              v2.1.0
             </div>
           </div>
 
@@ -244,7 +244,7 @@ function SettingsMenu({ theme, onSelect, t }) {
           <div style={{ padding: '14px 18px', borderBottom: `1px solid ${t.borderLight}` }}>
             <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', color: t.textDim, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Release Info</div>
             {[
-              { label: 'Version',  value: '2.0.3' },
+              { label: 'Version',  value: '2.1.0' },
               { label: 'Released', value: 'Apr 8, 2026' },
               { label: 'Stack',    value: 'k6 · Grafana · k3d' },
             ].map(({ label, value }) => (
@@ -680,6 +680,18 @@ export default function App() {
   };
 
 
+  const [iamOpen, setIamOpen] = useState(false);
+
+  const formatJson = () => {
+    try { setForm(f => ({ ...f, payload: JSON.stringify(JSON.parse(f.payload), null, 2) })); }
+    catch {}
+  };
+  const loadExamplePayload = () =>
+    setForm(f => ({ ...f, payload: JSON.stringify({ key: "value", userId: "123", amount: 99.99 }, null, 2) }));
+
+  const vuLabel = (v) => v <= 20 ? "Low" : v <= 200 ? "Medium" : "High";
+  const durLabel = (d) => d < 60 ? "Short" : d <= 300 ? "Medium" : "Long";
+
   const [svcSearch, setSvcSearch] = useState("");
   const filteredServices = services.filter(s =>
     s.name.toLowerCase().includes(svcSearch.toLowerCase()) ||
@@ -787,6 +799,11 @@ export default function App() {
           line-height: 1.3;
         }
         .svc-item.active .svc-item-name { color: ${t.text}; font-weight: 600; }
+        .svc-running-dot {
+          width: 7px; height: 7px; border-radius: 50%; background: ${t.success};
+          flex-shrink: 0; margin-right: 6px; margin-left: 4px;
+          animation: blink 1.2s step-end infinite;
+        }
         .svc-item-url {
           font-size: 9px; color: ${t.textDim}; margin-top: 2px;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -845,13 +862,34 @@ export default function App() {
 
         .panel {
           background: ${t.bgPanel}; border: 1px solid ${t.border};
-          border-radius: 6px; padding: 20px 22px;
+          border-radius: 8px; padding: 22px 24px;
         }
         .panel-title {
-          font-size: 9px; letter-spacing: .14em; text-transform: uppercase;
-          color: ${t.textMuted}; margin-bottom: 16px; display: flex; align-items: center; gap: 6px;
+          font-size: 15px; font-weight: 700; letter-spacing: .01em;
+          color: ${t.text}; margin-bottom: 18px; display: flex; align-items: center; gap: 10px;
         }
-        .panel-title::before { content: ''; width: 14px; height: 1px; background: ${t.border}; display: block; }
+        .panel-title.collapsible { cursor: pointer; user-select: none; }
+        .panel-title.collapsible:hover { color: ${t.accent}; }
+        .section-num {
+          font-size: 10px; font-weight: 800; letter-spacing: .06em;
+          background: rgba(199,48,0,.15); color: #c73000; border: 1px solid rgba(199,48,0,.3);
+          padding: 2px 7px; border-radius: 4px; font-family: monospace; flex-shrink: 0;
+        }
+        .collapse-chevron { font-size: 11px; color: ${t.textDim}; margin-left: auto; }
+        .iam-filled-badge {
+          font-size: 10px; font-weight: 600; color: ${t.success};
+          background: ${t.success}18; border: 1px solid ${t.success}44;
+          padding: 2px 8px; border-radius: 20px; letter-spacing: .03em;
+        }
+        .payload-toolbar {
+          display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 6px;
+        }
+        .payload-btn {
+          background: transparent; border: 1px solid ${t.borderLight}; color: ${t.textMuted};
+          padding: 4px 10px; border-radius: 4px; font-size: 10px;
+          font-family: monospace; cursor: pointer; transition: border-color .15s, color .15s;
+        }
+        .payload-btn:hover { border-color: ${t.accent}; color: ${t.accent}; }
 
         .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
         .field:last-child { margin-bottom: 0; }
@@ -873,6 +911,31 @@ export default function App() {
         .slider-label { display: flex; justify-content: space-between; align-items: center; }
         .slider-label span { color: #c73000; font-weight: 700; font-size: 12px; }
 
+        /* ── Summary bar ── */
+        .summary-bar {
+          background: ${t.headerBg}; border-bottom: 1px solid ${t.borderLight};
+          padding: 0 24px; height: 34px;
+          display: flex; align-items: center; gap: 0;
+          font-size: 11px; font-family: monospace;
+          position: sticky; top: 44px; z-index: 90;
+        }
+        .summary-sep { color: ${t.borderLight}; margin: 0 10px; user-select: none; }
+        .summary-val { color: #c73000; font-weight: 700; }
+        .summary-label { color: ${t.textDim}; }
+        .summary-url { color: ${t.accent}; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* ── VU display ── */
+        .vu-display {
+          text-align: center; padding: 10px 0 8px;
+          font-family: monospace;
+        }
+        .vu-display-val { font-size: 26px; font-weight: 800; color: #c73000; }
+        .vu-display-sep { font-size: 18px; color: ${t.borderLight}; margin: 0 10px; }
+        .vu-ctx-label {
+          font-size: 10px; color: ${t.textDim}; text-align: center;
+          margin-top: -4px; margin-bottom: 8px; letter-spacing: .05em;
+        }
+
         .run-panel { border-color: ${t.accent}44; }
         .run-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 
@@ -885,6 +948,36 @@ export default function App() {
         }
         .run-btn:hover:not(:disabled) { filter: brightness(1.1); }
         .run-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .run-btn-primary {
+          background: ${t.runBtn.bg}; border: 1px solid ${t.runBtn.border}; color: ${t.runBtn.text};
+          padding: 13px 32px; border-radius: 6px; width: 100%;
+          font-size: 14px; font-weight: 800; font-family: monospace;
+          cursor: pointer; letter-spacing: .06em;
+          transition: filter .15s; display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .run-btn-primary:hover:not(:disabled) { filter: brightness(1.12); }
+        .run-btn-primary:disabled { opacity: .35; cursor: not-allowed; }
+        .run-secondary-row { display: flex; gap: 10px; margin-top: 10px; }
+        .run-btn-secondary {
+          flex: 1; padding: 9px 0; border-radius: 5px; font-size: 11px;
+          font-weight: 700; font-family: monospace; cursor: pointer; letter-spacing: .04em;
+          transition: filter .15s; border-width: 1px; border-style: solid;
+        }
+        .run-btn-secondary:hover:not(:disabled) { filter: brightness(1.12); }
+        .run-btn-secondary:disabled { opacity: .35; cursor: not-allowed; }
+
+        /* ── Grafana / Report cards ── */
+        .action-card {
+          display: flex; align-items: center; gap: 12px;
+          padding: 14px 18px; border-radius: 7px; border-width: 1px; border-style: solid;
+          cursor: pointer; text-decoration: none; font-family: monospace;
+          transition: filter .15s; width: 100%;
+        }
+        .action-card:hover { filter: brightness(1.1); }
+        .action-card-icon { font-size: 20px; flex-shrink: 0; }
+        .action-card-text { display: flex; flex-direction: column; gap: 2px; flex: 1; text-align: left; }
+        .action-card-title { font-size: 13px; font-weight: 700; }
+        .action-card-sub { font-size: 10px; opacity: .7; }
 
         .status-block { display: flex; flex-direction: column; gap: 4px; }
         .job-tag { font-size: 10px; color: ${t.textDim}; letter-spacing: .04em; }
@@ -1036,6 +1129,31 @@ export default function App() {
           </div>
         </header>
 
+        {/* ── Summary config bar ── */}
+        <div className="summary-bar">
+          <span className="summary-label">CONFIG</span>
+          <span className="summary-sep">·</span>
+          <span style={{ color: t.textMuted }}>{SCENARIOS[scenario].icon} {SCENARIOS[scenario].label}</span>
+          <span className="summary-sep">·</span>
+          <span className="summary-val">{scenario !== "custom" ? form.vus : "—"}</span>
+          <span className="summary-label" style={{ marginLeft: 3 }}>VUs</span>
+          <span className="summary-sep">·</span>
+          <span className="summary-val">{scenario !== "custom" ? form.duration : "—"}</span>
+          <span className="summary-label" style={{ marginLeft: 3 }}>s</span>
+          {form.target_url && (
+            <>
+              <span className="summary-sep">·</span>
+              <span className="summary-url">{form.target_url}</span>
+            </>
+          )}
+          {status !== "idle" && (
+            <>
+              <span className="summary-sep" style={{ marginLeft: "auto" }}>·</span>
+              <StatusBadge status={status} t={t} />
+            </>
+          )}
+        </div>
+
         <div className="workspace">
           {/* ── Sidebar: Web Services ── */}
           <aside className="sidebar" style={{ width: sidebarWidth }}>
@@ -1082,6 +1200,7 @@ export default function App() {
                           className={`svc-item svc-item-indented${activeIdx === realIdx ? " active" : ""}`}
                           onClick={() => loadService(realIdx)}
                         >
+                          {activeIdx === realIdx && status === "running" && <span className="svc-running-dot" />}
                           <div className="svc-item-body">
                             <div className="svc-item-name">{s.name}</div>
                           </div>
@@ -1104,6 +1223,7 @@ export default function App() {
                       className={`svc-item${activeIdx === realIdx ? " active" : ""}`}
                       onClick={() => loadService(realIdx)}
                     >
+                      {activeIdx === realIdx && status === "running" && <span className="svc-running-dot" />}
                       <div className="svc-item-body">
                         <div className="svc-item-name">{s.name}</div>
                       </div>
@@ -1161,37 +1281,52 @@ export default function App() {
           <main>
             {/* IAM */}
             <div className="panel">
-              <div className="panel-title">IAM Configuration</div>
-              <Field label="IAM Token URL" value={form.iam_url} onChange={set("iam_url")}
-                placeholder="https://iam.example.com/oauth2/token" mono />
-              <div className="row2">
-                <Field label="Client ID" value={form.client_id} onChange={set("client_id")}
-                  placeholder="my-client-id" />
-                <Field label="Client Secret" type="password" value={form.client_secret}
-                  onChange={set("client_secret")} placeholder="••••••••" />
+              <div className="panel-title collapsible" onClick={() => setIamOpen(o => !o)}>
+                <span className="section-num">01</span>
+                IAM Configuration
+                {!iamOpen && form.iam_url && <span className="iam-filled-badge">✓ configured</span>}
+                <span className="collapse-chevron">{iamOpen ? '▲' : '▾'}</span>
               </div>
+              {iamOpen && (
+                <>
+                  <Field label="IAM Token URL" value={form.iam_url} onChange={set("iam_url")}
+                    placeholder="https://iam.example.com/oauth2/token" mono />
+                  <div className="row2">
+                    <Field label="Client ID" value={form.client_id} onChange={set("client_id")}
+                      placeholder="my-client-id" />
+                    <Field label="Client Secret" type="password" value={form.client_secret}
+                      onChange={set("client_secret")} placeholder="••••••••" />
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Test config */}
             <div className="panel">
-              <div className="panel-title">Test Configuration</div>
+              <div className="panel-title">
+                <span className="section-num">02</span>
+                Test Configuration
+              </div>
 
               <Field label="Target URL" value={form.target_url} onChange={set("target_url")}
                 placeholder="https://api.example.com/v1/endpoint" mono />
 
               <div className="field">
                 <label>JSON Payload</label>
+                <div className="payload-toolbar">
+                  <button className="payload-btn" onClick={formatJson}>⌥ Format JSON</button>
+                  <button className="payload-btn" onClick={loadExamplePayload}>⊞ Load Example</button>
+                </div>
                 <textarea
                   value={form.payload}
                   onChange={(e) => set("payload")(e.target.value)}
-                  rows={5}
-                  style={{ fontFamily: "monospace" }}
+                  style={{ fontFamily: "monospace", minHeight: 100, maxHeight: 180, overflowY: "auto", resize: "vertical" }}
                 />
                 {jsonError && <span className="json-err">⚠ {jsonError}</span>}
               </div>
 
               <div className="field" style={{ marginBottom: 0, marginTop: 4 }}>
-                <label>Scenario</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, letterSpacing: '.06em', textTransform: 'uppercase' }}>Scenario</label>
                 <div className="scenario-chips">
                   {Object.entries(SCENARIOS).map(([key, s]) => (
                     <button key={key} className={`scenario-chip${scenario === key ? " active" : ""}`}
@@ -1204,22 +1339,33 @@ export default function App() {
 
                 {scenario !== "custom" && (
                   <>
-                    <div className="row2" style={{ marginTop: 10 }}>
+                    <div className="vu-display">
+                      <span className="vu-display-val">{form.vus}</span>
+                      <span style={{ fontSize: 14, color: t.textDim, margin: '0 4px', fontFamily: 'monospace' }}>VUs</span>
+                      <span className="vu-display-sep">|</span>
+                      <span className="vu-display-val">{form.duration}</span>
+                      <span style={{ fontSize: 14, color: t.textDim, margin: '0 4px', fontFamily: 'monospace' }}>s</span>
+                    </div>
+                    <div className="row2" style={{ marginTop: 4 }}>
                       <div className="field" style={{ marginBottom: 0 }}>
-                        <div className="slider-label">
-                          <label>Virtual Users</label>
-                          <span>{form.vus}</span>
-                        </div>
                         <input type="range" min={1} max={2000} value={form.vus}
                           onChange={(e) => set("vus")(+e.target.value)} />
+                        <div className="vu-ctx-label">
+                          <label style={{ color: t.textMuted, fontSize: 10 }}>Virtual Users — </label>
+                          <span style={{ color: form.vus <= 20 ? t.success : form.vus <= 200 ? t.warning : t.danger, fontWeight: 700 }}>
+                            {vuLabel(form.vus)}
+                          </span>
+                        </div>
                       </div>
                       <div className="field" style={{ marginBottom: 0 }}>
-                        <div className="slider-label">
-                          <label>Duration</label>
-                          <span>{form.duration}s</span>
-                        </div>
                         <input type="range" min={10} max={3600} step={10} value={form.duration}
                           onChange={(e) => set("duration")(+e.target.value)} />
+                        <div className="vu-ctx-label">
+                          <label style={{ color: t.textMuted, fontSize: 10 }}>Duration — </label>
+                          <span style={{ color: form.duration < 60 ? t.success : form.duration <= 300 ? t.warning : t.danger, fontWeight: 700 }}>
+                            {durLabel(form.duration)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                     {(() => {
@@ -1340,10 +1486,24 @@ export default function App() {
 
             {/* Run */}
             <div className="panel run-panel">
-              <div className="panel-title">Run</div>
-              <div className="run-row">
+              <div className="panel-title">
+                <span className="section-num">03</span>
+                Execution
+              </div>
+
+              {/* Primary action */}
+              <button
+                className="run-btn-primary"
+                onClick={runTest}
+                disabled={!canRun}
+              >
+                {loading ? "⏳ Launching…" : "▶  Run Load Test"}
+              </button>
+
+              {/* Secondary actions */}
+              <div className="run-secondary-row">
                 <button
-                  className="run-btn"
+                  className="run-btn-secondary"
                   style={{ background: t.dryRunBtn.bg, borderColor: t.dryRunBtn.border, color: t.dryRunBtn.text }}
                   onClick={runPingTest}
                   disabled={pinging || !form.iam_url || !form.client_id || !form.client_secret || !form.target_url || !!jsonError}
@@ -1351,8 +1511,27 @@ export default function App() {
                 >
                   {pinging ? "Testing…" : "🔍 Dry Run"}
                 </button>
+                <button
+                  className="run-btn-secondary"
+                  style={{ background: t.resetBtn.bg, borderColor: t.resetBtn.border, color: t.resetBtn.text }}
+                  onClick={resetInfluxDB}
+                  disabled={resetting}
+                  title="Drop and recreate the k6 InfluxDB database"
+                >
+                  {resetting ? "Resetting…" : "🗑 Reset DB"}
+                </button>
               </div>
 
+              {/* Status */}
+              {status !== "idle" && (
+                <div style={{ marginTop: 16, padding: '12px 16px', borderRadius: 7, background: t.bgInput, border: `1px solid ${t.borderLight}`, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <StatusBadge status={status} t={t} />
+                  {jobName && <span className="job-tag" style={{ fontSize: 11 }}>job: <strong style={{ color: t.text }}>{jobName}</strong></span>}
+                  {message && <p className="msg">{message}</p>}
+                </div>
+              )}
+
+              {/* Dry Run result */}
               {pingResult && (
                 <div style={{
                   marginTop: 14, background: t.bgInput, border: `1px solid ${pingResult.ok && pingResult.status_code < 400 ? t.success + "44" : t.danger + "44"}`,
@@ -1376,18 +1555,17 @@ export default function App() {
                     )}
                     <button onClick={() => setPingResult(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: t.textDim, cursor: "pointer", fontSize: 13 }}>✕</button>
                   </div>
-
                   {pingResult.ok && (
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
                       <div style={{ borderRight: `1px solid ${t.borderLight}` }}>
                         <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Request Payload</div>
-                        <pre style={{ margin: 0, padding: "12px 14px", color: t.accent, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 280, overflowY: "auto" }}>
+                        <pre style={{ margin: 0, padding: "12px 14px", color: t.accent, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
                           {JSON.stringify(pingResult.request_payload, null, 2)}
                         </pre>
                       </div>
                       <div>
                         <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Response Body</div>
-                        <pre style={{ margin: 0, padding: "12px 14px", color: t.codeText, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 280, overflowY: "auto" }}>
+                        <pre style={{ margin: 0, padding: "12px 14px", color: t.codeText, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
                           {typeof pingResult.response_body === "string"
                             ? pingResult.response_body
                             : JSON.stringify(pingResult.response_body, null, 2)}
@@ -1398,38 +1576,34 @@ export default function App() {
                 </div>
               )}
 
-              <div style={{ borderTop: `1px solid ${t.borderLight}`, marginTop: 14, paddingTop: 14 }} />
-              <div className="run-row">
-                <button
-                  className="run-btn"
-                  style={{ background: t.resetBtn.bg, borderColor: t.resetBtn.border, color: t.resetBtn.text }}
-                  onClick={resetInfluxDB}
-                  disabled={resetting}
-                  title="Drop and recreate the k6 InfluxDB database"
-                >
-                  {resetting ? "Resetting…" : "🗑 Reset DB"}
-                </button>
-                <button className="run-btn" onClick={runTest} disabled={!canRun}>
-                  {loading ? "Launching…" : "▶ Run Load Test"}
-                </button>
-                <div className="status-block">
-                  <StatusBadge status={status} t={t} />
-                  {jobName && <span className="job-tag">job: {jobName}</span>}
-                  {message && <p className="msg">{message}</p>}
-                </div>
-              </div>
-
+              {/* Grafana + Report cards */}
               {(status === "running" || status === "completed") && (
-                <div className="grafana-link" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-                  <span>
-                    📊 View live metrics in Grafana →{" "}
-                    <a href={`${window.location.origin}/grafana/d/k6/k6-load-testing-results?orgId=1&refresh=1s&theme=${theme}`} target="_blank" rel="noreferrer">
-                      Grafana Dashboard
-                    </a>
-                  </span>
+                <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <a
+                    href={`${window.location.origin}/grafana/d/k6/k6-load-testing-results?orgId=1&refresh=1s&theme=${theme}`}
+                    target="_blank" rel="noreferrer"
+                    className="action-card"
+                    style={{ background: t.accent + '14', borderColor: t.accent + '55', color: t.text }}
+                  >
+                    <span className="action-card-icon">📊</span>
+                    <div className="action-card-text">
+                      <span className="action-card-title" style={{ color: t.accent }}>View Live Metrics</span>
+                      <span className="action-card-sub">Opens Grafana dashboard in new tab</span>
+                    </div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: t.textDim, flexShrink: 0 }}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </a>
                   {status === "completed" && (
-                    <button className="run-btn" style={{ background: t.reportBtn.bg, borderColor: t.reportBtn.border, color: t.reportBtn.text, padding: "6px 16px", fontSize: 11 }} onClick={downloadReport}>
-                      📄 Download Report
+                    <button
+                      className="action-card"
+                      style={{ background: t.bgInput, borderColor: t.border, color: t.text, cursor: 'pointer' }}
+                      onClick={downloadReport}
+                    >
+                      <span className="action-card-icon">📄</span>
+                      <div className="action-card-text">
+                        <span className="action-card-title">Download Report</span>
+                        <span className="action-card-sub">Full HTML report with charts — job: {jobName}</span>
+                      </div>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: t.textDim, flexShrink: 0 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     </button>
                   )}
                 </div>

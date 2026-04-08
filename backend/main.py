@@ -616,7 +616,7 @@ def _build_report_html(
   <thead><tr><th>Name</th><th class="num">Passes</th><th class="num">Fails</th></tr></thead>
   <tbody>{checks_html}</tbody></table></div>'''}
 
-  <div class="footer">PerfStack v2.0.3 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
+  <div class="footer">PerfStack v2.1.0 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
 </div>
 <script>
 (function() {{
