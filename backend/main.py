@@ -337,13 +337,12 @@ async def get_report(job_name: str):
             logger.warning("Panel render failed (panelId=%d): %s", panel_id, e)
             return None
 
-    # Query InfluxDB for peak req/s (max count in any 1s window)
+    # Query InfluxDB for peak req/s — sum http_2xx per 1s window, take max in Python
     peak_rps = 0.0
     try:
-        q = (f'SELECT max("value") FROM '
-             f'(SELECT count("value") FROM "http_reqs" '
+        q = (f'SELECT sum("value") FROM "http_2xx" '
              f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms '
-             f'GROUP BY time(1s) fill(0))')
+             f'GROUP BY time(1s) fill(0)')
         async with httpx.AsyncClient(timeout=10) as c:
             r = await c.get(
                 "http://influxdb:8086/query",
@@ -352,7 +351,7 @@ async def get_report(job_name: str):
             )
             data = r.json()
             vals = data["results"][0]["series"][0]["values"]
-            peak_rps = max((v[1] for v in vals if v[1] is not None), default=0)
+            peak_rps = float(max((v[1] for v in vals if v[1] is not None), default=0))
     except Exception as e:
         logger.warning("Peak RPS query failed: %s", e)
 
