@@ -34,6 +34,7 @@ app = FastAPI(
 async def _warmup_renderer():
     """Schedule renderer warm-up as a background task so startup completes immediately."""
     import asyncio
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     asyncio.create_task(_do_warmup())
 
 
@@ -80,6 +81,19 @@ class TestConfig(BaseModel):
     duration: int = Field(default=60, ge=10, le=3600, description="Test duration in seconds")
     scenario: str = Field(default="load", description="Test scenario type")
     stages: list[StageConfig] = Field(default=[], description="Custom k6 stages")
+    service_name: str = Field(default="", description="Name of the web service being tested")
+
+class TestHistoryEntry(BaseModel):
+    job_name: str
+    service_name: str = ""
+    scenario: str = "load"
+    vus: int = 10
+    duration: int = 60
+    started_at: str = ""
+    completed_at: str = ""
+    status: str = "running"
+    peak_rps: float = 0.0
+    report_saved: bool = False
 
 
 class TestResult(BaseModel):
@@ -94,6 +108,8 @@ INFLUXDB_URL = "http://influxdb:8086"
 DATA_DIR = pathlib.Path(os.getenv("DATA_DIR", "/data"))
 SCENARIOS_FILE = DATA_DIR / "custom_scenarios.json"
 SERVICES_FILE  = DATA_DIR / "services.json"
+HISTORY_FILE   = DATA_DIR / "history.json"
+REPORTS_DIR    = DATA_DIR / "reports"
 
 
 def _read_file(path: pathlib.Path) -> list:
@@ -110,6 +126,8 @@ def _read_scenarios() -> list:  return _read_file(SCENARIOS_FILE)
 def _write_scenarios(data): _write_file(SCENARIOS_FILE, data)
 def _read_services() -> list:   return _read_file(SERVICES_FILE)
 def _write_services(data):  _write_file(SERVICES_FILE, data)
+def _read_history() -> list:    return _read_file(HISTORY_FILE)
+def _write_history(data):   _write_file(HISTORY_FILE, data)
 
 
 class CustomScenario(BaseModel):
@@ -304,6 +322,20 @@ async def run_test(config: TestConfig):
         logger.error("Failed to create K6 job: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to create K6 job: {e}")
 
+    from datetime import datetime, timezone
+    entry = TestHistoryEntry(
+        job_name=job_name,
+        service_name=config.service_name,
+        scenario=config.scenario,
+        vus=config.vus,
+        duration=config.duration,
+        started_at=datetime.now(timezone.utc).isoformat(),
+        status="running",
+    )
+    history = _read_history()
+    history.insert(0, entry.model_dump())
+    _write_history(history)
+
     logger.info("Test started: job=%s scenario=%s vus=%d duration=%ds", job_name, config.scenario, config.vus, config.duration)
     return TestResult(
         job_name=job_name,
@@ -315,21 +347,127 @@ async def run_test(config: TestConfig):
 @app.get("/test-status/{job_name}", response_model=TestResult, summary="Get test status")
 async def test_status(job_name: str):
     """Poll the status of a running or completed K6 Job."""
+    import asyncio
     try:
         status, message = await get_job_status(job_name)
-        return TestResult(job_name=job_name, status=status, message=message)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    # Update history entry when job finishes
+    if status in ("completed", "failed"):
+        from datetime import datetime, timezone
+        history = _read_history()
+        updated = False
+        for h in history:
+            if h.get("job_name") == job_name and h.get("status") == "running":
+                h["status"] = status
+                h["completed_at"] = datetime.now(timezone.utc).isoformat()
+                updated = True
+                break
+        if updated:
+            _write_history(history)
+        # Trigger background report save once (only if not already saved)
+        if status == "completed":
+            saved_path = REPORTS_DIR / f"{job_name}.html"
+            if not saved_path.exists():
+                asyncio.create_task(_save_report_to_pvc(job_name))
 
-@app.get("/report/{job_name}", summary="Generate Grafana-powered HTML performance report")
+    return TestResult(job_name=job_name, status=status, message=message)
+
+
+async def _fetch_panel_b64(job_name: str, panel_id: int, from_ms: int, to_ms: int) -> str:
+    """Fetch a single Grafana panel as base64 PNG, with retries. Returns empty string on failure."""
+    import asyncio, base64, httpx
+    PANEL_SIZES = {1: (600, 280), 17: (600, 280), 7: (600, 280), 5: (1400, 420), 8: (1400, 420)}
+    w, h = PANEL_SIZES.get(panel_id, (600, 280))
+    url = (
+        f"http://grafana:3000/grafana/render/d-solo/k6/k6-load-testing-results"
+        f"?orgId=1&panelId={panel_id}&from={from_ms}&to={to_ms}"
+        f"&width={w}&height={h}&theme=dark&var-Measurement=http_req_duration"
+    )
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=90) as c:
+                r = await c.get(url, headers={"Authorization": "Basic YWRtaW46YWRtaW4="})
+                r.raise_for_status()
+                return base64.b64encode(r.content).decode()
+        except Exception as e:
+            if attempt < 2:
+                await asyncio.sleep(3 * (attempt + 1))
+    return ""
+
+
+async def _save_report_to_pvc(job_name: str) -> None:
+    """Background task: render all panels inline and write self-contained HTML to PVC."""
+    import asyncio, time as _t, httpx
+    await asyncio.sleep(5)  # let InfluxDB settle after job completes
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    saved_path = REPORTS_DIR / f"{job_name}.html"
+    if saved_path.exists():
+        return  # already saved by a concurrent call
+
+    try:
+        summary = await get_job_summary(job_name)
+    except Exception as e:
+        logger.warning("Report save skipped — summary unavailable: %s", e)
+        return
+
+    try:
+        from_ms, to_ms = await get_job_time_range(job_name)
+    except Exception:
+        to_ms   = int(_t.time() * 1000)
+        from_ms = to_ms - 30 * 60 * 1000
+
+    peak_rps = 0.0
+    try:
+        q = (f'SELECT sum("value") FROM "http_2xx" '
+             f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms '
+             f'GROUP BY time(1s) fill(0)')
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(
+                "http://influxdb:8086/query",
+                params={"db": "k6", "q": q, "epoch": "ms"},
+                headers={"Authorization": "Token perfstack-token"},
+            )
+            vals = r.json()["results"][0]["series"][0]["values"]
+            peak_rps = float(max((v[1] for v in vals if v[1] is not None), default=0))
+    except Exception as e:
+        logger.warning("Peak RPS query failed during PVC save: %s", e)
+
+    # Fetch all panels (sequentially to avoid saturating the renderer)
+    panel_ids = [1, 17, 7, 5, 8]
+    panels: dict[int, str] = {}
+    for pid in panel_ids:
+        panels[pid] = await _fetch_panel_b64(job_name, pid, from_ms, to_ms)
+        await asyncio.sleep(0.5)
+
+    html = _build_report_html(job_name, summary, from_ms, to_ms, peak_rps, panels=panels)
+    saved_path.write_text(html)
+    logger.info("Report saved to PVC: %s", saved_path)
+
+    # Update history entry
+    history = _read_history()
+    for h in history:
+        if h.get("job_name") == job_name:
+            h["report_saved"] = True
+            h["peak_rps"] = peak_rps
+            break
+    _write_history(history)
+
+
+@app.get("/report/{job_name}", summary="Serve HTML performance report (from PVC if saved, else live)")
 async def get_report(job_name: str):
-    """Renders Grafana dashboard panels via grafana-image-renderer and assembles a self-contained HTML report."""
+    """Serves the saved self-contained report from PVC, or generates a live version if not yet saved."""
     import time as _t
     import httpx
     from fastapi.responses import HTMLResponse
+
+    # Serve from PVC if already saved
+    saved_path = REPORTS_DIR / f"{job_name}.html"
+    if saved_path.exists():
+        return HTMLResponse(content=saved_path.read_text())
 
     try:
         summary = await get_job_summary(job_name)
@@ -408,9 +546,12 @@ def _fmt_bytes(b: float) -> str:
         return f"{b/1024:.1f} KB"
     return f"{b:.0f} B"
 
-def _chart_block(title: str, panel_id: int, wide: bool = False) -> str:
+def _chart_block(title: str, panel_id: int, wide: bool = False, b64: str = "") -> str:
     cls = "chart-card chart-wide" if wide else "chart-card"
-    inner = '<div class="chart-placeholder"><div class="spinner"></div><span>Loading chart\u2026</span></div>'
+    if b64:
+        inner = f'<img src="data:image/png;base64,{b64}" alt="{title}" style="width:100%;display:block"/>'
+    else:
+        inner = '<div class="chart-placeholder"><div class="spinner"></div><span>Loading chart\u2026</span></div>'
     return f'<div id="chart-p{panel_id}" class="{cls}"><div class="chart-title">{title}</div>{inner}</div>'
 
 def _build_report_html(
@@ -419,8 +560,50 @@ def _build_report_html(
     from_ms: int,
     to_ms: int,
     peak_rps: float,
+    panels: dict | None = None,  # panel_id → base64 str; if provided, embed inline (no JS)
 ) -> str:
     from datetime import datetime, timezone
+
+    # Build JS block outside the main f-string to avoid nested f-string syntax error
+    if panels:
+        lazy_js = "<!-- static report — panels embedded inline -->"
+    else:
+        lazy_js = (
+            "<script>\n(function() {{\n"
+            "  var JOB  = '" + job_name + "';\n"
+            "  var FROM = " + str(from_ms) + ";\n"
+            "  var TO   = " + str(to_ms) + ";\n"
+            "  var panels = [\n"
+            "    {divId:'chart-p1',  panelId:1},\n"
+            "    {divId:'chart-p17', panelId:17},\n"
+            "    {divId:'chart-p7',  panelId:7},\n"
+            "    {divId:'chart-p5',  panelId:5},\n"
+            "    {divId:'chart-p8',  panelId:8}\n"
+            "  ];\n"
+            "  panels.forEach(function(p, i) {\n"
+            "    setTimeout(function() {\n"
+            "      var url = '/api/report/'+JOB+'/panel/'+p.panelId+'?from_ms='+FROM+'&to_ms='+TO;\n"
+            "      var card = document.getElementById(p.divId);\n"
+            "      if (!card) return;\n"
+            "      fetch(url)\n"
+            "        .then(function(r) { return r.json(); })\n"
+            "        .then(function(data) {\n"
+            "          var ph = card.querySelector('.chart-placeholder');\n"
+            "          if (!ph) return;\n"
+            "          if (data.img) {\n"
+            "            ph.outerHTML = '<img src=\"data:image/png;base64,'+data.img+'\" alt=\"chart\" style=\"width:100%;display:block\"/>';\n"
+            "          } else {\n"
+            "            ph.outerHTML = '<div class=\"chart-na\">Chart unavailable \u2014 try refreshing</div>';\n"
+            "          }\n"
+            "        })\n"
+            "        .catch(function() {\n"
+            "          var ph = card.querySelector('.chart-placeholder');\n"
+            "          if (ph) ph.outerHTML = '<div class=\"chart-na\">Render failed</div>';\n"
+            "        });\n"
+            "    }, i * 500);\n"
+            "  });\n"
+            "}})();\n</script>"
+        )
 
     m      = summary.get("metrics", {})
     meta   = summary.get("meta",    {})
@@ -564,17 +747,17 @@ def _build_report_html(
 
   <!-- CHARTS ROW 1: VUs / RPS / Errors -->
   <div class="charts-row" style="margin-bottom:12px">
-    {_chart_block("Virtual Users", 1)}
-    {_chart_block("Requests per Second", 17)}
-    {_chart_block("Errors per Second", 7)}
+    {_chart_block("Virtual Users", 1, b64=(panels or {{}}).get(1,""))}
+    {_chart_block("Requests per Second", 17, b64=(panels or {{}}).get(17,""))}
+    {_chart_block("Errors per Second", 7, b64=(panels or {{}}).get(7,""))}
   </div>
 
   <!-- CHARTS FULL WIDTH -->
   <div class="charts-row" style="margin-bottom:12px">
-    {_chart_block("Response Time — p90 / p95 / max / min  (http_req_duration)", 5, wide=True)}
+    {_chart_block("Response Time — p90 / p95 / max / min  (http_req_duration)", 5, wide=True, b64=(panels or {{}}).get(5,""))}
   </div>
   <div class="charts-row" style="margin-bottom:24px">
-    {_chart_block("Response Time Heatmap", 8, wide=True)}
+    {_chart_block("Response Time Heatmap", 8, wide=True, b64=(panels or {{}}).get(8,""))}
   </div>
 
   <!-- RESPONSE TIME TABLE -->
@@ -616,46 +799,29 @@ def _build_report_html(
   <thead><tr><th>Name</th><th class="num">Passes</th><th class="num">Fails</th></tr></thead>
   <tbody>{checks_html}</tbody></table></div>'''}
 
-  <div class="footer">PerfStack v2.1.0 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
+  <div class="footer">PerfStack v2.2.0 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
 </div>
-<script>
-(function() {{
-  var JOB  = '{job_name}';
-  var FROM = {from_ms};
-  var TO   = {to_ms};
-  var panels = [
-    {{divId:'chart-p1',  panelId:1}},
-    {{divId:'chart-p17', panelId:17}},
-    {{divId:'chart-p7',  panelId:7}},
-    {{divId:'chart-p5',  panelId:5}},
-    {{divId:'chart-p8',  panelId:8}}
-  ];
-  panels.forEach(function(p, i) {{
-    setTimeout(function() {{
-      var url = '/api/report/'+JOB+'/panel/'+p.panelId+'?from_ms='+FROM+'&to_ms='+TO;
-      var card = document.getElementById(p.divId);
-      if (!card) return;
-      fetch(url)
-        .then(function(r) {{ return r.json(); }})
-        .then(function(data) {{
-          var ph = card.querySelector('.chart-placeholder');
-          if (!ph) return;
-          if (data.img) {{
-            ph.outerHTML = '<img src="data:image/png;base64,'+data.img+'" alt="chart" style="width:100%;display:block"/>';
-          }} else {{
-            ph.outerHTML = '<div class="chart-na">Chart unavailable \u2014 try refreshing</div>';
-          }}
-        }})
-        .catch(function() {{
-          var ph = card.querySelector('.chart-placeholder');
-          if (ph) ph.outerHTML = '<div class="chart-na">Render failed</div>';
-        }});
-    }}, i * 500);
-  }});
-}})();
-</script>
+{lazy_js}
 </body>
 </html>"""
+
+
+@app.get("/history", summary="List all test run history entries (newest first)")
+async def list_history():
+    return _read_history()
+
+
+@app.delete("/history/{job_name}", summary="Delete a history entry and its saved report")
+async def delete_history(job_name: str):
+    history = _read_history()
+    updated = [h for h in history if h.get("job_name") != job_name]
+    if len(updated) == len(history):
+        raise HTTPException(status_code=404, detail=f"History entry '{job_name}' not found")
+    _write_history(updated)
+    report_path = REPORTS_DIR / f"{job_name}.html"
+    if report_path.exists():
+        report_path.unlink()
+    return {"status": "deleted", "job_name": job_name}
 
 
 @app.get("/job-pods/{job_name}", summary="Get real-time status of k6 runner pods")

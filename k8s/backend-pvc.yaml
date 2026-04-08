@@ -4,7 +4,7 @@ metadata:
   name: backend-data-pv
 spec:
   capacity:
-    storage: 100Mi
+    storage: 1Gi
   accessModes:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
@@ -24,4 +24,4 @@ spec:
   volumeName: backend-data-pv
   resources:
     requests:
-      storage: 100Mi
+      storage: 1Gi

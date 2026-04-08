@@ -211,7 +211,7 @@ function SettingsMenu({ theme, onSelect, t }) {
               <div style={{ color: t.textDim, fontSize: '0.68rem', marginTop: 3, letterSpacing: '0.04em' }}>Load Testing Platform</div>
             </div>
             <div style={{ background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: '0.63rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0 }}>
-              v2.1.0
+              v2.2.0
             </div>
           </div>
 
@@ -244,7 +244,7 @@ function SettingsMenu({ theme, onSelect, t }) {
           <div style={{ padding: '14px 18px', borderBottom: `1px solid ${t.borderLight}` }}>
             <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', color: t.textDim, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Release Info</div>
             {[
-              { label: 'Version',  value: '2.1.0' },
+              { label: 'Version',  value: '2.2.0' },
               { label: 'Released', value: 'Apr 8, 2026' },
               { label: 'Stack',    value: 'k6 · Grafana · k3d' },
             ].map(({ label, value }) => (
@@ -560,6 +560,7 @@ export default function App() {
           ...form,
           payload: JSON.parse(form.payload),
           scenario,
+          service_name: activeIdx !== null ? (services[activeIdx]?.name || "") : "",
           stages: scenario === "custom"
             ? customStages.map(s => ({ duration: stageDurToStr(s), target: s.target }))
             : computeStages(scenario, form.vus, form.duration),
@@ -598,6 +599,9 @@ export default function App() {
           clearInterval(pollingRef.current);
           setTimeout(() => clearInterval(podPollingRef.current), 4000);
           localStorage.removeItem("ps_job");
+          // Refresh history list after a short delay (backend saves entry asynchronously)
+          setTimeout(() => refreshHistory(), 2000);
+          setTimeout(() => refreshHistory(), 12000); // second refresh after report is saved
         }
       } catch { /* ignore transient errors */ }
     }, 3000);
@@ -691,6 +695,20 @@ export default function App() {
 
   const vuLabel = (v) => v <= 20 ? "Low" : v <= 200 ? "Medium" : "High";
   const durLabel = (d) => d < 60 ? "Short" : d <= 300 ? "Medium" : "Long";
+
+  const [history,        setHistory]        = useState([]);
+  const [historyOpen,    setHistoryOpen]    = useState(false);
+  const [historyFilter,  setHistoryFilter]  = useState("");
+
+  const refreshHistory = () =>
+    fetch(`${API_BASE}/api/history`).then(r => r.json()).then(d => Array.isArray(d) && setHistory(d)).catch(() => {});
+
+  useEffect(() => { refreshHistory(); }, []);
+
+  const deleteHistoryEntry = async (job_name) => {
+    await fetch(`${API_BASE}/api/history/${encodeURIComponent(job_name)}`, { method: "DELETE" });
+    refreshHistory();
+  };
 
   const [svcSearch, setSvcSearch] = useState("");
   const filteredServices = services.filter(s =>
@@ -1098,6 +1116,55 @@ export default function App() {
         .grafana-iframe-panel iframe {
           width: 100%; height: 780px; border: none; display: block;
         }
+
+        /* ── History table ── */
+        .hist-filter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+        .hist-filter-select {
+          background: ${t.bgInput}; border: 1px solid ${t.borderLight}; border-radius: 5px;
+          padding: 5px 10px; color: ${t.textMuted}; font-size: 11px; font-family: monospace;
+          outline: none; cursor: pointer; flex: 1;
+        }
+        .hist-filter-select:focus { border-color: ${t.accent}; }
+        .hist-refresh-btn {
+          background: transparent; border: 1px solid ${t.borderLight}; color: ${t.textDim};
+          padding: 5px 10px; border-radius: 5px; font-size: 11px; cursor: pointer;
+          transition: border-color .15s, color .15s; white-space: nowrap;
+        }
+        .hist-refresh-btn:hover { border-color: ${t.accent}; color: ${t.accent}; }
+        .hist-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: monospace; }
+        .hist-table th {
+          text-align: left; padding: 6px 10px; font-size: 9px; letter-spacing: .08em;
+          text-transform: uppercase; color: ${t.textDim}; font-weight: 700;
+          border-bottom: 1px solid ${t.borderLight};
+        }
+        .hist-table th:last-child { text-align: center; }
+        .hist-table td { padding: 8px 10px; border-bottom: 1px solid ${t.bgHover}; color: ${t.text}; vertical-align: middle; }
+        .hist-table tr:last-child td { border-bottom: none; }
+        .hist-table tr:hover td { background: ${t.bgHover}; }
+        .hist-svc { font-weight: 600; color: ${t.text}; }
+        .hist-scenario { color: ${t.textMuted}; }
+        .hist-num { color: #c73000; font-weight: 700; }
+        .hist-date { color: ${t.textDim}; font-size: 10px; }
+        .hist-status-pill {
+          display: inline-block; padding: 2px 9px; border-radius: 20px;
+          font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+        }
+        .hist-actions { display: flex; gap: 5px; justify-content: center; }
+        .hist-view-btn {
+          background: ${t.accent}18; border: 1px solid ${t.accent}55; color: ${t.accent};
+          padding: 4px 10px; border-radius: 4px; font-size: 10px; cursor: pointer;
+          font-family: monospace; transition: background .15s; white-space: nowrap;
+          text-decoration: none; display: inline-block;
+        }
+        .hist-view-btn:hover { background: ${t.accent}30; }
+        .hist-view-btn.disabled { opacity: .4; cursor: default; pointer-events: none; }
+        .hist-del-btn {
+          background: transparent; border: 1px solid transparent; color: ${t.textDim};
+          padding: 4px 7px; border-radius: 4px; font-size: 11px; cursor: pointer;
+          transition: border-color .15s, color .15s;
+        }
+        .hist-del-btn:hover { border-color: ${t.danger}66; color: ${t.danger}; }
+        .hist-empty { text-align: center; padding: 28px 0; color: ${t.textDim}; font-size: 11px; }
 
         footer {
           background: ${t.headerBg}; border-top: 1px solid ${t.borderLight};
@@ -1613,6 +1680,121 @@ export default function App() {
                 <PodTable pods={podData} t={t} />
               )}
             </div>
+            {/* Test History */}
+            <div className="panel">
+              <div className="panel-title collapsible" onClick={() => setHistoryOpen(o => !o)}>
+                <span className="section-num">04</span>
+                Test History
+                {history.length > 0 && (
+                  <span style={{ fontSize: 10, background: t.borderLight, color: t.textDim, borderRadius: 10, padding: '2px 8px', fontWeight: 700, fontFamily: 'monospace' }}>
+                    {history.length}
+                  </span>
+                )}
+                <button
+                  className="hist-refresh-btn"
+                  style={{ marginLeft: 'auto', fontSize: 10 }}
+                  onClick={e => { e.stopPropagation(); refreshHistory(); }}
+                  title="Refresh history"
+                >⟳ Refresh</button>
+                <span className="collapse-chevron">{historyOpen ? '▲' : '▾'}</span>
+              </div>
+
+              {historyOpen && (() => {
+                const services_in_history = [...new Set(history.map(h => h.service_name).filter(Boolean))].sort();
+                const filtered = historyFilter
+                  ? history.filter(h => h.service_name === historyFilter)
+                  : history;
+
+                const fmtDate = (iso) => {
+                  if (!iso) return '—';
+                  try {
+                    const d = new Date(iso);
+                    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                      + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                  } catch { return iso.slice(0, 16).replace('T', ' '); }
+                };
+
+                const statusStyle = (s) => s === 'completed'
+                  ? { background: t.success + '20', color: t.success, border: `1px solid ${t.success}44` }
+                  : s === 'running'
+                  ? { background: t.warning + '20', color: t.warning, border: `1px solid ${t.warning}44` }
+                  : { background: t.danger + '20', color: t.danger, border: `1px solid ${t.danger}44` };
+
+                return (
+                  <>
+                    <div className="hist-filter-row">
+                      <select
+                        className="hist-filter-select"
+                        value={historyFilter}
+                        onChange={e => setHistoryFilter(e.target.value)}
+                      >
+                        <option value="">All services ({history.length} runs)</option>
+                        {services_in_history.map(s => (
+                          <option key={s} value={s}>{s} ({history.filter(h => h.service_name === s).length})</option>
+                        ))}
+                      </select>
+                      {historyFilter && (
+                        <button className="hist-refresh-btn" onClick={() => setHistoryFilter("")}>✕ Clear</button>
+                      )}
+                    </div>
+
+                    {filtered.length === 0 ? (
+                      <div className="hist-empty">No test runs yet. Run a load test to see history here.</div>
+                    ) : (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table className="hist-table">
+                          <thead>
+                            <tr>
+                              <th>Service</th>
+                              <th>Scenario</th>
+                              <th>VUs</th>
+                              <th>Duration</th>
+                              <th>Date</th>
+                              <th>Peak RPS</th>
+                              <th>Status</th>
+                              <th style={{ textAlign: 'center' }}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filtered.map(h => (
+                              <tr key={h.job_name}>
+                                <td className="hist-svc">{h.service_name || <span style={{ color: t.textDim }}>—</span>}</td>
+                                <td className="hist-scenario">{h.scenario}</td>
+                                <td className="hist-num">{h.vus}</td>
+                                <td style={{ color: t.textMuted }}>{h.duration}s</td>
+                                <td className="hist-date">{fmtDate(h.started_at)}</td>
+                                <td className="hist-num">{h.peak_rps > 0 ? h.peak_rps.toFixed(1) : '—'}</td>
+                                <td>
+                                  <span className="hist-status-pill" style={statusStyle(h.status)}>{h.status}</span>
+                                </td>
+                                <td>
+                                  <div className="hist-actions">
+                                    <a
+                                      href={h.report_saved ? `${API_BASE}/api/report/${h.job_name}` : undefined}
+                                      target="_blank" rel="noreferrer"
+                                      className={`hist-view-btn${!h.report_saved ? ' disabled' : ''}`}
+                                      title={h.report_saved ? 'View HTML report' : h.status === 'running' ? 'Test still running' : 'Report is being generated…'}
+                                    >
+                                      {h.report_saved ? '📄 Report' : h.status === 'running' ? '⏳' : '⏳ Saving…'}
+                                    </a>
+                                    <button
+                                      className="hist-del-btn"
+                                      title="Delete this entry"
+                                      onClick={() => deleteHistoryEntry(h.job_name)}
+                                    >✕</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
           </main>
         </div>
 
