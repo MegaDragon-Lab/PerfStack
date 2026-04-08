@@ -1,0 +1,13 @@
+{
+  "theme": "dark",
+  "themeVariables": {
+    "background": "#0f1117",
+    "mainBkg": "#1a1f2e",
+    "nodeBorder": "#3b82f6",
+    "clusterBkg": "#161b27",
+    "clusterBorder": "#2d3748",
+    "titleColor": "#e2e8f0",
+    "edgeLabelBackground": "#1a1f2e",
+    "lineColor": "#475569"
+  }
+}

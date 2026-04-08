@@ -1,0 +1,72 @@
+flowchart TB
+    BROWSER(["🌐 Browser / CI\nHTTP :80"])
+    IAM["🔐 IAM Server\nOAuth2 Client Credentials"]
+    TARGET["🎯 Target API\nSystem Under Test"]
+
+    subgraph CLUSTER["☸️  k3d Cluster — 1 server node · 2 agent nodes  (Docker)"]
+        direction TB
+
+        subgraph NS_ING["  namespace: ingress-nginx  "]
+            NGINX["nginx Ingress Controller\nLoadBalancer :80 / :443\n────────────────────────\n/api(/|$)(.*) → backend:8000\n/grafana      → grafana:3000\n/             → frontend:3000"]
+        end
+
+        subgraph NS_K6OP["  namespace: k6-operator-system  "]
+            K6OP["k6 Operator\ncontroller-manager\nwatches TestRun CRDs"]
+        end
+
+        subgraph NS_PS["  namespace: perfstack  "]
+            direction TB
+
+            subgraph APP["  Application  "]
+                FE["🖥 frontend\nnginx:alpine  · :3000\nCPU  50m → 200m\nRAM  64Mi → 128Mi"]
+                BE["⚙️ backend\nFastAPI · Python 3.12  · :8000\nCPU  100m → 500m\nRAM  128Mi → 256Mi"]
+            end
+
+            subgraph OBS["  Observability  "]
+                INF["🗄 influxdb\ninfluxdb:2.7  · :8086\nCPU  500m → 1000m\nRAM  1Gi → 2Gi\norg: perfstack  bucket: k6"]
+                GR["📊 grafana\ngrafana:12.2.0  · :3000\nCPU  250m → 1000m\nRAM  512Mi → 1Gi\nroot_url: /grafana"]
+                RND["🖼 grafana-renderer\nimage-renderer:latest  · :8081\nCPU  500m → 2000m\nRAM  512Mi → 2Gi\nCLUSTERING_MAX_CONCURRENCY=5"]
+            end
+
+            subgraph K6L["  Load Testing  "]
+                K6J["k6 Runner Pods  ×4\nxk6-output-influxdb\nparallelism=4  via TestRun CRD\n(ephemeral — live for test duration)"]
+            end
+
+            PVC1[("💾 PVC\nbackend-data\n100 Mi\nmount: /data\nscenarios.json\nservices.json")]
+        end
+    end
+
+    %% ── External ─────────────────────────────────────────────
+    BROWSER -->|"HTTP :80"| NGINX
+    NGINX -->|"/ Prefix"| FE
+    NGINX -->|"/api Prefix"| BE
+    NGINX -->|"/grafana Prefix"| GR
+
+    BE -->|"① OAuth2\nclient_credentials"| IAM
+    BE -->|"② create TestRun CR"| K6OP
+    K6OP -->|"③ spawn Jobs"| K6J
+    K6J -->|"④ HTTP POST"| TARGET
+    K6J -->|"⑤ line protocol :8086"| INF
+    GR -->|"⑥ InfluxQL :8086"| INF
+    BE -->|"⑦ render API :8081"| RND
+    RND -->|"⑧ callback :3000"| GR
+    BE -.-|"read/write"| PVC1
+
+    %% ── Styles ───────────────────────────────────────────────
+    classDef appStyle     fill:#1a3a2a,stroke:#22c55e,color:#e2e8f0
+    classDef obsStyle     fill:#2d1b4e,stroke:#a78bfa,color:#e2e8f0
+    classDef k6Style      fill:#1a2a3a,stroke:#6366f1,color:#e2e8f0
+    classDef extStyle     fill:#3a2a1a,stroke:#f59e0b,color:#e2e8f0
+    classDef pvcStyle     fill:#1a1a2e,stroke:#64748b,color:#94a3b8
+    classDef ingressStyle fill:#1e3040,stroke:#38bdf8,color:#e2e8f0
+    classDef opStyle      fill:#1a2030,stroke:#818cf8,color:#e2e8f0
+    classDef userStyle    fill:#0f1117,stroke:#6366f1,color:#e2e8f0
+
+    class NGINX ingressStyle
+    class K6OP opStyle
+    class FE,BE appStyle
+    class INF,GR,RND obsStyle
+    class K6J k6Style
+    class IAM,TARGET extStyle
+    class PVC1 pvcStyle
+    class BROWSER userStyle

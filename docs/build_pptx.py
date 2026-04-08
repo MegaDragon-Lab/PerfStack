@@ -22,7 +22,8 @@ W = Inches(13.33)   # widescreen 16:9
 H = Inches(7.5)
 
 DOCS = os.path.dirname(os.path.abspath(__file__))
-ARCH_PNG = os.path.join(DOCS, "architecture.png")
+ARCH_PNG  = os.path.join(DOCS, "architecture.png")
+INFRA_PNG = os.path.join(DOCS, "infra.png")
 
 
 def new_prs():
@@ -393,7 +394,28 @@ def slide_takeaways(prs):
               size=13, color=MUTED)
 
 
-# ── Slide 10 — Q&A / Thank you ────────────────────────────────────────────────
+# ── Slide 10 — Infra View ─────────────────────────────────────────────────────
+def slide_infra(prs):
+    s = blank_slide(prs)
+    bg(s)
+    accent_bar(s)
+
+    label(s, "Infrastructure View", Inches(0.6), Inches(0.25), Inches(10), Inches(0.6),
+          size=32, bold=True, color=WHITE)
+    label(s, "Kubernetes resources · namespaces · CPU / RAM limits · network paths · storage",
+          Inches(0.6), Inches(0.9), Inches(12.5), Inches(0.4),
+          size=14, color=MUTED)
+
+    if os.path.exists(INFRA_PNG):
+        s.shapes.add_picture(INFRA_PNG, Inches(0.3), Inches(1.4),
+                             Inches(12.7), Inches(5.9))
+    else:
+        label(s, "[infra.png not found — run: mmdc -i docs/infra.mmd -o docs/infra.png]",
+              Inches(1), Inches(3.5), Inches(11), Inches(1),
+              size=14, color=MUTED, align=PP_ALIGN.CENTER)
+
+
+# ── Slide 11 — Q&A / Thank you ────────────────────────────────────────────────
 def slide_qa(prs):
     s = blank_slide(prs)
     bg(s)
@@ -426,6 +448,7 @@ def build():
     slide_reporting(prs)
     slide_demo(prs)
     slide_takeaways(prs)
+    slide_infra(prs)
     slide_qa(prs)
 
     out = os.path.join(DOCS, "PerfStack.pptx")

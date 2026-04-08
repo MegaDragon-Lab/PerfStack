@@ -32,9 +32,15 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def _warmup_renderer():
-    """Fire a dummy render on startup so Chromium is already warm when the first report is requested."""
+    """Schedule renderer warm-up as a background task so startup completes immediately."""
+    import asyncio
+    asyncio.create_task(_do_warmup())
+
+
+async def _do_warmup():
+    """Fire a dummy render 20s after startup so Chromium is warm for the first report."""
     import asyncio, httpx
-    await asyncio.sleep(15)   # wait for Grafana + renderer to be ready
+    await asyncio.sleep(20)   # wait for Grafana + renderer to be ready
     try:
         async with httpx.AsyncClient(timeout=60) as c:
             await c.get(
@@ -143,6 +149,7 @@ async def delete_scenario(name: str):
 
 class ServiceEntry(BaseModel):
     name: str
+    folder: str = ""
     iam_url: str = ""
     client_id: str = ""
     client_secret: str = ""
@@ -609,7 +616,7 @@ def _build_report_html(
   <thead><tr><th>Name</th><th class="num">Passes</th><th class="num">Fails</th></tr></thead>
   <tbody>{checks_html}</tbody></table></div>'''}
 
-  <div class="footer">PerfStack v2.0.2 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
+  <div class="footer">PerfStack v2.0.3 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
 </div>
 <script>
 (function() {{

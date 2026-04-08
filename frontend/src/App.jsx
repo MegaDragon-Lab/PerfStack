@@ -179,61 +179,98 @@ function SettingsMenu({ theme, onSelect, t }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const S = {
-    panel: { position: 'absolute', right: 0, top: 'calc(100% + 10px)', background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, minWidth: 270, zIndex: 1000, boxShadow: '0 16px 40px rgba(0,0,0,0.28)', overflow: 'hidden' },
-    sectionLabel: { padding: '10px 16px 5px', fontSize: '0.64rem', letterSpacing: '0.10em', color: t.textDim, fontWeight: 800, textTransform: 'uppercase' },
-    divider: { borderTop: `1px solid ${t.borderLight}`, margin: '4px 0' },
-    themeBtn: (active) => ({ flex: 1, padding: '7px 0', borderRadius: 7, background: active ? t.accentBg : 'none', border: `1px solid ${active ? t.accent : t.border}`, color: active ? '#fff' : t.textMuted, cursor: 'pointer', fontSize: '0.78rem', fontWeight: active ? 700 : 400, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, transition: 'all 0.15s' }),
-  };
+  const metaRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' };
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button
         onClick={() => setOpen(o => !o)}
-        style={{ background: open ? t.bgHover : 'none', border: `1px solid ${open ? t.border : 'transparent'}`, borderRadius: 7, padding: '4px 11px', color: t.textMuted, cursor: 'pointer', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.15s' }}
+        style={{ background: open ? t.bgHover : 'none', border: `1px solid ${open ? t.border : 'transparent'}`, borderRadius: 7, padding: '4px 11px', color: open ? t.text : t.textMuted, cursor: 'pointer', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.15s' }}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
-        <span style={{ color: open ? t.text : t.textMuted }}>Settings</span>
-        <span style={{ fontSize: '0.60rem', opacity: 0.7 }}>{open ? '▲' : '▾'}</span>
+        Settings
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ opacity: 0.5, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+          <path d="M1 3 L5 7 L9 3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
       </button>
 
       {open && (
-        <div style={S.panel}>
-          <div style={S.sectionLabel}>Appearance</div>
-          <div style={{ display: 'flex', gap: 6, padding: '5px 12px 10px' }}>
-            <button style={S.themeBtn(theme === 'dark')}  onClick={() => onSelect('dark')}>🌙 Dark</button>
-            <button style={S.themeBtn(theme === 'light')} onClick={() => onSelect('light')}>☀️ Light</button>
-          </div>
+        <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 12, width: 300, zIndex: 1000, boxShadow: '0 20px 48px rgba(0,0,0,0.32)', overflow: 'hidden' }}>
 
-          <div style={S.divider} />
-
-          <div style={S.sectionLabel}>About</div>
-          <div style={{ padding: '8px 16px 14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 9, background: 'linear-gradient(135deg, #c73000 0%, #ff6a35 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <span style={{ fontSize: '1rem' }}>⚡</span>
-              </div>
-              <div>
-                <div style={{ color: t.text, fontWeight: 800, fontSize: '0.90rem', letterSpacing: '0.04em' }}>PerfStack</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-                  <span style={{ background: '#c73000', color: '#fff', fontSize: '0.62rem', fontWeight: 800, padding: '1px 8px', borderRadius: 20, letterSpacing: '0.04em' }}>v2.0.2</span>
-                  <span style={{ color: t.textDim, fontSize: '0.68rem' }}>Released Apr 8, 2026</span>
-                </div>
-              </div>
+          {/* ── App identity header ── */}
+          <div style={{ padding: '16px 18px', borderBottom: `1px solid ${t.borderLight}`, display: 'flex', alignItems: 'center', gap: 13 }}>
+            <div style={{ width: 42, height: 42, borderRadius: 11, background: 'linear-gradient(135deg, #c73000 0%, #ff6a35 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 10px rgba(199,48,0,0.40)' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
             </div>
-
-            <div style={{ borderTop: `1px solid ${t.borderLight}`, paddingTop: 10 }}>
-              <div style={{ color: t.textDim, fontSize: '0.66rem', marginBottom: 5, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 700 }}>Contact Support</div>
-              <a
-                href="mailto:epc_owner@fico.com"
-                style={{ color: t.accent, fontSize: '0.76rem', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}
-              >
-                <span>✉</span> epc_owner@fico.com
-              </a>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: t.text, fontWeight: 700, fontSize: '0.92rem', letterSpacing: '0.02em', lineHeight: 1.2 }}>PerfStack</div>
+              <div style={{ color: t.textDim, fontSize: '0.68rem', marginTop: 3, letterSpacing: '0.04em' }}>Load Testing Platform</div>
+            </div>
+            <div style={{ background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: '0.63rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0 }}>
+              v2.0.3
             </div>
           </div>
+
+          {/* ── Appearance ── */}
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${t.borderLight}` }}>
+            <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', color: t.textDim, fontWeight: 700, textTransform: 'uppercase', marginBottom: 10 }}>Appearance</div>
+            <div style={{ display: 'flex', background: t.bg, borderRadius: 8, border: `1px solid ${t.borderLight}`, padding: 3, gap: 3 }}>
+              {[
+                { key: 'dark', label: 'Dark', icon: (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                )},
+                { key: 'light', label: 'Light', icon: (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                  </svg>
+                )},
+              ].map(({ key, label, icon }) => (
+                <button
+                  key={key}
+                  onClick={() => onSelect(key)}
+                  style={{ flex: 1, padding: '7px 0', borderRadius: 6, background: theme === key ? t.bgPanel : 'transparent', border: `1px solid ${theme === key ? t.border : 'transparent'}`, color: theme === key ? t.text : t.textMuted, cursor: 'pointer', fontSize: '0.78rem', fontWeight: theme === key ? 600 : 400, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all 0.15s', boxShadow: theme === key ? '0 1px 3px rgba(0,0,0,0.2)' : 'none' }}
+                >
+                  {icon} {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Release info ── */}
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${t.borderLight}` }}>
+            <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', color: t.textDim, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Release Info</div>
+            {[
+              { label: 'Version',  value: '2.0.3' },
+              { label: 'Released', value: 'Apr 8, 2026' },
+              { label: 'Stack',    value: 'k6 · Grafana · k3d' },
+            ].map(({ label, value }) => (
+              <div key={label} style={metaRow}>
+                <span style={{ fontSize: '0.73rem', color: t.textMuted }}>{label}</span>
+                <span style={{ fontSize: '0.73rem', color: t.text, fontFamily: 'monospace', fontWeight: 500 }}>{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Support ── */}
+          <div style={{ padding: '14px 18px 16px' }}>
+            <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', color: t.textDim, fontWeight: 700, textTransform: 'uppercase', marginBottom: 9 }}>Support</div>
+            <a
+              href="mailto:epc_owner@fico.com"
+              style={{ color: t.text, fontSize: '0.77rem', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 8, background: t.bgHover, border: `1px solid ${t.borderLight}`, transition: 'border-color 0.15s', fontWeight: 500 }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = t.accent}
+              onMouseLeave={e => e.currentTarget.style.borderColor = t.borderLight}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: t.textMuted, flexShrink: 0 }}>
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
+              </svg>
+              epc_owner@fico.com
+            </a>
+          </div>
+
         </div>
       )}
     </div>
@@ -423,9 +460,17 @@ export default function App() {
     if (activeScenarioIdx === idx) setActiveScenarioIdx(null);
   };
 
-  const [services,    setServices]    = useState([]);
-  const [saveName,    setSaveName]    = useState("");
-  const [activeIdx,   setActiveIdx]   = useState(null);
+  const [services,      setServices]      = useState([]);
+  const [saveName,      setSaveName]      = useState("");
+  const [saveFolder,    setSaveFolder]    = useState("");
+  const [closedFolders, setClosedFolders] = useState(new Set());
+  const [activeIdx,     setActiveIdx]     = useState(null);
+
+  const toggleFolder = (key) => setClosedFolders(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
   const importRef    = useRef(null);
   const pollingRef   = useRef(null);
   const podPollingRef = useRef(null);
@@ -442,7 +487,7 @@ export default function App() {
     await fetch(`${API_BASE}/api/services`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, ...form }),
+      body: JSON.stringify({ name, folder: saveFolder.trim(), ...form }),
     });
     const updated = await fetch(`${API_BASE}/api/services`).then(r => r.json());
     setServices(updated);
@@ -451,9 +496,10 @@ export default function App() {
   };
 
   const loadService = (idx) => {
-    const { name, ...config } = services[idx];
+    const { name, folder, ...config } = services[idx];
     setForm(config);
     setActiveIdx(idx);
+    setSaveFolder(folder || "");
   };
 
   const deleteService = async (idx) => {
@@ -636,8 +682,23 @@ export default function App() {
 
   const [svcSearch, setSvcSearch] = useState("");
   const filteredServices = services.filter(s =>
-    s.name.toLowerCase().includes(svcSearch.toLowerCase())
+    s.name.toLowerCase().includes(svcSearch.toLowerCase()) ||
+    (s.folder || "").toLowerCase().includes(svcSearch.toLowerCase())
   );
+
+  const hasFolders = services.some(s => s.folder);
+  const grouped = {};
+  filteredServices.forEach(s => {
+    const fKey = s.folder || "";
+    if (!grouped[fKey]) grouped[fKey] = [];
+    grouped[fKey].push({ svc: s, realIdx: services.indexOf(s) });
+  });
+  const folderKeys = Object.keys(grouped).sort((a, b) => {
+    if (!a && b) return 1;   // uncategorized last
+    if (a && !b) return -1;
+    return a.localeCompare(b);
+  });
+  const existingFolders = [...new Set(services.map(s => s.folder || "").filter(Boolean))].sort();
 
   return (
     <>
@@ -737,6 +798,23 @@ export default function App() {
         }
         .svc-item:hover .svc-item-del { color: ${t.textDim}; }
         .svc-item-del:hover { color: ${t.danger} !important; }
+        .svc-item-indented .svc-item-body { padding-left: 22px; }
+
+        /* ── Folder headers ── */
+        .folder-hdr {
+          display: flex; align-items: center; gap: 5px;
+          padding: 7px 12px 4px; font-size: 9px; letter-spacing: .12em;
+          text-transform: uppercase; color: ${t.textDim};
+          cursor: pointer; user-select: none; transition: color .1s;
+        }
+        .folder-hdr:hover { color: ${t.textMuted}; }
+        .folder-chevron { font-size: 8px; display: inline-block; transition: transform .15s; }
+        .folder-chevron.open { transform: rotate(90deg); }
+        .folder-hdr-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .folder-hdr-count {
+          background: ${t.borderLight}; color: ${t.textDim};
+          border-radius: 10px; padding: 1px 6px; font-size: 9px; flex-shrink: 0;
+        }
 
         /* ── Sidebar footer: save ── */
         .sidebar-footer {
@@ -985,29 +1063,75 @@ export default function App() {
                     ? <>No saved services yet.<br/>Fill the form and save.</>
                     : "No results."}
                 </div>
-              ) : filteredServices.map((s) => {
-                const realIdx = services.indexOf(s);
-                return (
-                  <div
-                    key={realIdx}
-                    className={`svc-item${activeIdx === realIdx ? " active" : ""}`}
-                    onClick={() => loadService(realIdx)}
-                  >
-                    <div className="svc-item-body">
-                      <div className="svc-item-name">{s.name}</div>
-                      <div className="svc-item-url">{s.target_url || "—"}</div>
+              ) : hasFolders ? (
+                folderKeys.map(fKey => {
+                  const items = grouped[fKey];
+                  if (!items?.length) return null;
+                  const isOpen = !closedFolders.has(fKey);
+                  return (
+                    <div key={fKey}>
+                      <div className="folder-hdr" onClick={() => toggleFolder(fKey)}>
+                        <span className={`folder-chevron${isOpen ? " open" : ""}`}>▶</span>
+                        <span style={{ fontSize: 11 }}>📁</span>
+                        <span className="folder-hdr-name">{fKey || "Uncategorized"}</span>
+                        <span className="folder-hdr-count">{items.length}</span>
+                      </div>
+                      {isOpen && items.map(({ svc: s, realIdx }) => (
+                        <div
+                          key={realIdx}
+                          className={`svc-item svc-item-indented${activeIdx === realIdx ? " active" : ""}`}
+                          onClick={() => loadService(realIdx)}
+                        >
+                          <div className="svc-item-body">
+                            <div className="svc-item-name">{s.name}</div>
+                          </div>
+                          <button
+                            className="svc-item-del"
+                            title="Delete"
+                            onClick={e => { e.stopPropagation(); deleteService(realIdx); }}
+                          >✕</button>
+                        </div>
+                      ))}
                     </div>
-                    <button
-                      className="svc-item-del"
-                      title="Delete"
-                      onClick={e => { e.stopPropagation(); deleteService(realIdx); }}
-                    >✕</button>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                filteredServices.map((s) => {
+                  const realIdx = services.indexOf(s);
+                  return (
+                    <div
+                      key={realIdx}
+                      className={`svc-item${activeIdx === realIdx ? " active" : ""}`}
+                      onClick={() => loadService(realIdx)}
+                    >
+                      <div className="svc-item-body">
+                        <div className="svc-item-name">{s.name}</div>
+                      </div>
+                      <button
+                        className="svc-item-del"
+                        title="Delete"
+                        onClick={e => { e.stopPropagation(); deleteService(realIdx); }}
+                      >✕</button>
+                    </div>
+                  );
+                })
+              )}
             </div>
 
             <div className="sidebar-footer">
+              <datalist id="ps-folders">
+                {existingFolders.map(f => <option key={f} value={f} />)}
+              </datalist>
+              <div className="save-row">
+                <input
+                  className="save-input"
+                  placeholder="📁 Folder (optional)…"
+                  value={saveFolder}
+                  onChange={e => setSaveFolder(e.target.value)}
+                  list="ps-folders"
+                  style={{ borderColor: saveFolder ? '#c73000' : undefined }}
+                />
+              </div>
               <div className="save-row">
                 <input
                   className="save-input"
