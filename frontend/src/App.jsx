@@ -679,9 +679,6 @@ export default function App() {
     }
   };
 
-  const downloadReport = () => {
-    window.open(`${API_BASE}/api/report/${jobName}`, "_blank");
-  };
 
 
   const [iamOpen, setIamOpen] = useState(false);
@@ -1392,7 +1389,74 @@ export default function App() {
                 {jsonError && <span className="json-err">⚠ {jsonError}</span>}
               </div>
 
-              <div className="field" style={{ marginBottom: 0, marginTop: 4 }}>
+              {/* Dry Run — validate config before launching a full test */}
+              <div style={{ marginTop: 8 }}>
+                <button
+                  className="run-btn-secondary"
+                  style={{ width: '100%', background: t.dryRunBtn.bg, borderColor: t.dryRunBtn.border, color: t.dryRunBtn.text }}
+                  onClick={runPingTest}
+                  disabled={pinging || !form.iam_url || !form.client_id || !form.client_secret || !form.target_url || !!jsonError}
+                  title="Fire a single request to validate IAM + endpoint config"
+                >
+                  {pinging ? "Testing…" : "🔍 Dry Run — Validate Config"}
+                </button>
+
+                {/* Dry Run result */}
+                {pingResult && (
+                  <div style={{
+                    marginTop: 10, background: t.bgInput, border: `1px solid ${pingResult.ok && pingResult.status_code < 400 ? t.success + "44" : t.danger + "44"}`,
+                    borderRadius: 6, overflow: "hidden", fontSize: 11
+                  }}>
+                    <div style={{
+                      padding: "8px 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+                      borderBottom: `1px solid ${t.borderLight}`,
+                      background: pingResult.ok && pingResult.status_code < 400 ? t.success + "1a" : t.danger + "1a"
+                    }}>
+                      {pingResult.ok ? (
+                        <>
+                          <span style={{ fontWeight: 700, color: pingResult.status_code < 400 ? t.success : t.danger }}>
+                            HTTP {pingResult.status_code}
+                          </span>
+                          <span style={{ color: t.textMuted }}>{pingResult.elapsed_ms} ms</span>
+                          <span style={{ color: t.textMuted }}>{pingResult.target_url}</span>
+                        </>
+                      ) : (
+                        <span style={{ color: t.danger, fontWeight: 700 }}>✗ {pingResult.error}</span>
+                      )}
+                      <button onClick={() => setPingResult(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: t.textDim, cursor: "pointer", fontSize: 13 }}>✕</button>
+                    </div>
+                    {pingResult.ok && (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+                        <div style={{ borderRight: `1px solid ${t.borderLight}` }}>
+                          <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Request Payload</div>
+                          <pre style={{ margin: 0, padding: "12px 14px", color: t.accent, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
+                            {JSON.stringify(pingResult.request_payload, null, 2)}
+                          </pre>
+                        </div>
+                        <div>
+                          <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Response Body</div>
+                          <pre style={{ margin: 0, padding: "12px 14px", color: t.codeText, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
+                            {typeof pingResult.response_body === "string"
+                              ? pingResult.response_body
+                              : JSON.stringify(pingResult.response_body, null, 2)}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Run */}
+            <div className="panel run-panel">
+              <div className="panel-title">
+                <span className="section-num">03</span>
+                Execution
+              </div>
+
+              {/* Scenario */}
+              <div className="field" style={{ marginBottom: 12, marginTop: 0 }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, letterSpacing: '.06em', textTransform: 'uppercase' }}>Scenario</label>
                 <div className="scenario-chips">
                   {Object.entries(SCENARIOS).map(([key, s]) => (
@@ -1549,14 +1613,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-            </div>
-
-            {/* Run */}
-            <div className="panel run-panel">
-              <div className="panel-title">
-                <span className="section-num">03</span>
-                Execution
-              </div>
 
               {/* Primary action */}
               <button
@@ -1571,16 +1627,7 @@ export default function App() {
               <div className="run-secondary-row">
                 <button
                   className="run-btn-secondary"
-                  style={{ background: t.dryRunBtn.bg, borderColor: t.dryRunBtn.border, color: t.dryRunBtn.text }}
-                  onClick={runPingTest}
-                  disabled={pinging || !form.iam_url || !form.client_id || !form.client_secret || !form.target_url || !!jsonError}
-                  title="Fire a single request to validate IAM + endpoint config"
-                >
-                  {pinging ? "Testing…" : "🔍 Dry Run"}
-                </button>
-                <button
-                  className="run-btn-secondary"
-                  style={{ background: t.resetBtn.bg, borderColor: t.resetBtn.border, color: t.resetBtn.text }}
+                  style={{ width: '100%', background: t.resetBtn.bg, borderColor: t.resetBtn.border, color: t.resetBtn.text }}
                   onClick={resetInfluxDB}
                   disabled={resetting}
                   title="Drop and recreate the k6 InfluxDB database"
@@ -1595,51 +1642,6 @@ export default function App() {
                   <StatusBadge status={status} t={t} />
                   {jobName && <span className="job-tag" style={{ fontSize: 11 }}>job: <strong style={{ color: t.text }}>{jobName}</strong></span>}
                   {message && <p className="msg">{message}</p>}
-                </div>
-              )}
-
-              {/* Dry Run result */}
-              {pingResult && (
-                <div style={{
-                  marginTop: 14, background: t.bgInput, border: `1px solid ${pingResult.ok && pingResult.status_code < 400 ? t.success + "44" : t.danger + "44"}`,
-                  borderRadius: 6, overflow: "hidden", fontSize: 11
-                }}>
-                  <div style={{
-                    padding: "8px 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
-                    borderBottom: `1px solid ${t.borderLight}`,
-                    background: pingResult.ok && pingResult.status_code < 400 ? t.success + "1a" : t.danger + "1a"
-                  }}>
-                    {pingResult.ok ? (
-                      <>
-                        <span style={{ fontWeight: 700, color: pingResult.status_code < 400 ? t.success : t.danger }}>
-                          HTTP {pingResult.status_code}
-                        </span>
-                        <span style={{ color: t.textMuted }}>{pingResult.elapsed_ms} ms</span>
-                        <span style={{ color: t.textMuted }}>{pingResult.target_url}</span>
-                      </>
-                    ) : (
-                      <span style={{ color: t.danger, fontWeight: 700 }}>✗ {pingResult.error}</span>
-                    )}
-                    <button onClick={() => setPingResult(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: t.textDim, cursor: "pointer", fontSize: 13 }}>✕</button>
-                  </div>
-                  {pingResult.ok && (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
-                      <div style={{ borderRight: `1px solid ${t.borderLight}` }}>
-                        <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Request Payload</div>
-                        <pre style={{ margin: 0, padding: "12px 14px", color: t.accent, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
-                          {JSON.stringify(pingResult.request_payload, null, 2)}
-                        </pre>
-                      </div>
-                      <div>
-                        <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Response Body</div>
-                        <pre style={{ margin: 0, padding: "12px 14px", color: t.codeText, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
-                          {typeof pingResult.response_body === "string"
-                            ? pingResult.response_body
-                            : JSON.stringify(pingResult.response_body, null, 2)}
-                        </pre>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -1659,20 +1661,6 @@ export default function App() {
                     </div>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: t.textDim, flexShrink: 0 }}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                   </a>
-                  {status === "completed" && (
-                    <button
-                      className="action-card"
-                      style={{ background: t.bgInput, borderColor: t.border, color: t.text, cursor: 'pointer' }}
-                      onClick={downloadReport}
-                    >
-                      <span className="action-card-icon">📄</span>
-                      <div className="action-card-text">
-                        <span className="action-card-title">Download Report</span>
-                        <span className="action-card-sub">Full HTML report with charts — job: {jobName}</span>
-                      </div>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: t.textDim, flexShrink: 0 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    </button>
-                  )}
                 </div>
               )}
 
