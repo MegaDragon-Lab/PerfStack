@@ -320,12 +320,9 @@ async def test_status(job_name: str):
 @app.get("/report/{job_name}", summary="Generate Grafana-powered HTML performance report")
 async def get_report(job_name: str):
     """Renders Grafana dashboard panels via grafana-image-renderer and assembles a self-contained HTML report."""
-    import base64, time as _t
+    import time as _t
     import httpx
     from fastapi.responses import HTMLResponse
-
-    GRAFANA_BASE  = "http://grafana:3000/grafana"
-    DASHBOARD_UID = "k6"
 
     try:
         summary = await get_job_summary(job_name)
@@ -337,22 +334,6 @@ async def get_report(job_name: str):
     except Exception:
         to_ms   = int(_t.time() * 1000)
         from_ms = to_ms - 30 * 60 * 1000
-
-    async def render_panel(panel_id: int, width: int, height: int, extra: str = "") -> str | None:
-        url = (
-            f"{GRAFANA_BASE}/render/d-solo/{DASHBOARD_UID}/k6-load-testing-results"
-            f"?orgId=1&panelId={panel_id}&from={from_ms}&to={to_ms}"
-            f"&width={width}&height={height}&theme=dark"
-            f"&var-Measurement=http_req_duration{extra}"
-        )
-        try:
-            async with httpx.AsyncClient(timeout=90) as c:
-                r = await c.get(url, headers={"Authorization": "Basic YWRtaW46YWRtaW4="})
-                r.raise_for_status()
-                return base64.b64encode(r.content).decode()
-        except Exception as e:
-            logger.warning("Panel render failed (panelId=%d): %s", panel_id, e)
-            return None
 
     # Query InfluxDB for peak req/s — sum http_2xx per 1s window, take max in Python
     peak_rps = 0.0
@@ -372,19 +353,40 @@ async def get_report(job_name: str):
     except Exception as e:
         logger.warning("Peak RPS query failed: %s", e)
 
-    # Render all panels in parallel (renderer supports up to 5 concurrent)
-    import asyncio
-    vus_img, rps_img, err_img, resp_img, heat_img = await asyncio.gather(
-        render_panel(1,  600, 280),
-        render_panel(17, 600, 280),
-        render_panel(7,  600, 280),
-        render_panel(5,  1400, 420),
-        render_panel(8,  1400, 420),
-    )
-
-    html = _build_report_html(job_name, summary, from_ms, to_ms, peak_rps,
-                               vus_img, rps_img, err_img, resp_img, heat_img)
+    html = _build_report_html(job_name, summary, from_ms, to_ms, peak_rps)
     return HTMLResponse(content=html)
+
+
+@app.get("/report/{job_name}/panel/{panel_id}", summary="Render one Grafana panel (progressive loading)")
+async def get_report_panel(job_name: str, panel_id: int, from_ms: int, to_ms: int):
+    """Renders a single Grafana panel via image renderer. Called by the report page JS for progressive chart loading."""
+    import base64, httpx
+    from fastapi.responses import JSONResponse
+
+    PANEL_SIZES = {1: (600, 280), 17: (600, 280), 7: (600, 280), 5: (1400, 420), 8: (1400, 420)}
+    if panel_id not in PANEL_SIZES:
+        raise HTTPException(status_code=404, detail=f"Unknown panel {panel_id}")
+
+    width, height = PANEL_SIZES[panel_id]
+    url = (
+        f"http://grafana:3000/grafana/render/d-solo/k6/k6-load-testing-results"
+        f"?orgId=1&panelId={panel_id}&from={from_ms}&to={to_ms}"
+        f"&width={width}&height={height}&theme=dark&var-Measurement=http_req_duration"
+    )
+    import asyncio
+    last_err: Exception | None = None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=90) as c:
+                r = await c.get(url, headers={"Authorization": "Basic YWRtaW46YWRtaW4="})
+                r.raise_for_status()
+                return {"img": base64.b64encode(r.content).decode()}
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                await asyncio.sleep(3 * (attempt + 1))  # 3s, then 6s
+    logger.warning("Panel render failed after retries (panelId=%d): %s", panel_id, last_err)
+    return JSONResponse(status_code=503, content={"img": None, "error": str(last_err)})
 
 
 def _fmt_ms(ms: float) -> str:
@@ -399,13 +401,10 @@ def _fmt_bytes(b: float) -> str:
         return f"{b/1024:.1f} KB"
     return f"{b:.0f} B"
 
-def _chart_block(title: str, img_b64: str | None, wide: bool = False) -> str:
+def _chart_block(title: str, panel_id: int, wide: bool = False) -> str:
     cls = "chart-card chart-wide" if wide else "chart-card"
-    if img_b64:
-        inner = f'<img src="data:image/png;base64,{img_b64}" alt="{title}" />'
-    else:
-        inner = '<div class="chart-na">Chart unavailable — renderer starting up, try again in a moment</div>'
-    return f'<div class="{cls}"><div class="chart-title">{title}</div>{inner}</div>'
+    inner = '<div class="chart-placeholder"><div class="spinner"></div><span>Loading chart\u2026</span></div>'
+    return f'<div id="chart-p{panel_id}" class="{cls}"><div class="chart-title">{title}</div>{inner}</div>'
 
 def _build_report_html(
     job_name: str,
@@ -413,11 +412,6 @@ def _build_report_html(
     from_ms: int,
     to_ms: int,
     peak_rps: float,
-    vus_img:  str | None,
-    rps_img:  str | None,
-    err_img:  str | None,
-    resp_img: str | None,
-    heat_img: str | None,
 ) -> str:
     from datetime import datetime, timezone
 
@@ -511,6 +505,9 @@ def _build_report_html(
   .chart-title{{font-size:12px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;padding:12px 16px 8px}}
   .chart-card img{{width:100%;display:block}}
   .chart-na{{padding:40px 20px;text-align:center;color:#475569;font-size:12px;font-style:italic}}
+  .chart-placeholder{{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:40px 20px;min-height:150px;color:#475569;font-size:12px}}
+  @keyframes spin{{to{{transform:rotate(360deg)}}}}
+  .spinner{{width:24px;height:24px;border:2px solid #2d3748;border-top-color:#6366f1;border-radius:50%;animation:spin 0.8s linear infinite}}
 
   /* ── Tables ── */
   .section{{background:#1a1f2e;border:1px solid #2d3748;border-radius:10px;padding:20px;margin-bottom:12px}}
@@ -560,17 +557,17 @@ def _build_report_html(
 
   <!-- CHARTS ROW 1: VUs / RPS / Errors -->
   <div class="charts-row" style="margin-bottom:12px">
-    {_chart_block("Virtual Users", vus_img)}
-    {_chart_block("Requests per Second", rps_img)}
-    {_chart_block("Errors per Second", err_img)}
+    {_chart_block("Virtual Users", 1)}
+    {_chart_block("Requests per Second", 17)}
+    {_chart_block("Errors per Second", 7)}
   </div>
 
   <!-- CHARTS FULL WIDTH -->
   <div class="charts-row" style="margin-bottom:12px">
-    {_chart_block("Response Time — p90 / p95 / max / min  (http_req_duration)", resp_img, wide=True)}
+    {_chart_block("Response Time — p90 / p95 / max / min  (http_req_duration)", 5, wide=True)}
   </div>
   <div class="charts-row" style="margin-bottom:24px">
-    {_chart_block("Response Time Heatmap", heat_img, wide=True)}
+    {_chart_block("Response Time Heatmap", 8, wide=True)}
   </div>
 
   <!-- RESPONSE TIME TABLE -->
@@ -612,8 +609,44 @@ def _build_report_html(
   <thead><tr><th>Name</th><th class="num">Passes</th><th class="num">Fails</th></tr></thead>
   <tbody>{checks_html}</tbody></table></div>'''}
 
-  <div class="footer">PerfStack v2.0.1 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
+  <div class="footer">PerfStack v2.0.2 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
 </div>
+<script>
+(function() {{
+  var JOB  = '{job_name}';
+  var FROM = {from_ms};
+  var TO   = {to_ms};
+  var panels = [
+    {{divId:'chart-p1',  panelId:1}},
+    {{divId:'chart-p17', panelId:17}},
+    {{divId:'chart-p7',  panelId:7}},
+    {{divId:'chart-p5',  panelId:5}},
+    {{divId:'chart-p8',  panelId:8}}
+  ];
+  panels.forEach(function(p, i) {{
+    setTimeout(function() {{
+      var url = '/api/report/'+JOB+'/panel/'+p.panelId+'?from_ms='+FROM+'&to_ms='+TO;
+      var card = document.getElementById(p.divId);
+      if (!card) return;
+      fetch(url)
+        .then(function(r) {{ return r.json(); }})
+        .then(function(data) {{
+          var ph = card.querySelector('.chart-placeholder');
+          if (!ph) return;
+          if (data.img) {{
+            ph.outerHTML = '<img src="data:image/png;base64,'+data.img+'" alt="chart" style="width:100%;display:block"/>';
+          }} else {{
+            ph.outerHTML = '<div class="chart-na">Chart unavailable \u2014 try refreshing</div>';
+          }}
+        }})
+        .catch(function() {{
+          var ph = card.querySelector('.chart-placeholder');
+          if (ph) ph.outerHTML = '<div class="chart-na">Render failed</div>';
+        }});
+    }}, i * 500);
+  }});
+}})();
+</script>
 </body>
 </html>"""
 

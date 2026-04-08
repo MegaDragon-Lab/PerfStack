@@ -1,4 +1,4 @@
-# ⚡ PerfStack v2.0.1
+# ⚡ PerfStack v2.0.2
 
 > Load Testing Platform — K6 + Grafana on Kubernetes
 

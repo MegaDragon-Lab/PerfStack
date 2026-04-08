@@ -218,8 +218,8 @@ function SettingsMenu({ theme, onSelect, t }) {
               <div>
                 <div style={{ color: t.text, fontWeight: 800, fontSize: '0.90rem', letterSpacing: '0.04em' }}>PerfStack</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-                  <span style={{ background: '#c73000', color: '#fff', fontSize: '0.62rem', fontWeight: 800, padding: '1px 8px', borderRadius: 20, letterSpacing: '0.04em' }}>v2.0.1</span>
-                  <span style={{ color: t.textDim, fontSize: '0.68rem' }}>Released Apr 7, 2026</span>
+                  <span style={{ background: '#c73000', color: '#fff', fontSize: '0.62rem', fontWeight: 800, padding: '1px 8px', borderRadius: 20, letterSpacing: '0.04em' }}>v2.0.2</span>
+                  <span style={{ color: t.textDim, fontSize: '0.68rem' }}>Released Apr 8, 2026</span>
                 </div>
               </div>
             </div>
