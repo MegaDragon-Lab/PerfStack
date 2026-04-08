@@ -1,0 +1,59 @@
+flowchart TD
+    USER(("👤 User\nBrowser"))
+
+    subgraph K8S["☸️  Kubernetes Cluster — k3d (local) / EC2 (prod)"]
+        direction TB
+
+        subgraph INGRESS_LAYER["  Ingress  "]
+            NGINX["nginx Ingress Controller\n:80 / :443"]
+        end
+
+        subgraph APP["  Application  "]
+            FRONTEND["🖥️  Frontend\nReact + Vite · nginx"]
+            BACKEND["⚙️  Backend\nFastAPI · Python"]
+        end
+
+        subgraph LT["  Load Testing Engine  "]
+            OPERATOR["k6 Operator\nTestRun CRD"]
+            K6["k6 Runner Pods ×4\nxk6-output-influxdb\nParallelism = 4"]
+        end
+
+        subgraph OBS["  Observability Stack  "]
+            INFLUX["🗄️  InfluxDB v2\nBucket: k6"]
+            GRAFANA["📊  Grafana\n/grafana"]
+            RENDERER["🖼️  Image Renderer\nPanel → PNG"]
+        end
+    end
+
+    subgraph EXT["  External Systems  "]
+        IAM["🔐 IAM Server\nOAuth2 Client Credentials"]
+        TARGET["🎯 Target API\nSystem Under Test"]
+    end
+
+    USER -->|"HTTP"| NGINX
+    NGINX --> FRONTEND
+    NGINX --> BACKEND
+    FRONTEND -.->|"iframe embed"| GRAFANA
+
+    BACKEND -->|"① Get Bearer Token"| IAM
+    BACKEND -->|"② Create TestRun CR"| OPERATOR
+    OPERATOR -->|"③ Spawn 4 pods"| K6
+    K6 -->|"④ HTTP Load"| TARGET
+    K6 -->|"⑤ Stream metrics"| INFLUX
+    GRAFANA -->|"⑥ InfluxQL query"| INFLUX
+    BACKEND -->|"⑦ Render panels"| RENDERER
+    RENDERER -->|"PNG via HTTP"| GRAFANA
+    BACKEND -->|"⑧ Read pod logs\n(summary + report)"| K6
+
+    classDef infra    fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+    classDef app      fill:#1a3a2a,stroke:#22c55e,color:#e2e8f0
+    classDef obs      fill:#2d1b4e,stroke:#a78bfa,color:#e2e8f0
+    classDef ext      fill:#3a2a1a,stroke:#f59e0b,color:#e2e8f0
+    classDef user     fill:#1a2a3a,stroke:#6366f1,color:#e2e8f0
+
+    class NGINX infra
+    class FRONTEND,BACKEND app
+    class OPERATOR,K6 app
+    class INFLUX,GRAFANA,RENDERER obs
+    class IAM,TARGET ext
+    class USER user
