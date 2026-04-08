@@ -329,7 +329,7 @@ async def get_report(job_name: str):
             f"&var-Measurement=http_req_duration{extra}"
         )
         try:
-            async with httpx.AsyncClient(timeout=45) as c:
+            async with httpx.AsyncClient(timeout=90) as c:
                 r = await c.get(url, headers={"Authorization": "Basic YWRtaW46YWRtaW4="})
                 r.raise_for_status()
                 return base64.b64encode(r.content).decode()
@@ -356,12 +356,15 @@ async def get_report(job_name: str):
     except Exception as e:
         logger.warning("Peak RPS query failed: %s", e)
 
-    # Render all panels (sequential — renderer has limited concurrency)
-    vus_img  = await render_panel(1,  600, 280)
-    rps_img  = await render_panel(17, 600, 280)
-    err_img  = await render_panel(7,  600, 280)
-    resp_img = await render_panel(5,  1400, 420)
-    heat_img = await render_panel(8,  1400, 420)
+    # Render all panels in parallel (renderer supports up to 5 concurrent)
+    import asyncio
+    vus_img, rps_img, err_img, resp_img, heat_img = await asyncio.gather(
+        render_panel(1,  600, 280),
+        render_panel(17, 600, 280),
+        render_panel(7,  600, 280),
+        render_panel(5,  1400, 420),
+        render_panel(8,  1400, 420),
+    )
 
     html = _build_report_html(job_name, summary, from_ms, to_ms, peak_rps,
                                vus_img, rps_img, err_img, resp_img, heat_img)
