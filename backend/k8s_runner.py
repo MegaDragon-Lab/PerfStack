@@ -4,6 +4,7 @@ Creates and monitors K6 TestRun CRs with horizontal scaling (parallelism=8)
 """
 import json
 import logging
+import time as _time
 from typing import Any
 
 from kubernetes import client, config as k8s_config
@@ -349,3 +350,35 @@ async def get_k6_html_report(job_name: str) -> str:
         "k6 HTML report not found in pod logs — test may not have completed or "
         "the k6-wrapper.sh image has not been rebuilt yet"
     )
+
+
+async def get_job_time_range(job_name: str) -> tuple[int, int]:
+    """Return (from_epoch_ms, to_epoch_ms) based on runner pod start/completion timestamps."""
+    core_v1 = client.CoreV1Api()
+    pods = core_v1.list_namespaced_pod(
+        namespace=NAMESPACE,
+        label_selector=f"k6_cr={job_name}",
+    )
+    runner_pods = [
+        p for p in pods.items
+        if "initializer" not in p.metadata.name
+        and "starter" not in p.metadata.name
+    ]
+    if not runner_pods:
+        raise ValueError(f"No runner pods found for '{job_name}'")
+
+    start_times, end_times = [], []
+    for pod in runner_pods:
+        if pod.status.start_time:
+            start_times.append(pod.status.start_time.timestamp())
+        if pod.status.container_statuses:
+            for cs in pod.status.container_statuses:
+                if cs.state.terminated and cs.state.terminated.finished_at:
+                    end_times.append(cs.state.terminated.finished_at.timestamp())
+
+    if not start_times:
+        raise ValueError(f"No pod timestamps found for '{job_name}'")
+
+    from_ms = int(min(start_times) * 1000) - 10_000   # 10s padding before
+    to_ms   = int(max(end_times)   * 1000) + 10_000 if end_times else int(_time.time() * 1000)
+    return from_ms, to_ms

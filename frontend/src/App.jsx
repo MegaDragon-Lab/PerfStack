@@ -630,7 +630,7 @@ export default function App() {
   };
 
   const downloadReport = () => {
-    window.open(`${API_BASE}/api/k6-html-report/${jobName}`, "_blank");
+    window.open(`${API_BASE}/api/report/${jobName}`, "_blank");
   };
 
 
@@ -985,7 +985,7 @@ export default function App() {
                     ? <>No saved services yet.<br/>Fill the form and save.</>
                     : "No results."}
                 </div>
-              ) : filteredServices.map((s, i) => {
+              ) : filteredServices.map((s) => {
                 const realIdx = services.indexOf(s);
                 return (
                   <div

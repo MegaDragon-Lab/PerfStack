@@ -85,6 +85,7 @@ INGRESS_IMAGES=(
 INFRA_IMAGES=(
   "influxdb:2.7"
   "grafana/grafana:12.2.0"
+  "grafana/grafana-image-renderer:latest"
 )
 
 for img in "${INGRESS_IMAGES[@]}" "${INFRA_IMAGES[@]}"; do
