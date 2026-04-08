@@ -109,6 +109,23 @@ kubectl wait --namespace k6-operator-system \
 ok "k6 Operator ready"
 echo ""
 
+# ── Pull and mirror infra images (avoids Docker Hub rate limits) ─────────────
+log "Pulling infra images..."
+for img in "influxdb:2.7" "grafana/grafana:12.2.0" "grafana/grafana-image-renderer:latest"; do
+  echo -ne "  ${DIM}pulling ${img}...${NC}\r"
+  docker pull --platform linux/amd64 "$img" -q
+  # mirror to local registry
+  case "$img" in
+    */*)  local_tag="localhost:${REG_PORT}/${img}" ;;
+    *)    local_tag="localhost:${REG_PORT}/library/${img}" ;;
+  esac
+  docker tag "$img" "$local_tag" 2>/dev/null || true
+  docker push "$local_tag" -q >/dev/null 2>&1
+  echo -e "  ${GREEN}✓${NC} ${img}                    "
+done
+ok "Infra images ready in local registry"
+echo ""
+
 # ── Build and push backend ───────────────────────────────────────────────────
 log "Building perfstack-backend:latest (amd64)..."
 docker build --platform linux/amd64 -t perfstack-backend:latest ./backend
@@ -143,7 +160,7 @@ echo ""
 
 # ── Restart deployments ──────────────────────────────────────────────────────
 log "Restarting deployments..."
-for deploy in grafana backend frontend; do
+for deploy in grafana grafana-renderer backend frontend; do
   kubectl rollout restart deployment/$deploy -n $NS >/dev/null || true
 done
 ok "Rollouts triggered"
@@ -151,7 +168,7 @@ echo ""
 
 # ── Wait for deployments ─────────────────────────────────────────────────────
 log "Waiting for deployments to be ready..."
-for deploy in influxdb grafana backend frontend; do
+for deploy in influxdb grafana grafana-renderer backend frontend; do
   kubectl rollout status deployment/$deploy -n $NS --timeout=3m >/dev/null
   ok "$deploy is ready"
 done
