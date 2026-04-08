@@ -337,6 +337,25 @@ async def get_report(job_name: str):
             logger.warning("Panel render failed (panelId=%d): %s", panel_id, e)
             return None
 
+    # Query InfluxDB for peak req/s (max count in any 1s window)
+    peak_rps = 0.0
+    try:
+        q = (f'SELECT max("value") FROM '
+             f'(SELECT count("value") FROM "http_reqs" '
+             f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms '
+             f'GROUP BY time(1s) fill(0))')
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(
+                "http://influxdb:8086/query",
+                params={"db": "k6", "q": q, "epoch": "ms"},
+                headers={"Authorization": "Token perfstack-token"},
+            )
+            data = r.json()
+            vals = data["results"][0]["series"][0]["values"]
+            peak_rps = max((v[1] for v in vals if v[1] is not None), default=0)
+    except Exception as e:
+        logger.warning("Peak RPS query failed: %s", e)
+
     # Render all panels (sequential — renderer has limited concurrency)
     vus_img  = await render_panel(1,  600, 280)
     rps_img  = await render_panel(17, 600, 280)
@@ -344,7 +363,7 @@ async def get_report(job_name: str):
     resp_img = await render_panel(5,  1400, 420)
     heat_img = await render_panel(8,  1400, 420)
 
-    html = _build_report_html(job_name, summary, from_ms, to_ms,
+    html = _build_report_html(job_name, summary, from_ms, to_ms, peak_rps,
                                vus_img, rps_img, err_img, resp_img, heat_img)
     return HTMLResponse(content=html)
 
@@ -374,6 +393,7 @@ def _build_report_html(
     summary: dict,
     from_ms: int,
     to_ms: int,
+    peak_rps: float,
     vus_img:  str | None,
     rps_img:  str | None,
     err_img:  str | None,
@@ -511,7 +531,7 @@ def _build_report_html(
   <!-- KPI CARDS -->
   <div class="kpi-grid">
     <div class="kpi-card"><div class="kpi-value blue">{total_reqs:,}</div><div class="kpi-label">Total Requests</div><div class="kpi-sub">{avg_rps:.1f} req/s avg</div></div>
-    <div class="kpi-card"><div class="kpi-value purple">{peak_vus}</div><div class="kpi-label">Peak VUs</div><div class="kpi-sub">{iters:,} iterations</div></div>
+    <div class="kpi-card"><div class="kpi-value purple">{peak_rps:.1f}</div><div class="kpi-label">Peak req/s</div><div class="kpi-sub">{iters:,} iterations</div></div>
     <div class="kpi-card"><div class="kpi-value" style="color:{err_color}">{err_rate:.2f}%</div><div class="kpi-label">Error Rate</div><div class="kpi-sub">{int(total_reqs*err_rate/100):,} failed</div></div>
     <div class="kpi-card"><div class="kpi-value yellow">{_fmt_ms(p_avg)}</div><div class="kpi-label">Avg Response</div><div class="kpi-sub">med {_fmt_ms(p_med)}</div></div>
     <div class="kpi-card"><div class="kpi-value" style="color:{p95_color}">{_fmt_ms(p95)}</div><div class="kpi-label">p95 Response</div><div class="kpi-sub">p90 {_fmt_ms(p90)}</div></div>
