@@ -21,9 +21,12 @@ INFLUXDB_BUCKET = "k6"
 TEMPLATE_PATH  = pathlib.Path(__file__).parent / "k6_template.js"
 PARALLELISM    = 4
 
-# Resources per runner pod
-RUNNER_REQUESTS = {"cpu": "500m",  "memory": "512Mi"}
-RUNNER_LIMITS   = {"cpu": "1000m", "memory": "1024Mi"}
+# Resources per runner pod — give k6 a full core so VU init is fast
+RUNNER_REQUESTS = {"cpu": "1000m", "memory": "512Mi"}
+RUNNER_LIMITS   = {"cpu": "2000m", "memory": "1024Mi"}
+
+# Cache Jinja2 environment — avoids filesystem reload on every test run
+_jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATE_PATH.parent)))
 
 # Load Kubernetes config (in-cluster or local kubeconfig)
 try:
@@ -43,8 +46,7 @@ def _render_k6_script(
     stages: list[dict],
 ) -> str:
     """Render the Jinja2 K6 template with runtime values."""
-    env = Environment(loader=FileSystemLoader(str(TEMPLATE_PATH.parent)))
-    template = env.get_template(TEMPLATE_PATH.name)
+    template = _jinja_env.get_template(TEMPLATE_PATH.name)
     return template.render(
         bearer_token=bearer_token,
         target_url=target_url,
@@ -86,7 +88,10 @@ async def create_k6_job(
     stages: list[dict],
 ) -> None:
     """Create a k6 Operator TestRun CR with parallelism=8."""
-    _cleanup_completed_testruns()
+    import asyncio, concurrent.futures
+    # Run cleanup in a thread so it doesn't block job creation
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, _cleanup_completed_testruns)
 
     k6_script = _render_k6_script(bearer_token, target_url, payload, vus, duration, stages)
 
@@ -114,7 +119,7 @@ async def create_k6_job(
         },
         "spec": {
             "parallelism": PARALLELISM,
-            "arguments": "--out xk6-influxdb --insecure-skip-tls-verify --no-thresholds",
+            "arguments": "--out xk6-influxdb --insecure-skip-tls-verify --no-thresholds --no-usage-report",
             "script": {
                 "configMap": {
                     "name": cm_name,
@@ -123,12 +128,13 @@ async def create_k6_job(
             },
             "runner": {
                 "image": "k3d-perfstack-registry:5000/library/perfstack-k6:latest",
-                "imagePullPolicy": "Always",
+                "imagePullPolicy": "IfNotPresent",
                 "env": [
-                    {"name": "K6_INFLUXDB_ADDR",         "value": INFLUXDB_ADDR},
-                    {"name": "K6_INFLUXDB_TOKEN",        "value": INFLUXDB_TOKEN},
-                    {"name": "K6_INFLUXDB_ORGANIZATION", "value": INFLUXDB_ORG},
-                    {"name": "K6_INFLUXDB_BUCKET",       "value": INFLUXDB_BUCKET},
+                    {"name": "K6_INFLUXDB_ADDR",           "value": INFLUXDB_ADDR},
+                    {"name": "K6_INFLUXDB_TOKEN",          "value": INFLUXDB_TOKEN},
+                    {"name": "K6_INFLUXDB_ORGANIZATION",   "value": INFLUXDB_ORG},
+                    {"name": "K6_INFLUXDB_BUCKET",         "value": INFLUXDB_BUCKET},
+                    {"name": "K6_INFLUXDB_PUSH_INTERVAL",  "value": "500ms"},
                     {"name": "K6_WEB_DASHBOARD",         "value": "true"},
                     {"name": "K6_WEB_DASHBOARD_EXPORT",  "value": "/tmp/k6-report.html"},
                     {"name": "K6_WEB_DASHBOARD_OPEN",    "value": "false"},

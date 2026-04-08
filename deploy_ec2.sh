@@ -8,6 +8,7 @@ RED='\033[0;31m'
 DIM='\033[2m'
 NC='\033[0m'
 
+DEPLOY_START=$SECONDS
 CLUSTER_NAME="perfstack"
 NS="perfstack"
 INGRESS_VERSION="v1.10.1"
@@ -175,7 +176,15 @@ done
 echo ""
 
 # ── Done ─────────────────────────────────────────────────────────────────────
-echo -e "${GREEN}🚀 PerfStack is up!${NC}"
-echo "Frontend -> http://localhost"
-echo "Grafana  -> http://localhost/grafana   (admin / admin)"
-echo "Backend  -> http://localhost/api/docs"
+echo "  ══════════════════════════════════════════════════════"
+echo -e "  ${GREEN}🚀 PerfStack is up!${NC}"
+echo -e "  ${DIM}EC2 — Ingress on localhost:80${NC}"
+echo "  ══════════════════════════════════════════════════════"
+echo ""
+echo -e "  ${BLUE}Frontend UI${NC}   ->  http://localhost"
+echo -e "  ${BLUE}Grafana${NC}       ->  http://localhost/grafana   (admin / admin)"
+echo -e "  ${BLUE}Backend API${NC}   ->  http://localhost/api/docs"
+echo ""
+_elapsed=$(( SECONDS - DEPLOY_START ))
+echo -e "  ${DIM}⏱  Completed in $(( _elapsed / 60 ))m $(( _elapsed % 60 ))s${NC}"
+echo ""
