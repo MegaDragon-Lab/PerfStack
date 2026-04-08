@@ -118,57 +118,6 @@ function StatusBadge({ status, t }) {
   );
 }
 
-// ── Pod Table ────────────────────────────────────────────────────────────────
-
-function PodTable({ pods, t }) {
-  if (!pods || pods.length === 0) return null;
-  const statusColor = (s) =>
-    s === "Running"   ? t.podRunning :
-    s === "Succeeded" ? t.podSucceeded :
-                        t.podFailed;
-  return (
-    <div style={{ marginTop: 18 }}>
-      <div style={{ fontSize: "0.72rem", fontWeight: 700, color: t.textMuted, marginBottom: 6, letterSpacing: "0.08em" }}>
-        RUNNER PODS ({pods.length})
-      </div>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.76rem", fontFamily: "monospace" }}>
-        <thead>
-          <tr style={{ borderBottom: `1px solid ${t.border}`, color: t.textMuted }}>
-            <th style={{ textAlign: "left",   padding: "3px 8px", fontWeight: 600 }}>#</th>
-            <th style={{ textAlign: "left",   padding: "3px 8px", fontWeight: 600 }}>Pod</th>
-            <th style={{ textAlign: "center", padding: "3px 8px", fontWeight: 600 }}>Status</th>
-            <th style={{ textAlign: "right",  padding: "3px 8px", fontWeight: 600 }}>CPU</th>
-            <th style={{ textAlign: "right",  padding: "3px 8px", fontWeight: 600 }}>Memory</th>
-          </tr>
-        </thead>
-        <tbody>
-          {pods.map((p) => {
-            const sc = statusColor(p.status);
-            return (
-              <tr key={p.name} style={{ borderBottom: `1px solid ${t.bgPanel}` }}>
-                <td style={{ padding: "4px 8px", color: t.textMuted }}>{p.instance}</td>
-                <td style={{ padding: "4px 8px", color: t.text, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.name}>
-                  {p.name}
-                </td>
-                <td style={{ padding: "4px 8px", textAlign: "center" }}>
-                  <span style={{ display: "inline-block", padding: "1px 8px", borderRadius: 10, fontSize: "0.70rem", fontWeight: 700, background: sc.bg, color: sc.fg }}>
-                    {p.status}
-                  </span>
-                </td>
-                <td style={{ padding: "4px 8px", textAlign: "right", color: t.text }}>
-                  {p.cpu_m != null ? `${p.cpu_m}m` : "—"}
-                </td>
-                <td style={{ padding: "4px 8px", textAlign: "right", color: t.text }}>
-                  {p.memory_mi != null ? `${p.memory_mi} MiB` : "—"}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 function SettingsMenu({ theme, onSelect, t }) {
   const [open, setOpen] = useState(false);
@@ -211,7 +160,7 @@ function SettingsMenu({ theme, onSelect, t }) {
               <div style={{ color: t.textDim, fontSize: '0.68rem', marginTop: 3, letterSpacing: '0.04em' }}>Load Testing Platform</div>
             </div>
             <div style={{ background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: '0.63rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0 }}>
-              v2.2.0
+              v2.3.0
             </div>
           </div>
 
@@ -244,7 +193,7 @@ function SettingsMenu({ theme, onSelect, t }) {
           <div style={{ padding: '14px 18px', borderBottom: `1px solid ${t.borderLight}` }}>
             <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', color: t.textDim, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Release Info</div>
             {[
-              { label: 'Version',  value: '2.2.0' },
+              { label: 'Version',  value: '2.3.0' },
               { label: 'Released', value: 'Apr 8, 2026' },
               { label: 'Stack',    value: 'k6 · Grafana · k3d' },
             ].map(({ label, value }) => (
@@ -472,9 +421,11 @@ export default function App() {
     return next;
   });
   const importRef    = useRef(null);
-  const pollingRef   = useRef(null);
+  const pollingRef    = useRef(null);
   const podPollingRef = useRef(null);
+  const summaryHideRef = useRef(null);
   const [podData, setPodData] = useState([]);
+  const [summaryVisible, setSummaryVisible] = useState(true);
 
   const refreshServices = () =>
     fetch(`${API_BASE}/api/services`).then(r => r.json()).then(setServices).catch(() => {});
@@ -571,6 +522,8 @@ export default function App() {
       setJobName(data.job_name);
       setStatus(data.status);
       setMessage(data.message);
+      clearTimeout(summaryHideRef.current);
+      setSummaryVisible(true);
       localStorage.setItem("ps_job",     data.job_name);
       localStorage.setItem("ps_status",  data.status);
       localStorage.setItem("ps_message", data.message);
@@ -602,6 +555,9 @@ export default function App() {
           // Refresh history list after a short delay (backend saves entry asynchronously)
           setTimeout(() => refreshHistory(), 2000);
           setTimeout(() => refreshHistory(), 12000); // second refresh after report is saved
+          // Auto-hide summary bar 15s after completion
+          clearTimeout(summaryHideRef.current);
+          summaryHideRef.current = setTimeout(() => setSummaryVisible(false), 15000);
         }
       } catch { /* ignore transient errors */ }
     }, 3000);
@@ -705,6 +661,125 @@ export default function App() {
   const deleteHistoryEntry = async (job_name) => {
     await fetch(`${API_BASE}/api/history/${encodeURIComponent(job_name)}`, { method: "DELETE" });
     refreshHistory();
+  };
+
+  // ── Monitoring state ─────────────────────────────────────────────────────────
+  const [activeTab,          setActiveTab]          = useState("load");
+  const [monitors,           setMonitors]           = useState([]);
+  const [selectedMonitorId,  setSelectedMonitorId]  = useState(null);
+  const [monitorRuns,        setMonitorRuns]        = useState([]);
+  const [emailConfig,        setEmailConfig]        = useState({});
+  const [emailConfigOpen,    setEmailConfigOpen]    = useState(false);
+  const [monitorSaving,      setMonitorSaving]      = useState(false);
+  const [monitorRunning,     setMonitorRunning]     = useState(false);
+  const [emailSaving,        setEmailSaving]        = useState(false);
+  const monitorPollRef = useRef(null);
+
+  const DEFAULT_MONITOR_FORM = {
+    name: "", service_name: "", target_url: "", method: "POST",
+    headers: {}, payload: {}, iam_url: "", client_id: "", client_secret: "",
+    expected_status: 200, max_response_ms: 5000, body_checks: [],
+    interval: "1h", alert_emails: [], enabled: true,
+  };
+  const [monitorForm,        setMonitorForm]        = useState(DEFAULT_MONITOR_FORM);
+  const [monitorIamOpen,     setMonitorIamOpen]     = useState(false);
+  const [monitorEmailInput,  setMonitorEmailInput]  = useState("");
+  const [monitorPayloadStr,  setMonitorPayloadStr]  = useState("{}");
+  const [monitorHeadersStr,  setMonitorHeadersStr]  = useState("{}");
+
+  const refreshMonitors = () =>
+    fetch(`${API_BASE}/api/monitors`).then(r => r.json()).then(d => Array.isArray(d) && setMonitors(d)).catch(() => {});
+
+  const refreshMonitorRuns = (id) =>
+    fetch(`${API_BASE}/api/monitors/${id}/runs`).then(r => r.json()).then(d => Array.isArray(d) && setMonitorRuns(d)).catch(() => {});
+
+  const loadEmailConfig = () =>
+    fetch(`${API_BASE}/api/email-config`).then(r => r.json()).then(d => setEmailConfig(d || {})).catch(() => {});
+
+  useEffect(() => { refreshMonitors(); loadEmailConfig(); }, []);
+
+  useEffect(() => {
+    if (selectedMonitorId) {
+      refreshMonitorRuns(selectedMonitorId);
+      clearInterval(monitorPollRef.current);
+      monitorPollRef.current = setInterval(() => refreshMonitorRuns(selectedMonitorId), 10000);
+    } else {
+      clearInterval(monitorPollRef.current);
+      setMonitorRuns([]);
+    }
+    return () => clearInterval(monitorPollRef.current);
+  }, [selectedMonitorId]);
+
+  const selectMonitor = (id) => {
+    const m = monitors.find(x => x.id === id);
+    if (!m) return;
+    setSelectedMonitorId(id);
+    setMonitorForm({ ...DEFAULT_MONITOR_FORM, ...m });
+    setMonitorPayloadStr(m.payload && Object.keys(m.payload).length ? JSON.stringify(m.payload, null, 2) : "{}");
+    setMonitorHeadersStr(m.headers && Object.keys(m.headers).length ? JSON.stringify(m.headers, null, 2) : "{}");
+    setMonitorEmailInput("");
+  };
+
+  const newMonitor = () => {
+    setSelectedMonitorId(null);
+    setMonitorForm({ ...DEFAULT_MONITOR_FORM, service_name: services[activeIdx]?.name || "", target_url: form.target_url || "" });
+    setMonitorPayloadStr("{}");
+    setMonitorHeadersStr("{}");
+    setMonitorEmailInput("");
+    setMonitorRuns([]);
+  };
+
+  const saveMonitor = async () => {
+    setMonitorSaving(true);
+    try {
+      let payload = {};
+      try { payload = JSON.parse(monitorPayloadStr); } catch {}
+      let headers = {};
+      try { headers = JSON.parse(monitorHeadersStr); } catch {}
+      const body = { ...monitorForm, payload, headers };
+      const method = selectedMonitorId ? "PUT" : "POST";
+      const url = selectedMonitorId ? `${API_BASE}/api/monitors/${selectedMonitorId}` : `${API_BASE}/api/monitors`;
+      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const saved = await res.json();
+      await refreshMonitors();
+      setSelectedMonitorId(saved.id);
+      setMonitorForm({ ...DEFAULT_MONITOR_FORM, ...saved });
+    } catch {} finally { setMonitorSaving(false); }
+  };
+
+  const deleteMonitor = async () => {
+    if (!selectedMonitorId) return;
+    await fetch(`${API_BASE}/api/monitors/${selectedMonitorId}`, { method: "DELETE" });
+    setSelectedMonitorId(null);
+    setMonitorForm(DEFAULT_MONITOR_FORM);
+    setMonitorRuns([]);
+    refreshMonitors();
+  };
+
+  const toggleMonitor = async (id) => {
+    await fetch(`${API_BASE}/api/monitors/${id}/toggle`, { method: "PATCH" });
+    refreshMonitors();
+  };
+
+  const runMonitorNow = async () => {
+    if (!selectedMonitorId) return;
+    setMonitorRunning(true);
+    await fetch(`${API_BASE}/api/monitors/${selectedMonitorId}/run`, { method: "POST" });
+    setTimeout(() => { refreshMonitorRuns(selectedMonitorId); refreshMonitors(); setMonitorRunning(false); }, 3000);
+  };
+
+  const saveEmailCfg = async () => {
+    setEmailSaving(true);
+    await fetch(`${API_BASE}/api/email-config`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(emailConfig) });
+    setEmailSaving(false);
+  };
+
+  const testEmailCfg = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/email-config/test`, { method: "POST" });
+      const d = await res.json();
+      alert(d.status === "sent" ? `Test email sent to ${d.to}` : `Failed: ${d.detail}`);
+    } catch (e) { alert(`Error: ${e.message}`); }
   };
 
   const [svcSearch, setSvcSearch] = useState("");
@@ -1169,6 +1244,67 @@ export default function App() {
           font-size: 10px; color: ${t.textDim}; letter-spacing: .06em;
         }
 
+        /* ── Tab bar ── */
+        .tab-bar {
+          display: flex; align-items: center; gap: 2px;
+          background: ${t.bg}; border-radius: 8px; padding: 3px;
+          border: 1px solid ${t.borderLight};
+        }
+        .tab-btn {
+          padding: 5px 14px; border-radius: 6px; border: none; cursor: pointer;
+          font-size: 12px; font-weight: 500; color: ${t.textMuted};
+          background: transparent; transition: all .15s; display: flex; align-items: center; gap: 6px;
+        }
+        .tab-btn.active { background: ${t.bgPanel}; color: ${t.text}; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+        .tab-badge { font-size: 10px; background: #c7300020; color: #c73000; padding: 1px 6px; border-radius: 10px; font-weight: 700; }
+
+        /* ── Monitoring layout ── */
+        .mon-workspace { display: flex; height: calc(100vh - 90px); overflow: hidden; }
+        .mon-sidebar {
+          width: 280px; flex-shrink: 0; border-right: 1px solid ${t.borderLight};
+          display: flex; flex-direction: column; overflow: hidden;
+          background: ${t.bgPanel};
+        }
+        .mon-sidebar-header {
+          padding: 14px 14px 10px; border-bottom: 1px solid ${t.borderLight};
+          display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+        }
+        .mon-list { flex: 1; overflow-y: auto; padding: 6px 6px; }
+        .mon-list-item {
+          padding: 9px 10px; border-radius: 7px; cursor: pointer; margin-bottom: 2px;
+          border: 1px solid transparent; transition: all .15s; display: flex; align-items: flex-start; gap: 9px;
+        }
+        .mon-list-item:hover { background: ${t.bgHover}; }
+        .mon-list-item.active { background: ${t.accent}15; border-color: ${t.accent}55; }
+        .mon-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+        .mon-detail { flex: 1; overflow-y: auto; padding: 20px 24px; }
+        .mon-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+        .mon-field label { font-size: 11px; font-weight: 600; color: ${t.textMuted}; text-transform: uppercase; letter-spacing: .05em; }
+        .mon-field input, .mon-field select, .mon-field textarea {
+          padding: 7px 10px; border-radius: 6px; border: 1px solid ${t.inputBorder};
+          background: ${t.bgInput}; color: ${t.text}; font-size: 13px;
+          transition: border-color .15s; outline: none; font-family: inherit;
+        }
+        .mon-field input:focus, .mon-field select:focus, .mon-field textarea:focus { border-color: ${t.inputFocus}; }
+        .mon-run-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .mon-run-table th { font-size: 10px; font-weight: 600; color: ${t.textDim}; text-transform: uppercase; letter-spacing: .06em; padding: 5px 8px; border-bottom: 1px solid ${t.borderLight}; text-align: left; }
+        .mon-run-table td { padding: 6px 8px; border-bottom: 1px solid ${t.borderLight}; color: ${t.text}; vertical-align: top; }
+        .mon-run-table tr:last-child td { border-bottom: none; }
+        .mon-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+        .mon-pill.ok { background: #10b98120; color: #10b981; }
+        .mon-pill.ko { background: #ef444420; color: #ef4444; }
+        .mon-pill.error { background: #f59e0b20; color: #f59e0b; }
+        .email-tag { display: inline-flex; align-items: center; gap: 5px; background: ${t.accent}18; border: 1px solid ${t.accent}44; color: ${t.accent}; border-radius: 12px; padding: 2px 8px; font-size: 11px; margin: 2px; }
+        .email-tag-remove { cursor: pointer; opacity: .6; font-size: 13px; line-height: 1; }
+        .email-tag-remove:hover { opacity: 1; }
+        .check-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+        .check-row input, .check-row select { flex: 1; padding: 5px 8px; border-radius: 5px; border: 1px solid ${t.inputBorder}; background: ${t.bgInput}; color: ${t.text}; font-size: 12px; outline: none; }
+        .check-row input:focus, .check-row select:focus { border-color: ${t.inputFocus}; }
+        .mon-email-section {
+          border-top: 1px solid ${t.borderLight}; padding: 12px 14px; flex-shrink: 0;
+          background: ${t.bgPanel};
+        }
+
         @media(max-width:700px) {
           .sidebar { display: none; }
           .row2 { grid-template-columns: 1fr; }
@@ -1183,17 +1319,31 @@ export default function App() {
             <span className="logo-sub">// load testing platform</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <button
-              className={`grafana-toggle-btn${showGrafana ? " active" : ""}`}
-              onClick={() => setShowGrafana(v => !v)}
-            >
-              📊 {showGrafana ? "Hide" : "Show"} Grafana
-            </button>
+            <div className="tab-bar">
+              <button className={`tab-btn${activeTab === "load" ? " active" : ""}`} onClick={() => setActiveTab("load")}>
+                ⚡ Load Testing
+              </button>
+              <button className={`tab-btn${activeTab === "monitoring" ? " active" : ""}`} onClick={() => setActiveTab("monitoring")}>
+                🔍 Monitoring
+                {monitors.filter(m => m.enabled).length > 0 && (
+                  <span className="tab-badge">{monitors.filter(m => m.enabled).length}</span>
+                )}
+              </button>
+            </div>
+            {activeTab === "load" && (
+              <button
+                className={`grafana-toggle-btn${showGrafana ? " active" : ""}`}
+                onClick={() => setShowGrafana(v => !v)}
+              >
+                📊 {showGrafana ? "Hide" : "Show"} Grafana
+              </button>
+            )}
             <SettingsMenu theme={theme} onSelect={toggleTheme} t={t} />
           </div>
         </header>
 
         {/* ── Summary config bar ── */}
+        {summaryVisible && (
         <div className="summary-bar">
           <span className="summary-label">CONFIG</span>
           <span className="summary-sep">·</span>
@@ -1204,10 +1354,10 @@ export default function App() {
           <span className="summary-sep">·</span>
           <span className="summary-val">{scenario !== "custom" ? form.duration : "—"}</span>
           <span className="summary-label" style={{ marginLeft: 3 }}>s</span>
-          {form.target_url && (
+          {services[activeIdx]?.name && (
             <>
               <span className="summary-sep">·</span>
-              <span className="summary-url">{form.target_url}</span>
+              <span className="summary-url">{services[activeIdx].name}</span>
             </>
           )}
           {status !== "idle" && (
@@ -1217,8 +1367,9 @@ export default function App() {
             </>
           )}
         </div>
+        )}
 
-        <div className="workspace">
+        {activeTab === "load" && <div className="workspace">
           {/* ── Sidebar: Web Services ── */}
           <aside className="sidebar" style={{ width: sidebarWidth }}>
             <div className="sidebar-header">
@@ -1638,10 +1789,27 @@ export default function App() {
 
               {/* Status */}
               {status !== "idle" && (
-                <div style={{ marginTop: 16, padding: '12px 16px', borderRadius: 7, background: t.bgInput, border: `1px solid ${t.borderLight}`, display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  <StatusBadge status={status} t={t} />
-                  {jobName && <span className="job-tag" style={{ fontSize: 11 }}>job: <strong style={{ color: t.text }}>{jobName}</strong></span>}
-                  {message && <p className="msg">{message}</p>}
+                <div style={{ marginTop: 16, padding: '12px 16px', borderRadius: 7, background: t.bgInput, border: `1px solid ${t.borderLight}`, display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <StatusBadge status={status} t={t} />
+                    {jobName && <span className="job-tag" style={{ fontSize: 11 }}>job: <strong style={{ color: t.text }}>{jobName}</strong></span>}
+                    {message && <p className="msg">{message}</p>}
+                  </div>
+                  {(status === "running" || status === "completed") && podData && podData.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 120, alignItems: 'flex-end' }}>
+                      {podData.map(pod => {
+                        const dotColor = pod.status === "Running" ? '#22c55e' : pod.status === "Succeeded" ? '#3b82f6' : pod.status === "Failed" ? '#ef4444' : '#9ca3af';
+                        return (
+                          <div key={pod.name} style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'monospace', fontSize: 10, color: t.textDim }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, flexShrink: 0, display: 'inline-block' }} />
+                            <span style={{ color: t.text }}>pod-{pod.instance}</span>
+                            {pod.cpu_m != null && <span>{pod.cpu_m}m</span>}
+                            {pod.memory_mi != null && <span>{pod.memory_mi}Mi</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1662,10 +1830,6 @@ export default function App() {
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: t.textDim, flexShrink: 0 }}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                   </a>
                 </div>
-              )}
-
-              {(status === "running" || status === "completed") && (
-                <PodTable pods={podData} t={t} />
               )}
             </div>
             {/* Test History */}
@@ -1784,7 +1948,365 @@ export default function App() {
             </div>
 
           </main>
-        </div>
+        </div>}
+
+        {/* ── Monitoring Tab ── */}
+        {activeTab === "monitoring" && (
+          <div className="mon-workspace">
+            {/* Left: monitor list + email config */}
+            <div className="mon-sidebar">
+              <div className="mon-sidebar-header">
+                <span style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Monitors</span>
+                <button
+                  onClick={newMonitor}
+                  style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${t.accent}55`, background: `${t.accent}15`, color: t.accent, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  + New
+                </button>
+              </div>
+
+              <div className="mon-list">
+                {monitors.length === 0 && (
+                  <div style={{ padding: '24px 10px', textAlign: 'center', color: t.textDim, fontSize: 11 }}>
+                    No monitors yet.<br/>Click + New to create one.
+                  </div>
+                )}
+                {monitors.map(m => {
+                  const dotColor = m.last_status === 'ok' ? '#10b981' : m.last_status === 'ko' ? '#ef4444' : m.last_status === 'error' ? '#f59e0b' : t.borderLight;
+                  return (
+                    <div
+                      key={m.id}
+                      className={`mon-list-item${selectedMonitorId === m.id ? ' active' : ''}`}
+                      onClick={() => selectMonitor(m.id)}
+                    >
+                      <span className="mon-status-dot" style={{ background: dotColor }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</div>
+                        {m.service_name && <div style={{ fontSize: 10, color: t.textDim, marginTop: 1 }}>{m.service_name}</div>}
+                        <div style={{ display: 'flex', gap: 5, marginTop: 4, alignItems: 'center' }}>
+                          <span style={{ fontSize: 9, background: t.borderLight, color: t.textDim, borderRadius: 8, padding: '1px 6px', fontFamily: 'monospace' }}>{m.interval}</span>
+                          {!m.enabled && <span style={{ fontSize: 9, color: t.textDim }}>disabled</span>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={e => { e.stopPropagation(); toggleMonitor(m.id); }}
+                        title={m.enabled ? 'Disable' : 'Enable'}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: m.enabled ? t.success : t.textDim, fontSize: 14, padding: '0 2px' }}
+                      >
+                        {m.enabled ? '●' : '○'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Email Config */}
+              <div className="mon-email-section">
+                <div
+                  style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: emailConfigOpen ? 10 : 0 }}
+                  onClick={() => setEmailConfigOpen(o => !o)}
+                >
+                  ✉ Email Config <span style={{ fontSize: 12 }}>{emailConfigOpen ? '▲' : '▾'}</span>
+                </div>
+                {emailConfigOpen && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {[
+                      { key: 'smtp_host', label: 'SMTP Host', placeholder: 'smtp.example.com' },
+                      { key: 'smtp_port', label: 'Port', placeholder: '587' },
+                      { key: 'username',  label: 'Username',  placeholder: 'user@example.com' },
+                      { key: 'password',  label: 'Password',  placeholder: '••••••••', type: 'password' },
+                      { key: 'from_addr', label: 'From',      placeholder: 'perfstack@example.com' },
+                    ].map(({ key, label, placeholder, type }) => (
+                      <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <label style={{ fontSize: 10, fontWeight: 600, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</label>
+                        <input
+                          type={type || 'text'}
+                          value={emailConfig[key] || ''}
+                          onChange={e => setEmailConfig(c => ({ ...c, [key]: e.target.value }))}
+                          placeholder={placeholder}
+                          style={{ padding: '5px 8px', borderRadius: 5, border: `1px solid ${t.inputBorder}`, background: t.bgInput, color: t.text, fontSize: 11, outline: 'none' }}
+                        />
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginTop: 2 }}>
+                      <label style={{ fontSize: 10, color: t.textDim, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={!!emailConfig.use_tls} onChange={e => setEmailConfig(c => ({ ...c, use_tls: e.target.checked }))} />
+                        TLS
+                      </label>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      <button
+                        onClick={saveEmailCfg}
+                        style={{ flex: 1, padding: '5px 0', borderRadius: 5, border: `1px solid ${t.accent}55`, background: `${t.accent}15`, color: t.accent, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        {emailSaving ? 'Saving…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={testEmailCfg}
+                        style={{ flex: 1, padding: '5px 0', borderRadius: 5, border: `1px solid ${t.borderLight}`, background: 'none', color: t.textMuted, fontSize: 11, cursor: 'pointer' }}
+                      >
+                        Test Email
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right: detail pane */}
+            <div className="mon-detail" style={{ background: t.bg }}>
+              {!selectedMonitorId && monitors.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: t.textDim, gap: 10 }}>
+                  <span style={{ fontSize: 36 }}>🔍</span>
+                  <span style={{ fontSize: 13 }}>Select a monitor on the left</span>
+                </div>
+              )}
+              {!selectedMonitorId && monitors.length === 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: t.textDim }}>
+                  <span style={{ fontSize: 40 }}>🔍</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>No monitors yet</span>
+                  <span style={{ fontSize: 12 }}>Click + New to create your first monitor</span>
+                  <button onClick={newMonitor} style={{ marginTop: 8, padding: '8px 20px', borderRadius: 7, border: `1px solid ${t.accent}55`, background: `${t.accent}15`, color: t.accent, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    + Create Monitor
+                  </button>
+                </div>
+              )}
+
+              {(selectedMonitorId !== null || monitorForm.name !== '' || monitorForm.target_url !== '') && (() => {
+                const isNew = !selectedMonitorId;
+                return (
+                  <div style={{ maxWidth: 720 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                      <h2 style={{ fontSize: 16, fontWeight: 700, color: t.text }}>{isNew ? 'New Monitor' : 'Edit Monitor'}</h2>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {!isNew && (
+                          <button
+                            onClick={runMonitorNow}
+                            disabled={monitorRunning}
+                            style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid ${t.success}55`, background: `${t.success}15`, color: t.success, fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: monitorRunning ? .6 : 1 }}
+                          >
+                            {monitorRunning ? '⏳ Running…' : '▶ Run Now'}
+                          </button>
+                        )}
+                        <button
+                          onClick={saveMonitor}
+                          disabled={monitorSaving}
+                          style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid ${t.accent}55`, background: `${t.accent}15`, color: t.accent, fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: monitorSaving ? .6 : 1 }}
+                        >
+                          {monitorSaving ? 'Saving…' : 'Save'}
+                        </button>
+                        {!isNew && (
+                          <button
+                            onClick={deleteMonitor}
+                            style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid ${t.danger}55`, background: `${t.danger}10`, color: t.danger, fontSize: 12, cursor: 'pointer' }}
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 20px' }}>
+                      {/* Name */}
+                      <div className="mon-field" style={{ gridColumn: '1/-1' }}>
+                        <label>Monitor Name</label>
+                        <input value={monitorForm.name} onChange={e => setMonitorForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Production Health Check" />
+                      </div>
+
+                      {/* Target URL */}
+                      <div className="mon-field" style={{ gridColumn: '1/-1' }}>
+                        <label>Target URL</label>
+                        <input value={monitorForm.target_url} onChange={e => setMonitorForm(f => ({ ...f, target_url: e.target.value }))} placeholder="https://api.example.com/endpoint" style={{ fontFamily: 'monospace' }} />
+                      </div>
+
+                      {/* Method */}
+                      <div className="mon-field">
+                        <label>HTTP Method</label>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {['GET', 'POST'].map(m => (
+                            <button key={m} onClick={() => setMonitorForm(f => ({ ...f, method: m }))}
+                              style={{ flex: 1, padding: '7px 0', borderRadius: 6, border: `1px solid ${monitorForm.method === m ? t.accent : t.inputBorder}`, background: monitorForm.method === m ? `${t.accent}18` : 'none', color: monitorForm.method === m ? t.accent : t.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                              {m}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Schedule */}
+                      <div className="mon-field">
+                        <label>Schedule</label>
+                        <select value={monitorForm.interval} onChange={e => setMonitorForm(f => ({ ...f, interval: e.target.value }))}>
+                          {[['5m','Every 5 min'],['15m','Every 15 min'],['30m','Every 30 min'],['1h','Every hour'],['6h','Every 6 hours'],['24h','Every 24 hours']].map(([v,l]) => (
+                            <option key={v} value={v}>{l}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Expected status */}
+                      <div className="mon-field">
+                        <label>Expected HTTP Status</label>
+                        <input type="number" value={monitorForm.expected_status} onChange={e => setMonitorForm(f => ({ ...f, expected_status: parseInt(e.target.value) || 200 }))} />
+                      </div>
+
+                      {/* Max response time */}
+                      <div className="mon-field">
+                        <label>Max Response Time (ms)</label>
+                        <input type="number" value={monitorForm.max_response_ms} onChange={e => setMonitorForm(f => ({ ...f, max_response_ms: parseInt(e.target.value) || 5000 }))} />
+                      </div>
+                    </div>
+
+                    {/* JSON Payload */}
+                    {monitorForm.method === 'POST' && (
+                      <div className="mon-field">
+                        <label>JSON Payload</label>
+                        <textarea
+                          rows={4}
+                          value={monitorPayloadStr}
+                          onChange={e => setMonitorPayloadStr(e.target.value)}
+                          placeholder="{}"
+                          style={{ fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
+                        />
+                      </div>
+                    )}
+
+                    {/* IAM Config (collapsible) */}
+                    <div style={{ marginBottom: 14, border: `1px solid ${t.borderLight}`, borderRadius: 7, overflow: 'hidden' }}>
+                      <div
+                        style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: t.bgPanel, userSelect: 'none' }}
+                        onClick={() => setMonitorIamOpen(o => !o)}
+                      >
+                        <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>IAM Auth (optional)</span>
+                        <span style={{ color: t.textDim, fontSize: 12 }}>{monitorIamOpen ? '▲' : '▾'}</span>
+                      </div>
+                      {monitorIamOpen && (
+                        <div style={{ padding: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px', background: t.bg }}>
+                          {[
+                            { key: 'iam_url', label: 'IAM URL', col: '1/-1' },
+                            { key: 'client_id', label: 'Client ID' },
+                            { key: 'client_secret', label: 'Client Secret', type: 'password' },
+                          ].map(({ key, label, col, type }) => (
+                            <div key={key} className="mon-field" style={col ? { gridColumn: col } : {}}>
+                              <label>{label}</label>
+                              <input type={type || 'text'} value={monitorForm[key]} onChange={e => setMonitorForm(f => ({ ...f, [key]: e.target.value }))} style={{ fontFamily: 'monospace' }} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Body Checks */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>Body Checks</label>
+                        <button
+                          onClick={() => setMonitorForm(f => ({ ...f, body_checks: [...f.body_checks, { field: '', operator: 'eq', value: '' }] }))}
+                          style={{ fontSize: 11, color: t.accent, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          + Add Check
+                        </button>
+                      </div>
+                      {monitorForm.body_checks.map((bc, i) => (
+                        <div key={i} className="check-row">
+                          <input value={bc.field} onChange={e => setMonitorForm(f => { const c = [...f.body_checks]; c[i] = { ...c[i], field: e.target.value }; return { ...f, body_checks: c }; })} placeholder="field.path" />
+                          <select value={bc.operator} onChange={e => setMonitorForm(f => { const c = [...f.body_checks]; c[i] = { ...c[i], operator: e.target.value }; return { ...f, body_checks: c }; })}>
+                            <option value="eq">equals</option>
+                            <option value="contains">contains</option>
+                            <option value="exists">exists</option>
+                          </select>
+                          {bc.operator !== 'exists' && (
+                            <input value={bc.value} onChange={e => setMonitorForm(f => { const c = [...f.body_checks]; c[i] = { ...c[i], value: e.target.value }; return { ...f, body_checks: c }; })} placeholder="expected value" />
+                          )}
+                          <button onClick={() => setMonitorForm(f => ({ ...f, body_checks: f.body_checks.filter((_, idx) => idx !== i) }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.danger, fontSize: 15, padding: '0 4px' }}>×</button>
+                        </div>
+                      ))}
+                      {monitorForm.body_checks.length === 0 && (
+                        <div style={{ fontSize: 11, color: t.textDim, padding: '6px 0' }}>No body checks — click + Add Check to verify response fields.</div>
+                      )}
+                    </div>
+
+                    {/* Alert Emails */}
+                    <div className="mon-field">
+                      <label>Alert Emails</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+                        {monitorForm.alert_emails.map((email, i) => (
+                          <span key={i} className="email-tag">
+                            {email}
+                            <span className="email-tag-remove" onClick={() => setMonitorForm(f => ({ ...f, alert_emails: f.alert_emails.filter((_, idx) => idx !== i) }))}>×</span>
+                          </span>
+                        ))}
+                      </div>
+                      <input
+                        value={monitorEmailInput}
+                        onChange={e => setMonitorEmailInput(e.target.value)}
+                        onKeyDown={e => {
+                          if ((e.key === 'Enter' || e.key === ',') && monitorEmailInput.trim()) {
+                            e.preventDefault();
+                            const email = monitorEmailInput.trim().replace(/,$/, '');
+                            if (email && !monitorForm.alert_emails.includes(email)) {
+                              setMonitorForm(f => ({ ...f, alert_emails: [...f.alert_emails, email] }));
+                            }
+                            setMonitorEmailInput('');
+                          }
+                        }}
+                        placeholder="type email and press Enter"
+                      />
+                    </div>
+
+                    {/* Enabled toggle */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                      <label style={{ fontSize: 12, color: t.text, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input type="checkbox" checked={monitorForm.enabled} onChange={e => setMonitorForm(f => ({ ...f, enabled: e.target.checked }))} />
+                        Monitor enabled
+                      </label>
+                    </div>
+
+                    {/* Run History */}
+                    {!isNew && (
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          Run History
+                          <button onClick={() => refreshMonitorRuns(selectedMonitorId)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textDim, fontSize: 11 }}>↻ Refresh</button>
+                        </div>
+                        {monitorRuns.length === 0 ? (
+                          <div style={{ color: t.textDim, fontSize: 11, padding: '10px 0' }}>No runs yet. Click "Run Now" to execute immediately.</div>
+                        ) : (
+                          <table className="mon-run-table">
+                            <thead>
+                              <tr>
+                                <th>Time</th>
+                                <th>Status</th>
+                                <th>HTTP</th>
+                                <th>Response</th>
+                                <th>Checks</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {monitorRuns.map(r => {
+                                const passed = (r.checks || []).filter(c => c.passed).length;
+                                const total  = (r.checks || []).length;
+                                return (
+                                  <tr key={r.id}>
+                                    <td style={{ color: t.textDim, fontFamily: 'monospace', fontSize: 11 }}>{r.started_at?.slice(0,19).replace('T',' ')}</td>
+                                    <td><span className={`mon-pill ${r.status}`}>{r.status}</span></td>
+                                    <td style={{ fontFamily: 'monospace' }}>{r.http_status || '—'}</td>
+                                    <td style={{ fontFamily: 'monospace' }}>{r.response_ms ? `${r.response_ms}ms` : '—'}</td>
+                                    <td style={{ fontFamily: 'monospace', color: passed === total && total > 0 ? t.success : t.danger }}>
+                                      {total > 0 ? `${passed}/${total}` : '—'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        )}
 
         {showGrafana && (
           <div className="grafana-iframe-panel">

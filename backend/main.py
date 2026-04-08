@@ -7,11 +7,18 @@ import json
 import logging
 import os
 import pathlib
+import asyncio
+import time as _time
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import aiosmtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 from auth import IamAuthClient
 from k8s_runner import create_k6_job, get_job_status, get_job_summary, get_job_pods, get_job_time_range
@@ -29,18 +36,29 @@ app = FastAPI(
     root_path="/api",
 )
 
+_scheduler = AsyncIOScheduler()
+
 
 @app.on_event("startup")
-async def _warmup_renderer():
-    """Schedule renderer warm-up as a background task so startup completes immediately."""
-    import asyncio
+async def _on_startup():
+    """Start scheduler, re-register all enabled monitors, warm up renderer."""
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    _scheduler.start()
+    for m in _read_monitors():
+        if m.get("enabled"):
+            _schedule_monitor(m)
+    logger.info("Monitor scheduler started (%d monitors loaded)", len(_read_monitors()))
     asyncio.create_task(_do_warmup())
+
+
+@app.on_event("shutdown")
+async def _on_shutdown():
+    _scheduler.shutdown(wait=False)
 
 
 async def _do_warmup():
     """Fire a dummy render 20s after startup so Chromium is warm for the first report."""
-    import asyncio, httpx
+    import httpx
     await asyncio.sleep(20)   # wait for Grafana + renderer to be ready
     try:
         async with httpx.AsyncClient(timeout=60) as c:
@@ -102,14 +120,65 @@ class TestResult(BaseModel):
     message: str
 
 
+class BodyCheck(BaseModel):
+    field: str        # dot-path e.g. "data.status"
+    operator: str     # "eq" | "contains" | "exists"
+    value: str = ""
+
+
+class Monitor(BaseModel):
+    id: str = ""
+    name: str
+    service_name: str = ""
+    target_url: str
+    method: str = "POST"
+    headers: dict = {}
+    payload: dict = {}
+    iam_url: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    expected_status: int = 200
+    max_response_ms: int = 5000
+    body_checks: list[BodyCheck] = []
+    interval: str = "1h"          # "5m"|"15m"|"30m"|"1h"|"6h"|"24h"
+    alert_emails: list[str] = []
+    enabled: bool = True
+    created_at: str = ""
+    last_status: str = ""         # "ok"|"ko"|"error"|""
+
+
+class MonitorRun(BaseModel):
+    id: str = ""
+    monitor_id: str
+    monitor_name: str
+    started_at: str
+    status: str                   # "ok"|"ko"|"error"
+    http_status: int = 0
+    response_ms: int = 0
+    error: str = ""
+    checks: list[dict] = []       # [{check, passed, expected, actual}]
+
+
+class EmailConfig(BaseModel):
+    smtp_host: str = ""
+    smtp_port: int = 587
+    use_tls: bool = True
+    username: str = ""
+    password: str = ""
+    from_addr: str = ""
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 INFLUXDB_URL = "http://influxdb:8086"
 DATA_DIR = pathlib.Path(os.getenv("DATA_DIR", "/data"))
-SCENARIOS_FILE = DATA_DIR / "custom_scenarios.json"
-SERVICES_FILE  = DATA_DIR / "services.json"
-HISTORY_FILE   = DATA_DIR / "history.json"
-REPORTS_DIR    = DATA_DIR / "reports"
+SCENARIOS_FILE     = DATA_DIR / "custom_scenarios.json"
+SERVICES_FILE      = DATA_DIR / "services.json"
+HISTORY_FILE       = DATA_DIR / "history.json"
+REPORTS_DIR        = DATA_DIR / "reports"
+MONITORS_FILE      = DATA_DIR / "monitors.json"
+MONITOR_RUNS_FILE  = DATA_DIR / "monitor_runs.json"
+EMAIL_CONFIG_FILE  = DATA_DIR / "email_config.json"
 
 
 def _read_file(path: pathlib.Path) -> list:
@@ -122,12 +191,28 @@ def _write_file(path: pathlib.Path, data: list) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2))
 
-def _read_scenarios() -> list:  return _read_file(SCENARIOS_FILE)
-def _write_scenarios(data): _write_file(SCENARIOS_FILE, data)
-def _read_services() -> list:   return _read_file(SERVICES_FILE)
-def _write_services(data):  _write_file(SERVICES_FILE, data)
-def _read_history() -> list:    return _read_file(HISTORY_FILE)
-def _write_history(data):   _write_file(HISTORY_FILE, data)
+def _read_file_dict(path: pathlib.Path) -> dict:
+    try:
+        return json.loads(path.read_text()) if path.exists() else {}
+    except Exception:
+        return {}
+
+def _write_file_dict(path: pathlib.Path, data: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2))
+
+def _read_scenarios() -> list:       return _read_file(SCENARIOS_FILE)
+def _write_scenarios(data):          _write_file(SCENARIOS_FILE, data)
+def _read_services() -> list:        return _read_file(SERVICES_FILE)
+def _write_services(data):           _write_file(SERVICES_FILE, data)
+def _read_history() -> list:         return _read_file(HISTORY_FILE)
+def _write_history(data):            _write_file(HISTORY_FILE, data)
+def _read_monitors() -> list:        return _read_file(MONITORS_FILE)
+def _write_monitors(data):           _write_file(MONITORS_FILE, data)
+def _read_monitor_runs() -> list:    return _read_file(MONITOR_RUNS_FILE)
+def _write_monitor_runs(data):       _write_file(MONITOR_RUNS_FILE, data)
+def _read_email_config() -> dict:    return _read_file_dict(EMAIL_CONFIG_FILE)
+def _write_email_config(data: dict): _write_file_dict(EMAIL_CONFIG_FILE, data)
 
 
 class CustomScenario(BaseModel):
@@ -799,11 +884,323 @@ def _build_report_html(
   <thead><tr><th>Name</th><th class="num">Passes</th><th class="num">Fails</th></tr></thead>
   <tbody>{checks_html}</tbody></table></div>'''}
 
-  <div class="footer">PerfStack v2.2.0 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
+  <div class="footer">PerfStack v2.3.0 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
 </div>
 {lazy_js}
 </body>
 </html>"""
+
+
+# ── Monitor scheduling helpers ────────────────────────────────────────────────
+
+INTERVAL_MAP = {"5m": 5, "15m": 15, "30m": 30, "1h": 60, "6h": 360, "24h": 1440}
+
+
+def _schedule_monitor(m: dict) -> None:
+    """Add or replace an APScheduler job for a monitor dict."""
+    mid = m["id"]
+    if _scheduler.get_job(mid):
+        _scheduler.remove_job(mid)
+    if m.get("enabled"):
+        mins = INTERVAL_MAP.get(m.get("interval", "1h"), 60)
+        _scheduler.add_job(
+            _run_monitor, "interval", minutes=mins,
+            id=mid, args=[mid], max_instances=1, coalesce=True,
+        )
+
+
+def _get_nested(obj: Any, path: str) -> Any:
+    """Traverse a dot-separated path in a nested dict/list, returns None if not found."""
+    try:
+        for key in path.split("."):
+            if isinstance(obj, dict):
+                obj = obj.get(key)
+            elif isinstance(obj, list) and key.isdigit():
+                obj = obj[int(key)]
+            else:
+                return None
+        return obj
+    except Exception:
+        return None
+
+
+async def _run_monitor(monitor_id: str) -> None:
+    """Execute a single monitor check and persist the result."""
+    import httpx
+    monitors = _read_monitors()
+    m = next((x for x in monitors if x["id"] == monitor_id), None)
+    if not m or not m.get("enabled"):
+        return
+
+    started = datetime.now(timezone.utc).isoformat()
+    run = MonitorRun(
+        id=str(uuid.uuid4()),
+        monitor_id=monitor_id,
+        monitor_name=m["name"],
+        started_at=started,
+        status="error",
+    )
+
+    try:
+        # Optional IAM auth
+        headers = dict(m.get("headers", {}))
+        if m.get("iam_url"):
+            loop = asyncio.get_event_loop()
+            auth = IamAuthClient(
+                iam_url=m["iam_url"],
+                client_id=m.get("client_id", ""),
+                client_secret=m.get("client_secret", ""),
+            )
+            token = await auth.get_bearer_token()
+            headers["Authorization"] = f"Bearer {token}"
+
+        timeout = min(m.get("max_response_ms", 5000) / 1000 + 2, 30)
+        t0 = _time.monotonic()
+        async with httpx.AsyncClient(timeout=timeout, verify=False) as c:
+            payload = m.get("payload") or None
+            if m.get("method", "POST").upper() == "GET":
+                resp = await c.get(m["target_url"], headers=headers)
+            else:
+                resp = await c.post(m["target_url"], json=payload, headers=headers)
+        elapsed_ms = int((_time.monotonic() - t0) * 1000)
+
+        run.http_status = resp.status_code
+        run.response_ms = elapsed_ms
+
+        check_results = []
+        all_ok = True
+
+        # Check 1: HTTP status code
+        status_ok = resp.status_code == m.get("expected_status", 200)
+        check_results.append({
+            "check": "status_code", "passed": status_ok,
+            "expected": str(m.get("expected_status", 200)),
+            "actual": str(resp.status_code),
+        })
+        if not status_ok:
+            all_ok = False
+
+        # Check 2: Response time
+        rt_ok = elapsed_ms <= m.get("max_response_ms", 5000)
+        check_results.append({
+            "check": "response_time_ms", "passed": rt_ok,
+            "expected": f"<= {m.get('max_response_ms', 5000)}",
+            "actual": str(elapsed_ms),
+        })
+        if not rt_ok:
+            all_ok = False
+
+        # Check 3+: Body JSON field checks
+        body_json = None
+        try:
+            body_json = resp.json()
+        except Exception:
+            pass
+        for bc in m.get("body_checks", []):
+            val = _get_nested(body_json, bc["field"])
+            op = bc.get("operator", "eq")
+            if op == "exists":
+                passed = val is not None
+            elif op == "eq":
+                passed = str(val) == str(bc.get("value", ""))
+            elif op == "contains":
+                passed = bc.get("value", "") in str(val or "")
+            else:
+                passed = False
+            check_results.append({
+                "check": f"body.{bc['field']}", "passed": passed,
+                "expected": f"{op} {bc.get('value', '')}".strip(),
+                "actual": str(val),
+            })
+            if not passed:
+                all_ok = False
+
+        run.status = "ok" if all_ok else "ko"
+        run.checks = check_results
+
+    except Exception as e:
+        run.status = "error"
+        run.error = str(e)
+
+    # Persist run (keep last 1000)
+    runs = _read_monitor_runs()
+    runs.insert(0, run.model_dump())
+    _write_monitor_runs(runs[:1000])
+
+    # Update last_status on the monitor
+    for mx in monitors:
+        if mx["id"] == monitor_id:
+            mx["last_status"] = run.status
+            break
+    _write_monitors(monitors)
+
+    logger.info("Monitor run: id=%s name=%s status=%s http=%d ms=%d",
+                monitor_id, m["name"], run.status, run.http_status, run.response_ms)
+
+    # Send alert email if check failed
+    if run.status != "ok" and m.get("alert_emails"):
+        asyncio.create_task(_send_monitor_alert(m, run.model_dump()))
+
+
+async def _send_monitor_alert(m: dict, run: dict) -> None:
+    """Send email alert for a failed monitor check."""
+    cfg = _read_email_config()
+    if not cfg.get("smtp_host") or not m.get("alert_emails"):
+        return
+
+    check_lines = "\n".join(
+        f"  {'✓' if c['passed'] else '✗'} {c['check']}: expected {c['expected']} — got {c['actual']}"
+        for c in run.get("checks", [])
+    )
+    body_text = (
+        f"Monitor Alert: {m['name']}\n"
+        f"Status: {run['status'].upper()}\n"
+        f"URL: {m['target_url']}\n"
+        f"HTTP status: {run['http_status']}  |  Response time: {run['response_ms']}ms\n"
+        f"Time: {run['started_at']}\n\n"
+        f"Checks:\n{check_lines or '  (none)'}"
+    )
+    if run.get("error"):
+        body_text += f"\n\nError: {run['error']}"
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"[PerfStack] Monitor ALERT: {m['name']} — {run['status'].upper()}"
+    msg["From"]    = cfg.get("from_addr", "perfstack@localhost")
+    msg["To"]      = ", ".join(m["alert_emails"])
+    msg.attach(MIMEText(body_text, "plain"))
+
+    try:
+        smtp = aiosmtplib.SMTP(hostname=cfg["smtp_host"], port=int(cfg.get("smtp_port", 587)))
+        await smtp.connect()
+        if cfg.get("use_tls", True):
+            await smtp.starttls()
+        if cfg.get("username"):
+            await smtp.login(cfg["username"], cfg["password"])
+        await smtp.send_message(msg)
+        await smtp.quit()
+        logger.info("Monitor alert email sent to %s", m["alert_emails"])
+    except Exception as e:
+        logger.warning("Monitor alert email failed: %s", e)
+
+
+# ── Monitor CRUD endpoints ────────────────────────────────────────────────────
+
+@app.get("/monitors", summary="List all monitors")
+async def list_monitors():
+    return _read_monitors()
+
+
+@app.post("/monitors", summary="Create a new monitor")
+async def create_monitor(monitor: Monitor):
+    monitors = _read_monitors()
+    monitor.id = str(uuid.uuid4())
+    monitor.created_at = datetime.now(timezone.utc).isoformat()
+    entry = monitor.model_dump()
+    monitors.append(entry)
+    _write_monitors(monitors)
+    _schedule_monitor(entry)
+    logger.info("Monitor created: id=%s name=%s interval=%s", monitor.id, monitor.name, monitor.interval)
+    return entry
+
+
+@app.put("/monitors/{monitor_id}", summary="Update a monitor")
+async def update_monitor(monitor_id: str, monitor: Monitor):
+    monitors = _read_monitors()
+    idx = next((i for i, m in enumerate(monitors) if m["id"] == monitor_id), None)
+    if idx is None:
+        raise HTTPException(status_code=404, detail=f"Monitor '{monitor_id}' not found")
+    monitor.id = monitor_id
+    monitor.created_at = monitors[idx].get("created_at", "")
+    monitor.last_status = monitors[idx].get("last_status", "")
+    entry = monitor.model_dump()
+    monitors[idx] = entry
+    _write_monitors(monitors)
+    _schedule_monitor(entry)
+    return entry
+
+
+@app.delete("/monitors/{monitor_id}", summary="Delete a monitor")
+async def delete_monitor(monitor_id: str):
+    monitors = _read_monitors()
+    updated = [m for m in monitors if m["id"] != monitor_id]
+    if len(updated) == len(monitors):
+        raise HTTPException(status_code=404, detail=f"Monitor '{monitor_id}' not found")
+    _write_monitors(updated)
+    if _scheduler.get_job(monitor_id):
+        _scheduler.remove_job(monitor_id)
+    return {"status": "deleted", "id": monitor_id}
+
+
+@app.patch("/monitors/{monitor_id}/toggle", summary="Enable or disable a monitor")
+async def toggle_monitor(monitor_id: str):
+    monitors = _read_monitors()
+    idx = next((i for i, m in enumerate(monitors) if m["id"] == monitor_id), None)
+    if idx is None:
+        raise HTTPException(status_code=404, detail=f"Monitor '{monitor_id}' not found")
+    monitors[idx]["enabled"] = not monitors[idx].get("enabled", True)
+    _write_monitors(monitors)
+    _schedule_monitor(monitors[idx])
+    return monitors[idx]
+
+
+@app.post("/monitors/{monitor_id}/run", summary="Trigger a monitor check immediately")
+async def run_monitor_now(monitor_id: str):
+    monitors = _read_monitors()
+    if not any(m["id"] == monitor_id for m in monitors):
+        raise HTTPException(status_code=404, detail=f"Monitor '{monitor_id}' not found")
+    asyncio.create_task(_run_monitor(monitor_id))
+    return {"status": "triggered", "id": monitor_id}
+
+
+@app.get("/monitors/{monitor_id}/runs", summary="Get run history for a monitor (last 100)")
+async def get_monitor_runs(monitor_id: str):
+    runs = _read_monitor_runs()
+    return [r for r in runs if r.get("monitor_id") == monitor_id][:100]
+
+
+# ── Email config endpoints ────────────────────────────────────────────────────
+
+@app.get("/email-config", summary="Get email configuration (password masked)")
+async def get_email_config():
+    cfg = _read_email_config()
+    if cfg.get("password"):
+        cfg = dict(cfg)
+        cfg["password"] = "***"
+    return cfg
+
+
+@app.post("/email-config", summary="Save email configuration")
+async def save_email_config(config: EmailConfig):
+    existing = _read_email_config()
+    data = config.model_dump()
+    # Keep existing password if placeholder sent
+    if data.get("password") == "***" and existing.get("password"):
+        data["password"] = existing["password"]
+    _write_email_config(data)
+    return {"status": "saved"}
+
+
+@app.post("/email-config/test", summary="Send a test email")
+async def test_email_config():
+    cfg = _read_email_config()
+    if not cfg.get("smtp_host") or not cfg.get("from_addr"):
+        raise HTTPException(status_code=400, detail="Email config incomplete (smtp_host and from_addr required)")
+    msg = MIMEText("PerfStack email configuration is working correctly.", "plain")
+    msg["Subject"] = "[PerfStack] Test Email"
+    msg["From"]    = cfg["from_addr"]
+    msg["To"]      = cfg["from_addr"]
+    try:
+        smtp = aiosmtplib.SMTP(hostname=cfg["smtp_host"], port=int(cfg.get("smtp_port", 587)))
+        await smtp.connect()
+        if cfg.get("use_tls", True):
+            await smtp.starttls()
+        if cfg.get("username"):
+            await smtp.login(cfg["username"], cfg["password"])
+        await smtp.send_message(msg)
+        await smtp.quit()
+        return {"status": "sent", "to": cfg["from_addr"]}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Email send failed: {e}")
 
 
 @app.get("/history", summary="List all test run history entries (newest first)")
