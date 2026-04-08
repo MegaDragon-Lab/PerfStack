@@ -308,7 +308,7 @@ async def get_report(job_name: str):
     from fastapi.responses import HTMLResponse
 
     GRAFANA_BASE  = "http://grafana:3000/grafana"
-    DASHBOARD_UID = "perfstack-k6"
+    DASHBOARD_UID = "k6"
 
     try:
         summary = await get_job_summary(job_name)
@@ -323,7 +323,7 @@ async def get_report(job_name: str):
 
     async def render_panel(panel_id: int, width: int, height: int, extra: str = "") -> str | None:
         url = (
-            f"{GRAFANA_BASE}/render/d-solo/{DASHBOARD_UID}/perfstack-metrics"
+            f"{GRAFANA_BASE}/render/d-solo/{DASHBOARD_UID}/k6-load-testing-results"
             f"?orgId=1&panelId={panel_id}&from={from_ms}&to={to_ms}"
             f"&width={width}&height={height}&theme=dark"
             f"&var-Measurement=http_req_duration{extra}"
