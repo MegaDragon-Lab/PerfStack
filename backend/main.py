@@ -29,6 +29,23 @@ app = FastAPI(
     root_path="/api",
 )
 
+
+@app.on_event("startup")
+async def _warmup_renderer():
+    """Fire a dummy render on startup so Chromium is already warm when the first report is requested."""
+    import asyncio, httpx
+    await asyncio.sleep(15)   # wait for Grafana + renderer to be ready
+    try:
+        async with httpx.AsyncClient(timeout=60) as c:
+            await c.get(
+                "http://grafana:3000/grafana/render/d-solo/k6/k6-load-testing-results"
+                "?orgId=1&panelId=1&from=now-5m&to=now&width=100&height=100&theme=dark",
+                headers={"Authorization": "Basic YWRtaW46YWRtaW4="},
+            )
+        logger.info("Renderer warm-up complete")
+    except Exception as e:
+        logger.warning("Renderer warm-up failed (non-fatal): %s", e)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
