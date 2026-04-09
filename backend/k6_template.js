@@ -46,7 +46,7 @@ export default function () {
     http503.add(1);
   }
 
-  sleep(0.1);
+  sleep({{ sleep_interval }});
 }
 
 export function handleSummary(data) {

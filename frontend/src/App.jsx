@@ -150,17 +150,18 @@ function SettingsMenu({ theme, onSelect, t }) {
 
           {/* ── App identity header ── */}
           <div style={{ padding: '16px 18px', borderBottom: `1px solid ${t.borderLight}`, display: 'flex', alignItems: 'center', gap: 13 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 11, background: 'linear-gradient(135deg, #c73000 0%, #ff6a35 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 10px rgba(199,48,0,0.40)' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-              </svg>
-            </div>
+            <img
+              src={theme === 'dark' ? '/assets/private/GSA_Logo_Inverted.png' : '/assets/private/GSA_Logo.jpg'}
+              alt="GSA"
+              style={{ height: 48, maxWidth: 90, objectFit: 'contain', flexShrink: 0 }}
+              onError={e => { e.currentTarget.style.display = 'none'; }}
+            />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ color: t.text, fontWeight: 700, fontSize: '0.92rem', letterSpacing: '0.02em', lineHeight: 1.2 }}>PerfStack</div>
-              <div style={{ color: t.textDim, fontSize: '0.68rem', marginTop: 3, letterSpacing: '0.04em' }}>Load Testing Platform</div>
+              <div style={{ color: t.text, fontWeight: 700, fontSize: '0.92rem', letterSpacing: '0.02em', lineHeight: 1.2 }}>GSA Platform Suite</div>
+              <div style={{ color: t.textDim, fontSize: '0.68rem', marginTop: 3, letterSpacing: '0.04em' }}>Performance Testing Platform</div>
             </div>
             <div style={{ background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: '0.63rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0 }}>
-              v2.3.0
+              v2.4.0
             </div>
           </div>
 
@@ -229,11 +230,11 @@ function SettingsMenu({ theme, onSelect, t }) {
 // ── Scenarios ────────────────────────────────────────────────────────────────
 
 const SCENARIOS = {
-  load:   { label: "Load",   icon: "📈", desc: "Constant VUs — ramp up, hold, ramp down",         suggestVus: 50,  suggestDur: 120  },
-  spike:  { label: "Spike",  icon: "⚡", desc: "Sudden spike — baseline, burst, then recovery",    suggestVus: 200, suggestDur: 90   },
-  stress: { label: "Stress", icon: "🔥", desc: "Progressive ramp — increase load until failure",   suggestVus: 300, suggestDur: 300  },
-  soak:   { label: "Soak",   icon: "🕐", desc: "Endurance — sustained load over long duration",    suggestVus: 30,  suggestDur: 3600 },
-  custom: { label: "Custom", icon: "🎛️", desc: "Manual — set VUs and duration freely",             suggestVus: null, suggestDur: null },
+  load:   { label: "Load",   icon: "📈", desc: "Constant VUs — ramp up, hold, ramp down",         suggestVus: 50,  suggestDur: 120,  suggestInterval: 1.0  },
+  spike:  { label: "Spike",  icon: "⚡", desc: "Sudden spike — baseline, burst, then recovery",    suggestVus: 200, suggestDur: 90,   suggestInterval: 0.1  },
+  stress: { label: "Stress", icon: "🔥", desc: "Progressive ramp — increase load until failure",   suggestVus: 300, suggestDur: 300,  suggestInterval: 0.0  },
+  soak:   { label: "Soak",   icon: "🕐", desc: "Endurance — sustained load over long duration",    suggestVus: 30,  suggestDur: 3600, suggestInterval: 1.5  },
+  custom: { label: "Custom", icon: "🎛️", desc: "Manual — set VUs and duration freely",             suggestVus: null, suggestDur: null, suggestInterval: null },
 };
 
 function computeStages(scenario, vus, duration) {
@@ -288,8 +289,19 @@ const DEFAULT_CUSTOM_STAGES = [
 // ── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [theme, setTheme] = useState(() => localStorage.getItem('ps_theme') || 'dark');
+  const [theme, setTheme] = useState(() => localStorage.getItem('ps_theme') || 'light');
   const t = theme === 'dark' ? DARK : LIGHT;
+
+  // ── Auth ────────────────────────────────────────────────────────────────────
+  const [currentUser, setCurrentUser] = useState(null);   // null = not yet checked
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(u => { setCurrentUser(u); setAuthChecked(true); })
+      .catch(() => setAuthChecked(true));
+  }, []);
 
   const toggleTheme = (val) => {
     setTheme(val);
@@ -332,18 +344,20 @@ export default function App() {
   }, []);
 
   const [form, setForm] = useState({
-    iam_url:       "",
-    client_id:     "",
-    client_secret: "",
-    target_url:    "",
-    payload:       '{\n  "key": "value"\n}',
-    vus:           10,
-    duration:      60,
+    iam_url:        "",
+    client_id:      "",
+    client_secret:  "",
+    target_url:     "",
+    payload:        '{\n  "key": "value"\n}',
+    vus:            10,
+    duration:       60,
+    sleep_interval: 0.1,
+    parallelism:    4,
   });
 
-  const [status,      setStatus]      = useState(() => localStorage.getItem("ps_status") || "idle");
+  const [status,      setStatus]      = useState(() => { const s = localStorage.getItem("ps_status"); return (s === "running" || s === "pending") ? s : "idle"; });
   const [jobName,     setJobName]     = useState(() => localStorage.getItem("ps_job") || null);
-  const [message,     setMessage]     = useState(() => localStorage.getItem("ps_message") || "");
+  const [message,     setMessage]     = useState(() => { const s = localStorage.getItem("ps_status"); return (s === "running" || s === "pending") ? (localStorage.getItem("ps_message") || "") : ""; });
   const [loading,     setLoading]     = useState(false);
   const [jsonError,   setJsonError]   = useState("");
   const [showGrafana, setShowGrafana] = useState(false);
@@ -352,8 +366,12 @@ export default function App() {
   const selectScenario = (key) => {
     setScenario(key);
     const s = SCENARIOS[key];
-    if (s.suggestVus)  setForm(f => ({ ...f, vus:      s.suggestVus  }));
-    if (s.suggestDur)  setForm(f => ({ ...f, duration: s.suggestDur  }));
+    setForm(f => ({
+      ...f,
+      ...(s.suggestVus      != null ? { vus:           s.suggestVus      } : {}),
+      ...(s.suggestDur      != null ? { duration:      s.suggestDur      } : {}),
+      ...(s.suggestInterval != null ? { sleep_interval: s.suggestInterval } : {}),
+    }));
   };
 
   // ── Custom scenario stages ─────────────────────────────────────────────────
@@ -425,7 +443,10 @@ export default function App() {
   const podPollingRef = useRef(null);
   const summaryHideRef = useRef(null);
   const [podData, setPodData] = useState([]);
-  const [summaryVisible, setSummaryVisible] = useState(true);
+  const [summaryVisible, setSummaryVisible] = useState(() => {
+    const s = localStorage.getItem("ps_status") || "idle";
+    return s === "running"; // only show on load if a test is actively running
+  });
 
   const refreshServices = () =>
     fetch(`${API_BASE}/api/services`).then(r => r.json()).then(setServices).catch(() => {});
@@ -512,6 +533,8 @@ export default function App() {
           payload: JSON.parse(form.payload),
           scenario,
           service_name: activeIdx !== null ? (services[activeIdx]?.name || "") : "",
+          sleep_interval: form.sleep_interval ?? 0.1,
+          parallelism: form.parallelism ?? 4,
           stages: scenario === "custom"
             ? customStages.map(s => ({ duration: stageDurToStr(s), target: s.target }))
             : computeStages(scenario, form.vus, form.duration),
@@ -552,6 +575,8 @@ export default function App() {
           clearInterval(pollingRef.current);
           setTimeout(() => clearInterval(podPollingRef.current), 4000);
           localStorage.removeItem("ps_job");
+          localStorage.removeItem("ps_status");
+          localStorage.removeItem("ps_message");
           // Refresh history list after a short delay (backend saves entry asynchronously)
           setTimeout(() => refreshHistory(), 2000);
           setTimeout(() => refreshHistory(), 12000); // second refresh after report is saved
@@ -664,7 +689,7 @@ export default function App() {
   };
 
   // ── Monitoring state ─────────────────────────────────────────────────────────
-  const [activeTab,          setActiveTab]          = useState("load");
+  const [activeTab,          setActiveTab]          = useState("home");
   const [monitors,           setMonitors]           = useState([]);
   const [selectedMonitorId,  setSelectedMonitorId]  = useState(null);
   const [monitorRuns,        setMonitorRuns]        = useState([]);
@@ -714,7 +739,12 @@ export default function App() {
     const m = monitors.find(x => x.id === id);
     if (!m) return;
     setSelectedMonitorId(id);
-    setMonitorForm({ ...DEFAULT_MONITOR_FORM, ...m });
+    setMonitorForm({
+      ...DEFAULT_MONITOR_FORM,
+      ...m,
+      body_checks:  Array.isArray(m.body_checks)  ? m.body_checks  : [],
+      alert_emails: Array.isArray(m.alert_emails) ? m.alert_emails : [],
+    });
     setMonitorPayloadStr(m.payload && Object.keys(m.payload).length ? JSON.stringify(m.payload, null, 2) : "{}");
     setMonitorHeadersStr(m.headers && Object.keys(m.headers).length ? JSON.stringify(m.headers, null, 2) : "{}");
     setMonitorEmailInput("");
@@ -736,14 +766,26 @@ export default function App() {
       try { payload = JSON.parse(monitorPayloadStr); } catch {}
       let headers = {};
       try { headers = JSON.parse(monitorHeadersStr); } catch {}
-      const body = { ...monitorForm, payload, headers };
+      // Flush any email still in the input box (user typed but didn't press Enter)
+      let alert_emails = [...monitorForm.alert_emails];
+      const pendingEmail = monitorEmailInput.trim().replace(/,$/, '');
+      if (pendingEmail && !alert_emails.includes(pendingEmail)) {
+        alert_emails.push(pendingEmail);
+        setMonitorEmailInput('');
+      }
+      const body = { ...monitorForm, payload, headers, alert_emails };
       const method = selectedMonitorId ? "PUT" : "POST";
       const url = selectedMonitorId ? `${API_BASE}/api/monitors/${selectedMonitorId}` : `${API_BASE}/api/monitors`;
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const saved = await res.json();
       await refreshMonitors();
       setSelectedMonitorId(saved.id);
-      setMonitorForm({ ...DEFAULT_MONITOR_FORM, ...saved });
+      setMonitorForm({
+        ...DEFAULT_MONITOR_FORM,
+        ...saved,
+        body_checks:  Array.isArray(saved.body_checks)  ? saved.body_checks  : [],
+        alert_emails: Array.isArray(saved.alert_emails) ? saved.alert_emails : [],
+      });
     } catch {} finally { setMonitorSaving(false); }
   };
 
@@ -802,6 +844,46 @@ export default function App() {
   });
   const existingFolders = [...new Set(services.map(s => s.folder || "").filter(Boolean))].sort();
 
+  // ── Auth gates (after all hooks) ────────────────────────────────────────────
+  if (!authChecked) return null;
+
+  if (!currentUser) {
+    const bookmarklet = `javascript:(function(){fetch('/rest/user').then(r=>r.json()).then(u=>{window.location.href='${window.location.origin}/api/auth/dms-login?uid='+encodeURIComponent(u.uid)+'&cn='+encodeURIComponent(u.cn)+'&o='+encodeURIComponent(u.o);});})()`;
+    return (
+      <div style={{ minHeight: '100vh', background: t.bg, color: t.text, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'IBM Plex Sans, sans-serif' }}>
+        <div style={{ maxWidth: 480, width: '100%', padding: '0 24px', textAlign: 'center' }}>
+          <img src={theme === 'dark' ? '/assets/private/GSA_Logo_Inverted.png' : '/assets/private/GSA_Logo.jpg'} style={{ height: 48, objectFit: 'contain', marginBottom: 32 }} alt="GSA" />
+          <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>GSA Platform Suite</h1>
+          <p style={{ fontSize: 13, color: t.textMuted, marginBottom: 40 }}>Sign in with your FICO DMS account to continue</p>
+          <div style={{ background: t.bgPanel, border: `1px solid ${t.borderLight}`, borderRadius: 12, padding: 28, textAlign: 'left' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <span style={{ background: t.accent, color: '#fff', borderRadius: '50%', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>1</span>
+              <span style={{ fontSize: 13 }}>Log into{' '}
+                <a href="https://console.dms.uset2.ficoanalyticcloud.com/" target="_blank" rel="noreferrer" style={{ color: t.accent, fontWeight: 600 }}>DMS Console</a>
+                {' '}in your browser</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 20 }}>
+              <span style={{ background: t.accent, color: '#fff', borderRadius: '50%', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0, marginTop: 2 }}>2</span>
+              <div>
+                <div style={{ fontSize: 13, marginBottom: 8 }}>Add this <strong>bookmarklet</strong> to your bookmark bar:</div>
+                <div style={{ background: t.bgInput, border: `1px solid ${t.inputBorder}`, borderRadius: 7, padding: '8px 12px', fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all', color: t.textMuted, marginBottom: 8 }}>{bookmarklet}</div>
+                <button onClick={() => navigator.clipboard.writeText(bookmarklet)}
+                  style={{ fontSize: 11, padding: '4px 12px', borderRadius: 5, border: `1px solid ${t.accent}55`, background: `${t.accent}15`, color: t.accent, cursor: 'pointer' }}>
+                  Copy bookmarklet
+                </button>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ background: t.accent, color: '#fff', borderRadius: '50%', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>3</span>
+              <span style={{ fontSize: 13 }}>While on DMS Console, <strong>click the bookmarklet</strong> — you'll be redirected here automatically</span>
+            </div>
+          </div>
+          <p style={{ fontSize: 11, color: t.textDim, marginTop: 20 }}>Access restricted to FICO-GPS-TENANT members</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <style>{`
@@ -823,7 +905,7 @@ export default function App() {
 
         /* ── Two-column layout ── */
         .workspace {
-          flex: 1; display: flex; overflow: hidden;
+          flex: 1; display: flex; overflow: hidden; min-height: 0;
         }
 
         /* ── Sidebar ── */
@@ -831,8 +913,8 @@ export default function App() {
           flex-shrink: 0;
           background: ${t.headerBg}; border-right: 1px solid ${t.borderLight};
           display: flex; flex-direction: column;
-          height: calc(100vh - 44px); position: sticky; top: 44px;
           overflow: hidden;
+          align-self: stretch;
         }
         .sidebar-header {
           padding: 12px 14px 8px;
@@ -860,7 +942,7 @@ export default function App() {
 
         /* ── Collection list ── */
         .svc-list {
-          flex: 1; overflow-y: auto; padding: 6px 0;
+          flex: 1; overflow-y: auto; padding: 24px 0 6px;
         }
         .svc-list::-webkit-scrollbar { width: 4px; }
         .svc-list::-webkit-scrollbar-track { background: transparent; }
@@ -905,22 +987,36 @@ export default function App() {
         }
         .svc-item:hover .svc-item-del { color: ${t.textDim}; }
         .svc-item-del:hover { color: ${t.danger} !important; }
-        .svc-item-indented .svc-item-body { padding-left: 22px; }
+        .svc-item-indented { border-left: none; }
+        .svc-item-indented .svc-item-body { padding-left: 10px; }
 
         /* ── Folder headers ── */
         .folder-hdr {
           display: flex; align-items: center; gap: 5px;
-          padding: 7px 12px 4px; font-size: 9px; letter-spacing: .12em;
-          text-transform: uppercase; color: ${t.textDim};
+          padding: 6px 12px 6px; font-size: 10px; letter-spacing: .08em;
+          text-transform: uppercase; color: ${t.textMuted};
           cursor: pointer; user-select: none; transition: color .1s;
+          border-left: 3px solid transparent;
         }
-        .folder-hdr:hover { color: ${t.textMuted}; }
+        .folder-hdr:hover { color: ${t.text}; }
         .folder-chevron { font-size: 8px; display: inline-block; transition: transform .15s; }
         .folder-chevron.open { transform: rotate(90deg); }
-        .folder-hdr-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .folder-hdr-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
         .folder-hdr-count {
           background: ${t.borderLight}; color: ${t.textDim};
           border-radius: 10px; padding: 1px 6px; font-size: 9px; flex-shrink: 0;
+        }
+        .folder-children {
+          border-left: 2px solid ${t.borderLight};
+          margin-left: 18px;
+        }
+        .folder-children .svc-item { border-left: none; }
+        .folder-children .svc-item.active { background: ${t.bgPanel}; border-left: none; }
+        .folder-children .svc-item.active .svc-item-name { color: ${t.text}; font-weight: 600; }
+        .folder-children .svc-item-body { padding-left: 10px; }
+        .folder-children .svc-item-body::before {
+          content: ''; display: inline-block; width: 10px; height: 1px;
+          background: ${t.borderLight}; vertical-align: middle; margin-right: 6px; flex-shrink: 0;
         }
 
         /* ── Sidebar footer: save ── */
@@ -1314,36 +1410,43 @@ export default function App() {
 
       <div className="app">
         <header>
-          <div>
-            <span className="logo">GSA PERFSTACK</span>
-            <span className="logo-sub">// load testing platform</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => setActiveTab("home")}>
+            <img
+              src={theme === 'dark' ? '/assets/private/GSA_Logo_Inverted.png' : '/assets/private/GSA_Logo.jpg'}
+              alt="GSA"
+              style={{ height: 22, objectFit: 'contain' }}
+              onError={e => { e.currentTarget.style.display = 'none'; }}
+            />
+            <span className="logo">GSA PLATFORM SUITE</span>
+            <span className="logo-sub">
+              {activeTab === "load" ? "// perfstack" : activeTab === "monitoring" ? "// monitorstack" : ""}
+            </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <div className="tab-bar">
               <button className={`tab-btn${activeTab === "load" ? " active" : ""}`} onClick={() => setActiveTab("load")}>
-                ⚡ Load Testing
+                ⚡ PerfStack
               </button>
               <button className={`tab-btn${activeTab === "monitoring" ? " active" : ""}`} onClick={() => setActiveTab("monitoring")}>
-                🔍 Monitoring
+                🔍 MonitorStack
                 {monitors.filter(m => m.enabled).length > 0 && (
                   <span className="tab-badge">{monitors.filter(m => m.enabled).length}</span>
                 )}
               </button>
             </div>
-            {activeTab === "load" && (
-              <button
-                className={`grafana-toggle-btn${showGrafana ? " active" : ""}`}
-                onClick={() => setShowGrafana(v => !v)}
-              >
-                📊 {showGrafana ? "Hide" : "Show"} Grafana
-              </button>
-            )}
             <SettingsMenu theme={theme} onSelect={toggleTheme} t={t} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderLeft: `1px solid ${t.borderLight}`, paddingLeft: 14 }}>
+              <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 500 }}>{currentUser.cn}</span>
+              <a href="/api/auth/logout" style={{ fontSize: 11, color: t.textDim, textDecoration: 'none', padding: '3px 8px', borderRadius: 4, border: `1px solid ${t.borderLight}` }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = t.accent}
+                onMouseLeave={e => e.currentTarget.style.borderColor = t.borderLight}
+              >logout</a>
+            </div>
           </div>
         </header>
 
         {/* ── Summary config bar ── */}
-        {summaryVisible && (
+        {summaryVisible && status !== "idle" && (
         <div className="summary-bar">
           <span className="summary-label">CONFIG</span>
           <span className="summary-sep">·</span>
@@ -1367,6 +1470,85 @@ export default function App() {
             </>
           )}
         </div>
+        )}
+
+        {/* ── Home / Landing ── */}
+        {activeTab === "home" && (
+          <div style={{ flex: 1, overflowY: 'auto', background: t.bg, padding: '48px 40px' }}>
+            <div style={{ maxWidth: 820, margin: '0 auto' }}>
+              {/* Hero */}
+              <div style={{ marginBottom: 48 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 16 }}>
+                  <img
+                    src={theme === 'dark' ? '/assets/private/GSA_Logo_Inverted.png' : '/assets/private/GSA_Logo.jpg'}
+                    alt="GSA Logo"
+                    style={{ height: 110, objectFit: 'contain', flexShrink: 0 }}
+                    onError={e => { e.currentTarget.style.display = 'none'; }}
+                  />
+                  <div style={{ width: 1, height: 44, background: t.borderLight, flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 28, fontWeight: 800, color: t.text, letterSpacing: '.01em', lineHeight: 1.1 }}>GSA Platform Suite</div>
+                    <div style={{ fontSize: 13, color: t.textDim, marginTop: 4, letterSpacing: '.04em' }}>Performance Testing &amp; API Monitoring Platform</div>
+                  </div>
+                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v2.4.0</span>
+                </div>
+                <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.7, maxWidth: 620 }}>
+                  An internal platform for load-testing REST APIs using k6 on Kubernetes, and continuously monitoring service health with scheduled checks and email alerting.
+                </p>
+              </div>
+
+              {/* Modules */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 48 }}>
+                <div
+                  onClick={() => setActiveTab("load")}
+                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s' }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = '#c73000'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = t.border}
+                >
+                  <div style={{ fontSize: 28, marginBottom: 12 }}>⚡</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 6 }}>PerfStack</div>
+                  <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.6 }}>Run load tests against your APIs using k6 with parallel pods. Supports multiple scenarios (Load, Spike, Stress, Soak, Custom), IAM auth, and saves rendered HTML reports per run.</div>
+                  <div style={{ marginTop: 16, fontSize: 11, color: '#c73000', fontWeight: 600 }}>Open PerfStack →</div>
+                </div>
+                <div
+                  onClick={() => setActiveTab("monitoring")}
+                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s' }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = t.accent}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = t.border}
+                >
+                  <div style={{ fontSize: 28, marginBottom: 12 }}>🔍</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 6 }}>MonitorStack</div>
+                  <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.6 }}>Schedule recurring health checks on your web services. Verifies HTTP status, response time, and payload fields. Sends email alerts when a check fails.</div>
+                  <div style={{ marginTop: 16, fontSize: 11, color: t.accent, fontWeight: 600 }}>Open MonitorStack →</div>
+                </div>
+              </div>
+
+              {/* Release history */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textDim, marginBottom: 16 }}>Release History</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderLeft: `2px solid ${t.borderLight}`, paddingLeft: 20 }}>
+                  {[
+                    { version: 'v2.4.0', date: '2026-04-09', notes: ['DMS SSO login — bookmarklet auth via FICO-GPS-TENANT Okta session', 'Parametrized runner pods (1–20) per load test', 'Request interval auto-suggest per scenario', 'Monitor response payload check — inline field trace on failure', 'Status bar fixed: no longer persists across page reloads'] },
+                    { version: 'v2.3.0', date: '2026-03-15', notes: ['MonitorStack — scheduled API monitoring with email alerts', 'Landing home page', 'Sidebar folder tree with visual nesting', 'Pod metrics inline table in status block', 'Grafana inline / new-tab toggle in View Live Metrics'] },
+                    { version: 'v2.2.0', date: '2025-03-28', notes: ['Test History — persisted HTML reports per run saved to PVC', 'k6 lag reduced: 500ms InfluxDB flush, --no-usage-report flag', 'Elapsed time in deploy scripts'] },
+                    { version: 'v2.1.0', date: '2025-03-10', notes: ['UI reorganisation: Dry Run → Test Config, Scenario → Execution', 'Summary config bar with auto-hide after completion', 'Dark / light theme support'] },
+                    { version: 'v2.0.0', date: '2025-02-20', notes: ['Multi-service sidebar with folder grouping', 'Custom scenario builder', 'IAM OAuth2 token integration'] },
+                  ].map(r => (
+                    <div key={r.version} style={{ marginBottom: 24, position: 'relative' }}>
+                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v2.4.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v2.4.0' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
+                        <span style={{ fontSize: 11, color: t.textDim, fontFamily: 'monospace' }}>{r.date}</span>
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
+                        {r.notes.map((n, i) => <li key={i} style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.6 }}>{n}</li>)}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         {activeTab === "load" && <div className="workspace">
@@ -1409,23 +1591,27 @@ export default function App() {
                         <span className="folder-hdr-name">{fKey || "Uncategorized"}</span>
                         <span className="folder-hdr-count">{items.length}</span>
                       </div>
-                      {isOpen && items.map(({ svc: s, realIdx }) => (
-                        <div
-                          key={realIdx}
-                          className={`svc-item svc-item-indented${activeIdx === realIdx ? " active" : ""}`}
-                          onClick={() => loadService(realIdx)}
-                        >
-                          {activeIdx === realIdx && status === "running" && <span className="svc-running-dot" />}
-                          <div className="svc-item-body">
-                            <div className="svc-item-name">{s.name}</div>
-                          </div>
-                          <button
-                            className="svc-item-del"
-                            title="Delete"
-                            onClick={e => { e.stopPropagation(); deleteService(realIdx); }}
-                          >✕</button>
+                      {isOpen && (
+                        <div className="folder-children">
+                          {items.map(({ svc: s, realIdx }) => (
+                            <div
+                              key={realIdx}
+                              className={`svc-item${activeIdx === realIdx ? " active" : ""}`}
+                              onClick={() => loadService(realIdx)}
+                            >
+                              {activeIdx === realIdx && status === "running" && <span className="svc-running-dot" />}
+                              <div className="svc-item-body">
+                                <div className="svc-item-name">{s.name}</div>
+                              </div>
+                              <button
+                                className="svc-item-del"
+                                title="Delete"
+                                onClick={e => { e.stopPropagation(); deleteService(realIdx); }}
+                              >✕</button>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
                   );
                 })
@@ -1518,9 +1704,22 @@ export default function App() {
 
             {/* Test config */}
             <div className="panel">
-              <div className="panel-title">
+              <div className="panel-title" style={{ display: 'flex', alignItems: 'center' }}>
                 <span className="section-num">02</span>
                 Test Configuration
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                  <button
+                    onClick={runPingTest}
+                    disabled={pinging || !form.iam_url || !form.client_id || !form.client_secret || !form.target_url || !!jsonError}
+                    title="Dry Run — fire a single request to validate config"
+                    style={{ padding: '5px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #3b82f6aa', background: '#3b82f625', color: '#3b82f6', cursor: 'pointer', opacity: (pinging || !form.iam_url || !form.target_url) ? .35 : 1, display: 'flex', alignItems: 'center', gap: 5 }}
+                  >
+                    {pinging
+                      ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" strokeDasharray="31.4" strokeDashoffset="10"/></svg>
+                      : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    }
+                  </button>
+                </div>
               </div>
 
               <Field label="Target URL" value={form.target_url} onChange={set("target_url")}
@@ -1540,70 +1739,75 @@ export default function App() {
                 {jsonError && <span className="json-err">⚠ {jsonError}</span>}
               </div>
 
-              {/* Dry Run — validate config before launching a full test */}
-              <div style={{ marginTop: 8 }}>
-                <button
-                  className="run-btn-secondary"
-                  style={{ width: '100%', background: t.dryRunBtn.bg, borderColor: t.dryRunBtn.border, color: t.dryRunBtn.text }}
-                  onClick={runPingTest}
-                  disabled={pinging || !form.iam_url || !form.client_id || !form.client_secret || !form.target_url || !!jsonError}
-                  title="Fire a single request to validate IAM + endpoint config"
-                >
-                  {pinging ? "Testing…" : "🔍 Dry Run — Validate Config"}
-                </button>
-
-                {/* Dry Run result */}
-                {pingResult && (
+              {/* Dry Run result */}
+              {pingResult && (
+                <div style={{
+                  marginTop: 10, background: t.bgInput, border: `1px solid ${pingResult.ok && pingResult.status_code < 400 ? t.success + "44" : t.danger + "44"}`,
+                  borderRadius: 6, overflow: "hidden", fontSize: 11
+                }}>
                   <div style={{
-                    marginTop: 10, background: t.bgInput, border: `1px solid ${pingResult.ok && pingResult.status_code < 400 ? t.success + "44" : t.danger + "44"}`,
-                    borderRadius: 6, overflow: "hidden", fontSize: 11
+                    padding: "8px 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+                    borderBottom: `1px solid ${t.borderLight}`,
+                    background: pingResult.ok && pingResult.status_code < 400 ? t.success + "1a" : t.danger + "1a"
                   }}>
-                    <div style={{
-                      padding: "8px 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
-                      borderBottom: `1px solid ${t.borderLight}`,
-                      background: pingResult.ok && pingResult.status_code < 400 ? t.success + "1a" : t.danger + "1a"
-                    }}>
-                      {pingResult.ok ? (
-                        <>
-                          <span style={{ fontWeight: 700, color: pingResult.status_code < 400 ? t.success : t.danger }}>
-                            HTTP {pingResult.status_code}
-                          </span>
-                          <span style={{ color: t.textMuted }}>{pingResult.elapsed_ms} ms</span>
-                          <span style={{ color: t.textMuted }}>{pingResult.target_url}</span>
-                        </>
-                      ) : (
-                        <span style={{ color: t.danger, fontWeight: 700 }}>✗ {pingResult.error}</span>
-                      )}
-                      <button onClick={() => setPingResult(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: t.textDim, cursor: "pointer", fontSize: 13 }}>✕</button>
-                    </div>
-                    {pingResult.ok && (
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
-                        <div style={{ borderRight: `1px solid ${t.borderLight}` }}>
-                          <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Request Payload</div>
-                          <pre style={{ margin: 0, padding: "12px 14px", color: t.accent, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
-                            {JSON.stringify(pingResult.request_payload, null, 2)}
-                          </pre>
-                        </div>
-                        <div>
-                          <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Response Body</div>
-                          <pre style={{ margin: 0, padding: "12px 14px", color: t.codeText, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
-                            {typeof pingResult.response_body === "string"
-                              ? pingResult.response_body
-                              : JSON.stringify(pingResult.response_body, null, 2)}
-                          </pre>
-                        </div>
-                      </div>
+                    {pingResult.ok ? (
+                      <>
+                        <span style={{ fontWeight: 700, color: pingResult.status_code < 400 ? t.success : t.danger }}>
+                          HTTP {pingResult.status_code}
+                        </span>
+                        <span style={{ color: t.textMuted }}>{pingResult.elapsed_ms} ms</span>
+                        <span style={{ color: t.textMuted }}>{pingResult.target_url}</span>
+                      </>
+                    ) : (
+                      <span style={{ color: t.danger, fontWeight: 700 }}>✗ {pingResult.error}</span>
                     )}
+                    <button onClick={() => setPingResult(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: t.textDim, cursor: "pointer", fontSize: 13 }}>✕</button>
                   </div>
-                )}
-              </div>
+                  {pingResult.ok && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+                      <div style={{ borderRight: `1px solid ${t.borderLight}` }}>
+                        <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Request Payload</div>
+                        <pre style={{ margin: 0, padding: "12px 14px", color: t.accent, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
+                          {JSON.stringify(pingResult.request_payload, null, 2)}
+                        </pre>
+                      </div>
+                      <div>
+                        <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Response Body</div>
+                        <pre style={{ margin: 0, padding: "12px 14px", color: t.codeText, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
+                          {typeof pingResult.response_body === "string"
+                            ? pingResult.response_body
+                            : JSON.stringify(pingResult.response_body, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Run */}
             <div className="panel run-panel">
-              <div className="panel-title">
+              <div className="panel-title" style={{ display: 'flex', alignItems: 'center' }}>
                 <span className="section-num">03</span>
                 Execution
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                  <button
+                    onClick={runTest}
+                    disabled={!canRun}
+                    title="Run Load Test"
+                    style={{ padding: '5px 10px', fontSize: 13, borderRadius: 6, border: `1px solid ${t.success}aa`, background: `${t.success}20`, color: t.success, cursor: 'pointer', opacity: !canRun ? .35 : 1 }}
+                  >
+                    {loading ? '⏳' : '▶'}
+                  </button>
+                  <button
+                    onClick={resetInfluxDB}
+                    disabled={resetting}
+                    title="Reset InfluxDB"
+                    style={{ padding: '5px 10px', fontSize: 13, borderRadius: 6, border: `1px solid ${t.danger}aa`, background: `${t.danger}20`, color: t.danger, cursor: 'pointer', opacity: resetting ? .35 : 1 }}
+                  >
+                    {resetting ? '…' : '🗑'}
+                  </button>
+                </div>
               </div>
 
               {/* Scenario */}
@@ -1667,6 +1871,44 @@ export default function App() {
                     })()}
                   </>
                 )}
+
+                {/* Request Interval */}
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', whiteSpace: 'nowrap' }}>
+                    Request Interval
+                  </label>
+                  <input
+                    type="number"
+                    min={0} max={60} step={0.1}
+                    value={form.sleep_interval}
+                    onChange={e => set("sleep_interval")(Math.max(0, parseFloat(e.target.value) || 0))}
+                    style={{ width: 70, padding: '4px 8px', borderRadius: 5, border: `1px solid ${t.inputBorder}`, background: t.bgInput, color: t.text, fontSize: 12, fontFamily: 'monospace', outline: 'none', textAlign: 'right' }}
+                  />
+                  <span style={{ fontSize: 10, color: t.textDim }}>s — sleep between requests</span>
+                  <span style={{ fontSize: 10, color: t.textDim, marginLeft: 'auto' }}>
+                    {form.sleep_interval > 0
+                      ? `≈ ${(1 / (form.sleep_interval + 0.001)).toFixed(1)} req/s per VU`
+                      : 'no sleep — max throughput'}
+                  </span>
+                </div>
+
+                {/* Runner Pods */}
+                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', whiteSpace: 'nowrap' }}>
+                    Runner Pods
+                  </label>
+                  <input
+                    type="number"
+                    min={1} max={20} step={1}
+                    value={form.parallelism}
+                    onChange={e => set("parallelism")(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
+                    style={{ width: 70, padding: '4px 8px', borderRadius: 5, border: `1px solid ${t.inputBorder}`, background: t.bgInput, color: t.text, fontSize: 12, fontFamily: 'monospace', outline: 'none', textAlign: 'right' }}
+                  />
+                  <span style={{ fontSize: 10, color: t.textDim }}>parallel k6 pods (1–20)</span>
+                  <span style={{ fontSize: 10, color: t.textDim, marginLeft: 'auto' }}>
+                    {`≈ ${form.vus} VUs across ${form.parallelism} pod${form.parallelism > 1 ? 's' : ''}`}
+                  </span>
+                </div>
 
                 {scenario === "custom" && (
                   <div className="custom-stages" style={{ marginTop: 10 }}>
@@ -1765,28 +2007,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Primary action */}
-              <button
-                className="run-btn-primary"
-                onClick={runTest}
-                disabled={!canRun}
-              >
-                {loading ? "⏳ Launching…" : "▶  Run Load Test"}
-              </button>
-
-              {/* Secondary actions */}
-              <div className="run-secondary-row">
-                <button
-                  className="run-btn-secondary"
-                  style={{ width: '100%', background: t.resetBtn.bg, borderColor: t.resetBtn.border, color: t.resetBtn.text }}
-                  onClick={resetInfluxDB}
-                  disabled={resetting}
-                  title="Drop and recreate the k6 InfluxDB database"
-                >
-                  {resetting ? "Resetting…" : "🗑 Reset DB"}
-                </button>
-              </div>
-
               {/* Status */}
               {status !== "idle" && (
                 <div style={{ marginTop: 16, padding: '12px 16px', borderRadius: 7, background: t.bgInput, border: `1px solid ${t.borderLight}`, display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
@@ -1796,19 +2016,34 @@ export default function App() {
                     {message && <p className="msg">{message}</p>}
                   </div>
                   {(status === "running" || status === "completed") && podData && podData.length > 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 120, alignItems: 'flex-end' }}>
-                      {podData.map(pod => {
-                        const dotColor = pod.status === "Running" ? '#22c55e' : pod.status === "Succeeded" ? '#3b82f6' : pod.status === "Failed" ? '#ef4444' : '#9ca3af';
-                        return (
-                          <div key={pod.name} style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'monospace', fontSize: 10, color: t.textDim }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, flexShrink: 0, display: 'inline-block' }} />
-                            <span style={{ color: t.text }}>pod-{pod.instance}</span>
-                            {pod.cpu_m != null && <span>{pod.cpu_m}m</span>}
-                            {pod.memory_mi != null && <span>{pod.memory_mi}Mi</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <table style={{ borderCollapse: 'collapse', fontSize: 10, fontFamily: 'monospace', flexShrink: 0, alignSelf: 'flex-start' }}>
+                      <thead>
+                        <tr style={{ borderBottom: `1px solid ${t.borderLight}` }}>
+                          <th style={{ padding: '2px 10px 4px 4px', color: t.textDim, fontWeight: 600, textAlign: 'left', whiteSpace: 'nowrap' }}>Pod</th>
+                          <th style={{ padding: '2px 10px 4px 4px', color: t.textDim, fontWeight: 600, textAlign: 'left' }}>Status</th>
+                          <th style={{ padding: '2px 10px 4px 4px', color: t.textDim, fontWeight: 600, textAlign: 'right' }}>CPU</th>
+                          <th style={{ padding: '2px 4px 4px 4px',  color: t.textDim, fontWeight: 600, textAlign: 'right' }}>Mem</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {podData.map(pod => {
+                          const dotColor = pod.status === "Running" ? '#22c55e' : pod.status === "Succeeded" ? '#3b82f6' : pod.status === "Failed" ? '#ef4444' : '#9ca3af';
+                          return (
+                            <tr key={pod.name}>
+                              <td style={{ padding: '3px 10px 3px 4px', color: t.text }}>pod-{pod.instance}</td>
+                              <td style={{ padding: '3px 10px 3px 4px' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: dotColor }}>
+                                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: dotColor, display: 'inline-block', flexShrink: 0 }} />
+                                  {pod.status}
+                                </span>
+                              </td>
+                              <td style={{ padding: '3px 10px 3px 4px', color: t.textDim, textAlign: 'right' }}>{pod.cpu_m != null ? `${pod.cpu_m}m` : '—'}</td>
+                              <td style={{ padding: '3px 4px 3px 4px',  color: t.textDim, textAlign: 'right' }}>{pod.memory_mi != null ? `${pod.memory_mi}Mi` : '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   )}
                 </div>
               )}
@@ -1816,19 +2051,32 @@ export default function App() {
               {/* Grafana + Report cards */}
               {(status === "running" || status === "completed") && (
                 <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <a
-                    href={`${window.location.origin}/grafana/d/k6/k6-load-testing-results?orgId=1&refresh=1s&theme=${theme}`}
-                    target="_blank" rel="noreferrer"
-                    className="action-card"
-                    style={{ background: t.accent + '14', borderColor: t.accent + '55', color: t.text }}
-                  >
+                  <div className="action-card" style={{ background: t.accent + '14', borderColor: t.accent + '55', color: t.text, cursor: 'default' }}>
                     <span className="action-card-icon">📊</span>
                     <div className="action-card-text">
                       <span className="action-card-title" style={{ color: t.accent }}>View Live Metrics</span>
-                      <span className="action-card-sub">Opens Grafana dashboard in new tab</span>
+                      <span className="action-card-sub">Grafana dashboard — choose how to view</span>
                     </div>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: t.textDim, flexShrink: 0 }}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                  </a>
+                    <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexShrink: 0 }}>
+                      <a
+                        href={`${window.location.origin}/grafana/d/k6/k6-load-testing-results?orgId=1&refresh=1s&theme=${theme}`}
+                        target="_blank" rel="noreferrer"
+                        title="Open in new tab"
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 5, border: `1px solid ${t.accent}55`, background: t.accent + '18', color: t.accent, fontSize: 11, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                        New tab
+                      </a>
+                      <button
+                        onClick={() => setShowGrafana(v => !v)}
+                        title={showGrafana ? "Hide inline view" : "Show inline below"}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 5, border: `1px solid ${showGrafana ? t.accent : t.borderLight}`, background: showGrafana ? t.accent + '25' : 'transparent', color: showGrafana ? t.accent : t.textDim, fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+                        {showGrafana ? 'Hide' : 'Inline'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -2106,6 +2354,43 @@ export default function App() {
                       </div>
                     </div>
 
+                    {/* Pre-fill from Web Service */}
+                    {services.length > 0 && (
+                      <div className="mon-field" style={{ marginBottom: 18, padding: '10px 14px', background: t.bgPanel, border: `1px solid ${t.borderLight}`, borderRadius: 8 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6, display: 'block' }}>
+                          Pre-fill from Web Service
+                        </label>
+                        <select
+                          defaultValue=""
+                          onChange={e => {
+                            const svc = services.find(s => s.name === e.target.value);
+                            if (!svc) return;
+                            let parsedPayload = {};
+                            try { parsedPayload = JSON.parse(svc.payload || '{}'); } catch {}
+                            setMonitorForm(f => ({
+                              ...f,
+                              service_name: svc.name,
+                              target_url:   svc.target_url  || f.target_url,
+                              iam_url:      svc.iam_url     || f.iam_url,
+                              client_id:    svc.client_id   || f.client_id,
+                              client_secret:svc.client_secret || f.client_secret,
+                              payload:      parsedPayload,
+                              name:         f.name || svc.name,
+                            }));
+                            setMonitorPayloadStr(svc.payload || '{}');
+                            if (svc.iam_url) setMonitorIamOpen(true);
+                            e.target.value = "";
+                          }}
+                          style={{ padding: '7px 10px', borderRadius: 6, border: `1px solid ${t.inputBorder}`, background: t.bgInput, color: t.text, fontSize: 13, outline: 'none', width: '100%', cursor: 'pointer' }}
+                        >
+                          <option value="" disabled>— select a service to import —</option>
+                          {services.map(s => (
+                            <option key={s.name} value={s.name}>{s.folder ? `${s.folder} / ${s.name}` : s.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 20px' }}>
                       {/* Name */}
                       <div className="mon-field" style={{ gridColumn: '1/-1' }}>
@@ -2194,10 +2479,10 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* Body Checks */}
+                    {/* Response Payload Checks */}
                     <div style={{ marginBottom: 14 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>Body Checks</label>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>Response Payload Checks</label>
                         <button
                           onClick={() => setMonitorForm(f => ({ ...f, body_checks: [...f.body_checks, { field: '', operator: 'eq', value: '' }] }))}
                           style={{ fontSize: 11, color: t.accent, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
@@ -2220,7 +2505,7 @@ export default function App() {
                         </div>
                       ))}
                       {monitorForm.body_checks.length === 0 && (
-                        <div style={{ fontSize: 11, color: t.textDim, padding: '6px 0' }}>No body checks — click + Add Check to verify response fields.</div>
+                        <div style={{ fontSize: 11, color: t.textDim, padding: '6px 0' }}>No checks — click + Add Check to verify response payload fields.</div>
                       )}
                     </div>
 
@@ -2245,6 +2530,13 @@ export default function App() {
                             if (email && !monitorForm.alert_emails.includes(email)) {
                               setMonitorForm(f => ({ ...f, alert_emails: [...f.alert_emails, email] }));
                             }
+                            setMonitorEmailInput('');
+                          }
+                        }}
+                        onBlur={() => {
+                          const email = monitorEmailInput.trim().replace(/,$/, '');
+                          if (email && !monitorForm.alert_emails.includes(email)) {
+                            setMonitorForm(f => ({ ...f, alert_emails: [...f.alert_emails, email] }));
                             setMonitorEmailInput('');
                           }
                         }}
@@ -2280,23 +2572,47 @@ export default function App() {
                                 <th>Checks</th>
                               </tr>
                             </thead>
-                            <tbody>
-                              {monitorRuns.map(r => {
-                                const passed = (r.checks || []).filter(c => c.passed).length;
-                                const total  = (r.checks || []).length;
-                                return (
-                                  <tr key={r.id}>
+                            {monitorRuns.map(r => {
+                              const passed = (r.checks || []).filter(c => c.passed).length;
+                              const total  = (r.checks || []).length;
+                              const hasChecks = total > 0;
+                              return (
+                                <tbody key={r.id}>
+                                  <tr>
                                     <td style={{ color: t.textDim, fontFamily: 'monospace', fontSize: 11 }}>{r.started_at?.slice(0,19).replace('T',' ')}</td>
                                     <td><span className={`mon-pill ${r.status}`}>{r.status}</span></td>
                                     <td style={{ fontFamily: 'monospace' }}>{r.http_status || '—'}</td>
                                     <td style={{ fontFamily: 'monospace' }}>{r.response_ms ? `${r.response_ms}ms` : '—'}</td>
-                                    <td style={{ fontFamily: 'monospace', color: passed === total && total > 0 ? t.success : t.danger }}>
-                                      {total > 0 ? `${passed}/${total}` : '—'}
+                                    <td style={{ fontFamily: 'monospace', color: passed === total && hasChecks ? t.success : hasChecks ? t.danger : t.textDim }}>
+                                      {hasChecks ? `${passed}/${total}` : '—'}
+                                      {r.error && <span style={{ color: t.danger, marginLeft: 6, fontSize: 10 }}>{r.error}</span>}
                                     </td>
                                   </tr>
-                                );
-                              })}
-                            </tbody>
+                                  {hasChecks && (r.checks || []).map((c, ci) => (
+                                    <tr key={`${r.id}-c${ci}`} style={{ background: c.passed ? `${t.success}08` : `${t.danger}08` }}>
+                                      <td colSpan={5} style={{ paddingLeft: 20, paddingTop: 3, paddingBottom: 3, fontSize: 11, fontFamily: 'monospace' }}>
+                                        <span style={{ color: c.passed ? t.success : t.danger, marginRight: 6 }}>{c.passed ? '✓' : '✗'}</span>
+                                        <span style={{ color: t.textMuted }}>{c.check}</span>
+                                        <span style={{ color: t.textDim, margin: '0 6px' }}>→</span>
+                                        <span style={{ color: t.textDim }}>expected </span>
+                                        <span style={{ color: t.text }}>{c.expected}</span>
+                                        <span style={{ color: t.textDim, margin: '0 6px' }}>·</span>
+                                        <span style={{ color: t.textDim }}>got </span>
+                                        <span style={{ color: c.passed ? t.success : t.danger }}>{c.actual === 'None' ? '— field not found' : c.actual}</span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                  {r.response_preview && (r.checks || []).some(c => c.actual === 'None') && (
+                                    <tr>
+                                      <td colSpan={5} style={{ paddingLeft: 20, paddingTop: 2, paddingBottom: 6, fontSize: 10, fontFamily: 'monospace', color: t.textDim }}>
+                                        <span style={{ color: t.textMuted, fontWeight: 600 }}>raw response: </span>
+                                        <span style={{ wordBreak: 'break-all' }}>{r.response_preview}</span>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              );
+                            })}
                           </table>
                         )}
                       </div>
@@ -2317,7 +2633,7 @@ export default function App() {
           </div>
         )}
 
-        <footer>GSA PERFSTACK · K6 + GRAFANA + KUBERNETES · BUILT BY GSA TEAM</footer>
+        <footer>GSA PLATFORM SUITE · K6 + GRAFANA + KUBERNETES · BUILT BY GSA TEAM</footer>
       </div>
     </>
   );

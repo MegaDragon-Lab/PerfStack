@@ -12,7 +12,9 @@ import time as _time
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+import secrets
+from fastapi import FastAPI, HTTPException, Cookie, Request
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -100,6 +102,8 @@ class TestConfig(BaseModel):
     scenario: str = Field(default="load", description="Test scenario type")
     stages: list[StageConfig] = Field(default=[], description="Custom k6 stages")
     service_name: str = Field(default="", description="Name of the web service being tested")
+    sleep_interval: float = Field(default=0.1, ge=0, le=60, description="Sleep between requests in seconds (e.g. 0.1 = 100ms)")
+    parallelism: int = Field(default=4, ge=1, le=20, description="Number of parallel k6 runner pods")
 
 class TestHistoryEntry(BaseModel):
     job_name: str
@@ -157,6 +161,7 @@ class MonitorRun(BaseModel):
     response_ms: int = 0
     error: str = ""
     checks: list[dict] = []       # [{check, passed, expected, actual}]
+    response_preview: str = ""    # first 500 chars of raw response body (debug)
 
 
 class EmailConfig(BaseModel):
@@ -218,6 +223,36 @@ def _write_email_config(data: dict): _write_file_dict(EMAIL_CONFIG_FILE, data)
 class CustomScenario(BaseModel):
     name: str
     stages: list[dict]
+
+
+# ── Auth — DMS Console SSO ───────────────────────────────────────────────────
+
+ALLOWED_ORG   = "FICO-GPS-TENANT"
+_sessions: dict[str, dict] = {}   # session_id → {uid, cn, org}
+
+@app.get("/auth/dms-login", summary="DMS bookmarklet callback — sets session cookie")
+async def dms_login(uid: str, cn: str, o: str):
+    if o != ALLOWED_ORG:
+        raise HTTPException(403, f"Access denied — organisation '{o}' is not allowed")
+    session_id = secrets.token_urlsafe(32)
+    _sessions[session_id] = {"uid": uid, "cn": cn, "org": o}
+    response = RedirectResponse(url="/", status_code=302)
+    response.set_cookie("ps_session", session_id, httponly=True, samesite="lax", max_age=86400 * 7)
+    return response
+
+@app.get("/auth/me", summary="Return current user or 401")
+async def auth_me(ps_session: str = Cookie(default=None)):
+    if not ps_session or ps_session not in _sessions:
+        raise HTTPException(401, "Not authenticated")
+    return _sessions[ps_session]
+
+@app.get("/auth/logout", summary="Clear session and redirect to home")
+async def auth_logout(ps_session: str = Cookie(default=None)):
+    if ps_session and ps_session in _sessions:
+        del _sessions[ps_session]
+    response = RedirectResponse(url="/", status_code=302)
+    response.delete_cookie("ps_session")
+    return response
 
 
 # ── Custom scenarios (persisted to /data/custom_scenarios.json) ───────────────
@@ -402,6 +437,8 @@ async def run_test(config: TestConfig):
             vus=config.vus,
             duration=config.duration,
             stages=[s.model_dump() for s in config.stages],
+            sleep_interval=config.sleep_interval,
+            parallelism=config.parallelism,
         )
     except Exception as e:
         logger.error("Failed to create K6 job: %s", e)
@@ -884,7 +921,7 @@ def _build_report_html(
   <thead><tr><th>Name</th><th class="num">Passes</th><th class="num">Fails</th></tr></thead>
   <tbody>{checks_html}</tbody></table></div>'''}
 
-  <div class="footer">PerfStack v2.3.0 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
+  <div class="footer">PerfStack v2.4.0 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
 </div>
 {lazy_js}
 </body>
@@ -909,19 +946,21 @@ def _schedule_monitor(m: dict) -> None:
         )
 
 
-def _get_nested(obj: Any, path: str) -> Any:
-    """Traverse a dot-separated path in a nested dict/list, returns None if not found."""
+def _get_nested(obj: Any, path: str) -> tuple[Any, str]:
+    """Traverse a dot-separated path. Returns (value, trace) where trace describes where it stopped."""
     try:
         for key in path.split("."):
             if isinstance(obj, dict):
-                obj = obj.get(key)
+                if key not in obj:
+                    return None, f"key '{key}' not found (available: {list(obj.keys())[:8]})"
+                obj = obj[key]
             elif isinstance(obj, list) and key.isdigit():
                 obj = obj[int(key)]
             else:
-                return None
-        return obj
-    except Exception:
-        return None
+                return None, f"expected dict at '{key}', got {type(obj).__name__}"
+        return obj, ""
+    except Exception as e:
+        return None, str(e)
 
 
 async def _run_monitor(monitor_id: str) -> None:
@@ -956,7 +995,7 @@ async def _run_monitor(monitor_id: str) -> None:
 
         timeout = min(m.get("max_response_ms", 5000) / 1000 + 2, 30)
         t0 = _time.monotonic()
-        async with httpx.AsyncClient(timeout=timeout, verify=False) as c:
+        async with httpx.AsyncClient(timeout=timeout, verify=False, follow_redirects=True) as c:
             payload = m.get("payload") or None
             if m.get("method", "POST").upper() == "GET":
                 resp = await c.get(m["target_url"], headers=headers)
@@ -991,13 +1030,22 @@ async def _run_monitor(monitor_id: str) -> None:
             all_ok = False
 
         # Check 3+: Body JSON field checks
+        raw_text = resp.text or ""
+        run.response_preview = raw_text[:500]
         body_json = None
         try:
             body_json = resp.json()
         except Exception:
-            pass
+            try:
+                import json as _json
+                body_json = _json.loads(raw_text)
+            except Exception as _je:
+                logger.warning("Monitor %s: response body is not JSON: %s — body: %.200s", monitor_id, _je, raw_text)
         for bc in m.get("body_checks", []):
-            val = _get_nested(body_json, bc["field"])
+            if body_json is None:
+                val, trace = None, f"response is not JSON — {raw_text[:120]}"
+            else:
+                val, trace = _get_nested(body_json, bc["field"])
             op = bc.get("operator", "eq")
             if op == "exists":
                 passed = val is not None
@@ -1007,10 +1055,11 @@ async def _run_monitor(monitor_id: str) -> None:
                 passed = bc.get("value", "") in str(val or "")
             else:
                 passed = False
+            actual_str = str(val) if val is not None else (trace or "null")
             check_results.append({
-                "check": f"body.{bc['field']}", "passed": passed,
+                "check": bc['field'], "passed": passed,
                 "expected": f"{op} {bc.get('value', '')}".strip(),
-                "actual": str(val),
+                "actual": actual_str,
             })
             if not passed:
                 all_ok = False
@@ -1038,8 +1087,13 @@ async def _run_monitor(monitor_id: str) -> None:
                 monitor_id, m["name"], run.status, run.http_status, run.response_ms)
 
     # Send alert email if check failed
-    if run.status != "ok" and m.get("alert_emails"):
-        asyncio.create_task(_send_monitor_alert(m, run.model_dump()))
+    if run.status != "ok":
+        if m.get("alert_emails"):
+            logger.info("Monitor alert triggered: id=%s name=%s status=%s recipients=%s",
+                        monitor_id, m["name"], run.status, m["alert_emails"])
+            asyncio.create_task(_send_monitor_alert(m, run.model_dump()))
+        else:
+            logger.info("Monitor failed but no alert_emails configured: id=%s name=%s", monitor_id, m["name"])
 
 
 async def _send_monitor_alert(m: dict, run: dict) -> None:

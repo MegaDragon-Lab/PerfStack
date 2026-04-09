@@ -22,3 +22,9 @@ Thumbs.db
 zscaler.pem
 *.pem
 *.crt
+
+# Private brand assets — never commit to GitHub
+frontend/public/assets/private/
+GSA_Logo.jpg
+GSA_Logo_Inverted.png
+favicon_circle.png

@@ -19,7 +19,7 @@ INFLUXDB_TOKEN = "perfstack-token"
 INFLUXDB_ORG   = "perfstack"
 INFLUXDB_BUCKET = "k6"
 TEMPLATE_PATH  = pathlib.Path(__file__).parent / "k6_template.js"
-PARALLELISM    = 4
+DEFAULT_PARALLELISM = 4
 
 # Resources per runner pod — give k6 a full core so VU init is fast
 RUNNER_REQUESTS = {"cpu": "1000m", "memory": "512Mi"}
@@ -44,6 +44,7 @@ def _render_k6_script(
     vus: int,
     duration: int,
     stages: list[dict],
+    sleep_interval: float = 0.1,
 ) -> str:
     """Render the Jinja2 K6 template with runtime values."""
     template = _jinja_env.get_template(TEMPLATE_PATH.name)
@@ -54,6 +55,7 @@ def _render_k6_script(
         vus=vus,
         duration=duration,
         stages=json.dumps(stages),
+        sleep_interval=sleep_interval,
     )
 
 
@@ -86,14 +88,16 @@ async def create_k6_job(
     vus: int,
     duration: int,
     stages: list[dict],
+    sleep_interval: float = 0.1,
+    parallelism: int = DEFAULT_PARALLELISM,
 ) -> None:
-    """Create a k6 Operator TestRun CR with parallelism=8."""
+    """Create a k6 Operator TestRun CR with configurable parallelism."""
     import asyncio, concurrent.futures
     # Run cleanup in a thread so it doesn't block job creation
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _cleanup_completed_testruns)
 
-    k6_script = _render_k6_script(bearer_token, target_url, payload, vus, duration, stages)
+    k6_script = _render_k6_script(bearer_token, target_url, payload, vus, duration, stages, sleep_interval)
 
     # Store script in a ConfigMap
     core_v1  = client.CoreV1Api()
@@ -118,7 +122,7 @@ async def create_k6_job(
             "labels": {"app": "k6-runner", "managed-by": "perfstack"},
         },
         "spec": {
-            "parallelism": PARALLELISM,
+            "parallelism": parallelism,
             "arguments": "--out xk6-influxdb --insecure-skip-tls-verify --no-thresholds --no-usage-report",
             "script": {
                 "configMap": {
@@ -155,7 +159,7 @@ async def create_k6_job(
         plural="testruns",
         body=test_run,
     )
-    logger.info("TestRun '%s' created in namespace '%s' (parallelism=%d)", job_name, NAMESPACE, PARALLELISM)
+    logger.info("TestRun '%s' created in namespace '%s' (parallelism=%d)", job_name, NAMESPACE, parallelism)
 
 
 async def get_job_status(job_name: str) -> tuple[str, str]:
@@ -176,11 +180,11 @@ async def get_job_status(job_name: str) -> tuple[str, str]:
 
     stage = tr.get("status", {}).get("stage", "")
     if stage == "finished":
-        return "completed", f"Test completed successfully ({PARALLELISM} pods)"
+        return "completed", "Test completed successfully"
     elif stage == "error":
         return "failed", "Test failed — check Grafana for partial metrics"
     elif stage in ("started", "running", "created", "initialized", "initialization"):
-        return "running", f"Test running (stage: {stage}, pods: {PARALLELISM})"
+        return "running", f"Test running (stage: {stage})"
     else:
         return "pending", f"Job is pending (stage: {stage or 'unknown'})"
 
