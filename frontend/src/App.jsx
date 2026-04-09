@@ -1529,10 +1529,10 @@ export default function App() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderLeft: `2px solid ${t.borderLight}`, paddingLeft: 20 }}>
                   {[
                     { version: 'v2.4.0', date: '2026-04-09', notes: ['DMS SSO login — bookmarklet auth via FICO-GPS-TENANT Okta session', 'Parametrized runner pods (1–20) per load test', 'Request interval auto-suggest per scenario', 'Monitor response payload check — inline field trace on failure', 'Status bar fixed: no longer persists across page reloads'] },
-                    { version: 'v2.3.0', date: '2026-03-15', notes: ['MonitorStack — scheduled API monitoring with email alerts', 'Landing home page', 'Sidebar folder tree with visual nesting', 'Pod metrics inline table in status block', 'Grafana inline / new-tab toggle in View Live Metrics'] },
-                    { version: 'v2.2.0', date: '2025-03-28', notes: ['Test History — persisted HTML reports per run saved to PVC', 'k6 lag reduced: 500ms InfluxDB flush, --no-usage-report flag', 'Elapsed time in deploy scripts'] },
-                    { version: 'v2.1.0', date: '2025-03-10', notes: ['UI reorganisation: Dry Run → Test Config, Scenario → Execution', 'Summary config bar with auto-hide after completion', 'Dark / light theme support'] },
-                    { version: 'v2.0.0', date: '2025-02-20', notes: ['Multi-service sidebar with folder grouping', 'Custom scenario builder', 'IAM OAuth2 token integration'] },
+                    { version: 'v2.3.0', date: '2026-04-08', notes: ['MonitorStack — scheduled API monitoring with email alerts', 'Landing home page', 'Sidebar folder tree with visual nesting', 'Pod metrics inline table in status block', 'Grafana inline / new-tab toggle in View Live Metrics'] },
+                    { version: 'v2.2.0', date: '2026-04-08', notes: ['Test History — persisted HTML reports per run saved to PVC', 'k6 lag reduced: 500ms InfluxDB flush, --no-usage-report flag', 'Elapsed time in deploy scripts'] },
+                    { version: 'v2.1.0', date: '2026-04-08', notes: ['UI reorganisation: Dry Run → Test Config, Scenario → Execution', 'Summary config bar with auto-hide after completion', 'Dark / light theme support'] },
+                    { version: 'v2.0.0', date: '2026-04-07', notes: ['Multi-service sidebar with folder grouping', 'Custom scenario builder', 'IAM OAuth2 token integration'] },
                   ].map(r => (
                     <div key={r.version} style={{ marginBottom: 24, position: 'relative' }}>
                       <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v2.4.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
