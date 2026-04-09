@@ -194,8 +194,8 @@ function SettingsMenu({ theme, onSelect, t }) {
           <div style={{ padding: '14px 18px', borderBottom: `1px solid ${t.borderLight}` }}>
             <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', color: t.textDim, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Release Info</div>
             {[
-              { label: 'Version',  value: '2.3.0' },
-              { label: 'Released', value: 'Apr 8, 2026' },
+              { label: 'Version',  value: '2.4.0' },
+              { label: 'Released', value: 'Apr 9, 2026' },
               { label: 'Stack',    value: 'k6 · Grafana · k3d' },
             ].map(({ label, value }) => (
               <div key={label} style={metaRow}>
