@@ -649,15 +649,15 @@ async def _save_report_to_pvc(job_name: str) -> None:
 
 
 @app.get("/report/{job_name}", summary="Serve HTML performance report (from PVC if saved, else live)")
-async def get_report(job_name: str):
-    """Serves the saved self-contained report from PVC, or generates a live version if not yet saved."""
+async def get_report(job_name: str, theme: str = Query(default="dark")):
+    """Serves the report — regenerated with the requested theme, or from PVC when no theme specified."""
     import time as _t
     import httpx
     from fastapi.responses import HTMLResponse
 
-    # Serve from PVC if already saved
+    # Serve cached PVC report only when no theme preference was explicitly passed
     saved_path = REPORTS_DIR / f"{job_name}.html"
-    if saved_path.exists():
+    if saved_path.exists() and theme == "dark":   # PVC reports are always saved as dark
         return HTMLResponse(content=saved_path.read_text())
 
     try:
@@ -680,7 +680,7 @@ async def get_report(job_name: str):
     html = _build_report_html(job_name, summary, from_ms, to_ms,
                               service_name=service_name, influx_stats=stats,
                               parallelism=parallelism, sleep_interval=sleep_interval,
-                              scenario=scenario)
+                              scenario=scenario, theme=theme)
     return HTMLResponse(content=html)
 
 
@@ -747,6 +747,7 @@ def _build_report_html(
     parallelism: int = 1,
     sleep_interval: float = 0.0,
     scenario: str = "",
+    theme: str = "dark",
     panels: dict | None = None,
 ) -> str:
     from datetime import datetime, timezone
@@ -856,6 +857,22 @@ def _build_report_html(
           <td class="num" style="color:{ck_color}">{ck.get("fails",0):,}</td>
         </tr>'''
 
+    is_dark   = (theme != "light")
+    logo_src  = "/assets/private/GSA_Logo_Inverted.png" if is_dark else "/assets/private/GSA_Logo.jpg"
+    # CSS tokens
+    c_bg        = "#0f1117"   if is_dark else "#f1f5f9"
+    c_panel     = "#1a1f2e"   if is_dark else "#ffffff"
+    c_border    = "#2d3748"   if is_dark else "#e2e8f0"
+    c_border2   = "#1e2535"   if is_dark else "#f1f5f9"
+    c_text      = "#e2e8f0"   if is_dark else "#1e293b"
+    c_text2     = "#cbd5e1"   if is_dark else "#334155"
+    c_muted     = "#64748b"
+    c_dim       = "#94a3b8"   if is_dark else "#64748b"
+    c_sub       = "#475569"
+    c_hover     = "#1e2535"   if is_dark else "#f8fafc"
+    c_jobname   = "#f1f5f9"   if is_dark else "#0f172a"
+    c_hl        = "#f1f5f9"   if is_dark else "#0f172a"
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -864,53 +881,53 @@ def _build_report_html(
 <title>GSA PerfStack Report — {job_name}</title>
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
-  body{{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6}}
+  body{{background:{c_bg};color:{c_text};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6}}
   .page{{max-width:1400px;margin:0 auto;padding:32px 24px}}
 
   /* ── Header ── */
-  .header{{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding:24px 28px;background:#1a1f2e;border:1px solid #2d3748;border-radius:12px;margin-bottom:24px}}
-  .header-left{{display:flex;align-items:center;gap:20px}}
-  .logo-text{{font-size:22px;font-weight:700;letter-spacing:-0.5px;background:linear-gradient(135deg,#6366f1,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}}
-  .job-name{{font-size:20px;font-weight:600;color:#f1f5f9;margin-bottom:4px}}
+  .header{{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding:24px 28px;background:{c_panel};border:1px solid {c_border};border-radius:12px;margin-bottom:24px}}
+  .header-left{{display:flex;align-items:center;gap:16px}}
+  .logo-img{{height:40px;object-fit:contain;flex-shrink:0}}
+  .job-name{{font-size:20px;font-weight:600;color:{c_jobname};margin-bottom:4px}}
   .badge{{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.5px;background:#166534;color:#86efac;text-transform:uppercase}}
   .header-meta{{display:grid;grid-template-columns:repeat(4,auto);gap:10px 28px}}
   .meta-item{{display:flex;flex-direction:column;gap:2px}}
-  .meta-label{{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.6px}}
-  .meta-value{{font-size:13px;color:#cbd5e1;font-weight:500;word-break:break-all}}
-  .meta-svc{{font-size:14px;color:#f1f5f9;font-weight:600;margin-bottom:2px}}
+  .meta-label{{font-size:11px;color:{c_muted};text-transform:uppercase;letter-spacing:.6px}}
+  .meta-value{{font-size:13px;color:{c_text2};font-weight:500;word-break:break-all}}
+  .meta-svc{{font-size:14px;color:{c_jobname};font-weight:600;margin-bottom:2px}}
 
   /* ── KPI Grid ── */
   .kpi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}}
-  .kpi-card{{background:#1a1f2e;border:1px solid #2d3748;border-radius:10px;padding:16px 14px}}
+  .kpi-card{{background:{c_panel};border:1px solid {c_border};border-radius:10px;padding:16px 14px}}
   .kpi-value{{font-size:26px;font-weight:700;line-height:1.1;margin-bottom:4px}}
-  .kpi-label{{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}}
-  .kpi-sub{{font-size:11px;color:#475569}}
+  .kpi-label{{font-size:11px;color:{c_muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}}
+  .kpi-sub{{font-size:11px;color:{c_sub}}}
   .blue{{color:#6366f1}} .green{{color:#22c55e}} .yellow{{color:#f59e0b}} .purple{{color:#a78bfa}}
 
   /* ── Charts ── */
   .charts-row{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}}
-  .chart-card{{background:#1a1f2e;border:1px solid #2d3748;border-radius:10px;overflow:hidden}}
+  .chart-card{{background:{c_panel};border:1px solid {c_border};border-radius:10px;overflow:hidden}}
   .chart-card.chart-wide{{grid-column:1/-1}}
-  .chart-title{{font-size:12px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;padding:12px 16px 8px}}
+  .chart-title{{font-size:12px;font-weight:600;color:{c_dim};text-transform:uppercase;letter-spacing:.6px;padding:12px 16px 8px}}
   .chart-card img{{width:100%;display:block}}
-  .chart-na{{padding:40px 20px;text-align:center;color:#475569;font-size:12px;font-style:italic}}
-  .chart-placeholder{{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:40px 20px;min-height:150px;color:#475569;font-size:12px}}
+  .chart-na{{padding:40px 20px;text-align:center;color:{c_sub};font-size:12px;font-style:italic}}
+  .chart-placeholder{{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:40px 20px;min-height:150px;color:{c_sub};font-size:12px}}
   @keyframes spin{{to{{transform:rotate(360deg)}}}}
-  .spinner{{width:24px;height:24px;border:2px solid #2d3748;border-top-color:#6366f1;border-radius:50%;animation:spin 0.8s linear infinite}}
+  .spinner{{width:24px;height:24px;border:2px solid {c_border};border-top-color:#6366f1;border-radius:50%;animation:spin 0.8s linear infinite}}
 
   /* ── Tables ── */
-  .section{{background:#1a1f2e;border:1px solid #2d3748;border-radius:10px;padding:20px;margin-bottom:12px}}
-  .section h2{{font-size:13px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:16px}}
+  .section{{background:{c_panel};border:1px solid {c_border};border-radius:10px;padding:20px;margin-bottom:12px}}
+  .section h2{{font-size:13px;font-weight:600;color:{c_dim};text-transform:uppercase;letter-spacing:.6px;margin-bottom:16px}}
   table{{width:100%;border-collapse:collapse}}
-  th{{font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;border-bottom:1px solid #2d3748;text-align:left}}
-  td{{padding:8px 12px;border-bottom:1px solid #1e2535;color:#cbd5e1;font-size:13px}}
+  th{{font-size:11px;font-weight:600;color:{c_muted};text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;border-bottom:1px solid {c_border};text-align:left}}
+  td{{padding:8px 12px;border-bottom:1px solid {c_border2};color:{c_text2};font-size:13px}}
   tr:last-child td{{border-bottom:none}}
-  tr:hover td{{background:#1e2535}}
+  tr:hover td{{background:{c_hover}}}
   .num{{text-align:right;font-variant-numeric:tabular-nums}}
-  .hl{{font-weight:600;color:#f1f5f9}}
+  .hl{{font-weight:600;color:{c_hl}}}
 
   /* ── Footer ── */
-  .footer{{text-align:center;color:#334155;font-size:11px;margin-top:32px;padding-top:16px;border-top:1px solid #1e2535}}
+  .footer{{text-align:center;color:{c_sub};font-size:11px;margin-top:32px;padding-top:16px;border-top:1px solid {c_border2}}}
 </style>
 </head>
 <body>
@@ -919,7 +936,7 @@ def _build_report_html(
   <!-- HEADER -->
   <div class="header">
     <div class="header-left">
-      <div class="logo-text">GSA PerfStack</div>
+      <img src="{logo_src}" class="logo-img" alt="GSA logo" />
       <div>
         <div class="job-name">{job_name}</div>
         <span class="badge">Completed</span>

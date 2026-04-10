@@ -2196,7 +2196,7 @@ export default function App() {
                                 <td>
                                   <div className="hist-actions">
                                     <a
-                                      href={h.report_saved ? `${API_BASE}/api/report/${h.job_name}` : undefined}
+                                      href={h.report_saved ? `${API_BASE}/api/report/${h.job_name}?theme=${theme}` : undefined}
                                       target="_blank" rel="noreferrer"
                                       className={`hist-view-btn${!h.report_saved ? ' disabled' : ''}`}
                                       title={h.report_saved ? 'View HTML report' : h.status === 'running' ? 'Test still running' : 'Report is being generated…'}
