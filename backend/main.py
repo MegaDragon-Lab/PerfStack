@@ -892,16 +892,19 @@ def _build_report_html(
   .page{{max-width:1400px;margin:0 auto;padding:32px 24px}}
 
   /* ── Header ── */
-  .header{{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding:24px 28px;background:{c_panel};border:1px solid {c_border};border-radius:12px;margin-bottom:24px}}
-  .header-left{{display:flex;align-items:center;gap:16px}}
-  .logo-img{{height:40px;object-fit:contain;flex-shrink:0}}
-  .job-name{{font-size:20px;font-weight:600;color:{c_jobname};margin-bottom:4px}}
-  .badge{{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.5px;background:#166534;color:#86efac;text-transform:uppercase}}
-  .header-meta{{display:grid;grid-template-columns:repeat(4,auto);gap:10px 28px}}
+  .header-top{{display:flex;flex-direction:column;align-items:center;gap:10px;padding:28px 28px 24px;background:{c_panel};border:1px solid {c_border};border-radius:12px 12px 0 0;border-bottom:none}}
+  .logo-img{{height:90px;object-fit:contain}}
+  .job-name{{font-size:22px;font-weight:700;color:{c_jobname};letter-spacing:.3px}}
+  .badge{{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;letter-spacing:.6px;background:#166534;color:#86efac;text-transform:uppercase}}
+  .target-card{{background:{c_panel};border:1px solid {c_border};border-radius:0 0 12px 12px;padding:0 28px 24px;margin-bottom:24px}}
+  .target-divider{{border:none;border-top:1px solid {c_border};margin:0 0 20px}}
+  .target-heading{{font-size:11px;font-weight:700;color:{c_muted};text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;padding-top:20px}}
+  .target-svc{{font-size:18px;font-weight:700;color:{c_jobname};margin-bottom:4px}}
+  .target-url{{font-size:13px;color:{c_dim};word-break:break-all;margin-bottom:16px}}
+  .meta-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 24px}}
   .meta-item{{display:flex;flex-direction:column;gap:2px}}
   .meta-label{{font-size:11px;color:{c_muted};text-transform:uppercase;letter-spacing:.6px}}
-  .meta-value{{font-size:13px;color:{c_text2};font-weight:500;word-break:break-all}}
-  .meta-svc{{font-size:14px;color:{c_jobname};font-weight:600;margin-bottom:2px}}
+  .meta-value{{font-size:13px;color:{c_text2};font-weight:500}}
 
   /* ── KPI Grid ── */
   .kpi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}}
@@ -940,27 +943,28 @@ def _build_report_html(
 <body>
 <div class="page">
 
-  <!-- HEADER -->
-  <div class="header">
-    <div class="header-left">
-      <img src="{logo_src}" class="logo-img" alt="GSA logo" />
-      <div>
-        <div class="job-name">{job_name}</div>
-        <span class="badge">Completed</span>
-      </div>
-    </div>
-    <div class="header-meta">
-      <div class="meta-item" style="grid-column:1/-1">
-        <span class="meta-label">Target</span>
-        {"<div class='meta-svc'>"+svc_label+"</div>" if svc_label else ""}
-        <span class="meta-value">{target}</span>
-      </div>
+  <!-- HEADER — branding -->
+  <div class="header-top">
+    <img src="{logo_src}" class="logo-img" alt="GSA logo" />
+    <div class="job-name">{job_name}</div>
+    <span class="badge">Completed</span>
+  </div>
+
+  <!-- TARGET INFORMATION -->
+  <div class="target-card">
+    <hr class="target-divider"/>
+    <div class="target-heading">Target Information</div>
+    {"<div class='target-svc'>"+svc_label+"</div>" if svc_label else ""}
+    <div class="target-url">{target}</div>
+    <div class="meta-grid">
       <div class="meta-item"><span class="meta-label">Config</span><span class="meta-value">{conf_vus} VUs · {conf_dur}s</span></div>
       <div class="meta-item"><span class="meta-label">Scenario</span><span class="meta-value">{scenario_name}</span></div>
       <div class="meta-item"><span class="meta-label">k6 Pods</span><span class="meta-value">{parallelism}</span></div>
       <div class="meta-item"><span class="meta-label">Request Interval</span><span class="meta-value">{interval_label}</span></div>
       <div class="meta-item"><span class="meta-label">Started</span><span class="meta-value">{test_ts}</span></div>
       <div class="meta-item"><span class="meta-label">Report Generated</span><span class="meta-value">{gen_time}</span></div>
+      <div class="meta-item"><span class="meta-label">Avg Request Payload</span><span class="meta-value">{_fmt_bytes(data_tx / total_reqs) if total_reqs > 0 else "—"}</span></div>
+      <div class="meta-item"><span class="meta-label">Avg Response Payload</span><span class="meta-value">{_fmt_bytes(data_rx / total_reqs) if total_reqs > 0 else "—"}</span></div>
     </div>
   </div>
 
