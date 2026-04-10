@@ -565,8 +565,9 @@ async def _save_report_to_pvc(job_name: str) -> None:
         from_ms = to_ms - 30 * 60 * 1000
 
     peak_rps = 0.0
+    total_reqs_influx = 0
     try:
-        q = (f'SELECT sum("value") FROM "http_2xx" '
+        q = (f'SELECT sum("value") FROM "http_reqs" '
              f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms '
              f'GROUP BY time(1s) fill(0)')
         async with httpx.AsyncClient(timeout=10) as c:
@@ -576,9 +577,13 @@ async def _save_report_to_pvc(job_name: str) -> None:
                 headers={"Authorization": "Token perfstack-token"},
             )
             vals = r.json()["results"][0]["series"][0]["values"]
-            peak_rps = float(max((v[1] for v in vals if v[1] is not None), default=0))
+            counts = [v[1] for v in vals if v[1] is not None]
+            peak_rps = float(max(counts, default=0))
+            total_reqs_influx = int(sum(counts))
     except Exception as e:
-        logger.warning("Peak RPS query failed during PVC save: %s", e)
+        logger.warning("Peak/total RPS query failed during PVC save: %s", e)
+
+    service_name = next((h.get("service_name", "") for h in _read_history() if h.get("job_name") == job_name), "")
 
     # Fetch all panels (sequentially to avoid saturating the renderer)
     panel_ids = [1, 17, 7, 5, 8]
@@ -587,7 +592,9 @@ async def _save_report_to_pvc(job_name: str) -> None:
         panels[pid] = await _fetch_panel_b64(job_name, pid, from_ms, to_ms)
         await asyncio.sleep(0.5)
 
-    html = _build_report_html(job_name, summary, from_ms, to_ms, peak_rps, panels=panels)
+    html = _build_report_html(job_name, summary, from_ms, to_ms, peak_rps,
+                              service_name=service_name, total_reqs_influx=total_reqs_influx,
+                              panels=panels)
     saved_path.write_text(html)
     logger.info("Report saved to PVC: %s", saved_path)
 
@@ -624,10 +631,11 @@ async def get_report(job_name: str):
         to_ms   = int(_t.time() * 1000)
         from_ms = to_ms - 30 * 60 * 1000
 
-    # Query InfluxDB for peak req/s — sum http_2xx per 1s window, take max in Python
+    # Query InfluxDB for peak req/s and total requests across all pods
     peak_rps = 0.0
+    total_reqs_influx = 0
     try:
-        q = (f'SELECT sum("value") FROM "http_2xx" '
+        q = (f'SELECT sum("value") FROM "http_reqs" '
              f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms '
              f'GROUP BY time(1s) fill(0)')
         async with httpx.AsyncClient(timeout=10) as c:
@@ -636,13 +644,16 @@ async def get_report(job_name: str):
                 params={"db": "k6", "q": q, "epoch": "ms"},
                 headers={"Authorization": "Token perfstack-token"},
             )
-            data = r.json()
-            vals = data["results"][0]["series"][0]["values"]
-            peak_rps = float(max((v[1] for v in vals if v[1] is not None), default=0))
+            vals = r.json()["results"][0]["series"][0]["values"]
+            counts = [v[1] for v in vals if v[1] is not None]
+            peak_rps = float(max(counts, default=0))
+            total_reqs_influx = int(sum(counts))
     except Exception as e:
         logger.warning("Peak RPS query failed: %s", e)
 
-    html = _build_report_html(job_name, summary, from_ms, to_ms, peak_rps)
+    service_name = next((h.get("service_name", "") for h in _read_history() if h.get("job_name") == job_name), "")
+    html = _build_report_html(job_name, summary, from_ms, to_ms, peak_rps,
+                              service_name=service_name, total_reqs_influx=total_reqs_influx)
     return HTMLResponse(content=html)
 
 
@@ -704,7 +715,9 @@ def _build_report_html(
     from_ms: int,
     to_ms: int,
     peak_rps: float,
-    panels: dict | None = None,  # panel_id → base64 str; if provided, embed inline (no JS)
+    service_name: str = "",
+    total_reqs_influx: int = 0,   # total across all pods from InfluxDB; 0 = use k6 summary fallback
+    panels: dict | None = None,   # panel_id → base64 str; if provided, embed inline (no JS)
 ) -> str:
     from datetime import datetime, timezone
 
@@ -756,8 +769,9 @@ def _build_report_html(
     dur_ms  = to_ms - from_ms
     dur_s   = dur_ms / 1000
 
-    total_reqs    = int(m.get("http_reqs",    {}).get("count", 0))
-    avg_rps       = m.get("http_reqs",    {}).get("rate",  0)
+    _k6_reqs  = int(m.get("http_reqs", {}).get("count", 0))
+    total_reqs    = total_reqs_influx if total_reqs_influx > 0 else _k6_reqs
+    avg_rps       = total_reqs / dur_s if dur_s > 0 else 0
     err_rate      = m.get("http_req_failed", {}).get("rate", 0) * 100
     data_rx       = m.get("data_received",   {}).get("count", 0)
     data_tx       = m.get("data_sent",       {}).get("count", 0)
@@ -787,6 +801,7 @@ def _build_report_html(
     gen_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     test_ts  = meta.get("timestamp", "")[:19].replace("T", " ") if meta.get("timestamp") else gen_time
     target   = meta.get("target_url", "—")
+    svc_label = service_name or ""
     conf_vus = meta.get("vus", peak_vus)
     conf_dur = meta.get("duration", round(dur_s))
 
@@ -807,7 +822,7 @@ def _build_report_html(
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>PerfStack Report — {job_name}</title>
+<title>GSA PerfStack Report — {job_name}</title>
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
   body{{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6}}
@@ -822,10 +837,11 @@ def _build_report_html(
   .header-meta{{display:grid;grid-template-columns:repeat(4,auto);gap:12px 28px}}
   .meta-item{{display:flex;flex-direction:column;gap:2px}}
   .meta-label{{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.6px}}
-  .meta-value{{font-size:13px;color:#cbd5e1;font-weight:500;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+  .meta-value{{font-size:13px;color:#cbd5e1;font-weight:500;word-break:break-all}}
+  .meta-svc{{font-size:14px;color:#f1f5f9;font-weight:600;margin-bottom:2px}}
 
   /* ── KPI Grid ── */
-  .kpi-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:12px;margin-bottom:24px}}
+  .kpi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}}
   .kpi-card{{background:#1a1f2e;border:1px solid #2d3748;border-radius:10px;padding:16px 14px}}
   .kpi-value{{font-size:26px;font-weight:700;line-height:1.1;margin-bottom:4px}}
   .kpi-label{{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}}
@@ -864,14 +880,18 @@ def _build_report_html(
   <!-- HEADER -->
   <div class="header">
     <div class="header-left">
-      <div class="logo-text">PerfStack</div>
+      <div class="logo-text">GSA PerfStack</div>
       <div>
         <div class="job-name">{job_name}</div>
         <span class="badge">Completed</span>
       </div>
     </div>
     <div class="header-meta">
-      <div class="meta-item"><span class="meta-label">Target</span><span class="meta-value" title="{target}">{target[:70]}{"…" if len(target)>70 else ""}</span></div>
+      <div class="meta-item">
+        <span class="meta-label">Target</span>
+        {"<div class='meta-svc'>"+svc_label+"</div>" if svc_label else ""}
+        <span class="meta-value">{target}</span>
+      </div>
       <div class="meta-item"><span class="meta-label">Config</span><span class="meta-value">{conf_vus} VUs · {conf_dur}s</span></div>
       <div class="meta-item"><span class="meta-label">Started</span><span class="meta-value">{test_ts}</span></div>
       <div class="meta-item"><span class="meta-label">Report generated</span><span class="meta-value">{gen_time}</span></div>
@@ -881,12 +901,13 @@ def _build_report_html(
   <!-- KPI CARDS -->
   <div class="kpi-grid">
     <div class="kpi-card"><div class="kpi-value blue">{total_reqs:,}</div><div class="kpi-label">Total Requests</div><div class="kpi-sub">{avg_rps:.1f} req/s avg</div></div>
-    <div class="kpi-card"><div class="kpi-value purple">{peak_rps:.1f}</div><div class="kpi-label">Peak req/s</div><div class="kpi-sub">{iters:,} iterations</div></div>
+    <div class="kpi-card"><div class="kpi-value purple">{peak_rps:.1f}</div><div class="kpi-label">Peak req/s</div><div class="kpi-sub">{iters:,} iterations (per pod)</div></div>
     <div class="kpi-card"><div class="kpi-value" style="color:{err_color}">{err_rate:.2f}%</div><div class="kpi-label">Error Rate</div><div class="kpi-sub">{int(total_reqs*err_rate/100):,} failed</div></div>
-    <div class="kpi-card"><div class="kpi-value yellow">{_fmt_ms(p_avg)}</div><div class="kpi-label">Avg Response</div><div class="kpi-sub">med {_fmt_ms(p_med)}</div></div>
-    <div class="kpi-card"><div class="kpi-value" style="color:{p95_color}">{_fmt_ms(p95)}</div><div class="kpi-label">p95 Response</div><div class="kpi-sub">p90 {_fmt_ms(p90)}</div></div>
-    <div class="kpi-card"><div class="kpi-value yellow">{_fmt_ms(p_max)}</div><div class="kpi-label">Max Response</div><div class="kpi-sub">min {_fmt_ms(p_min)}</div></div>
     <div class="kpi-card"><div class="kpi-value" style="color:{check_color}">{checks_pass:.1f}%</div><div class="kpi-label">Checks Passed</div><div class="kpi-sub">{_fmt_bytes(data_rx)} received</div></div>
+    <div class="kpi-card"><div class="kpi-value yellow">{_fmt_ms(p_avg)}</div><div class="kpi-label">Avg Response</div><div class="kpi-sub">med {_fmt_ms(p_med)}</div></div>
+    <div class="kpi-card"><div class="kpi-value green">{_fmt_ms(p90)}</div><div class="kpi-label">p90 Response</div><div class="kpi-sub">min {_fmt_ms(p_min)}</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:{p95_color}">{_fmt_ms(p95)}</div><div class="kpi-label">p95 Response</div><div class="kpi-sub">p90 {_fmt_ms(p90)}</div></div>
+    <div class="kpi-card"><div class="kpi-value yellow">{_fmt_ms(p99)}</div><div class="kpi-label">p99 Response</div><div class="kpi-sub">max {_fmt_ms(p_max)}</div></div>
   </div>
 
   <!-- CHARTS ROW 1: VUs / RPS / Errors -->
@@ -898,7 +919,7 @@ def _build_report_html(
 
   <!-- CHARTS FULL WIDTH -->
   <div class="charts-row" style="margin-bottom:12px">
-    {_chart_block("Response Time — p90 / p95 / max / min  (http_req_duration)", 5, wide=True, b64=(panels or {{}}).get(5,""))}
+    {_chart_block("Response Time — p90 / p95 / p99 / max / min  (http_req_duration)", 5, wide=True, b64=(panels or {{}}).get(5,""))}
   </div>
   <div class="charts-row" style="margin-bottom:24px">
     {_chart_block("Response Time Heatmap", 8, wide=True, b64=(panels or {{}}).get(8,""))}
@@ -930,7 +951,7 @@ def _build_report_html(
     <table>
       <thead><tr><th>Metric</th><th class="num">Total</th><th class="num">Rate</th></tr></thead>
       <tbody>
-        <tr><td class="hl">HTTP Requests</td><td class="num">{total_reqs:,}</td><td class="num">{avg_rps:.2f} req/s</td></tr>
+        <tr><td class="hl">HTTP Requests (all pods)</td><td class="num">{total_reqs:,}</td><td class="num">{avg_rps:.2f} req/s</td></tr>
         <tr><td class="hl">Iterations</td><td class="num">{iters:,}</td><td class="num">{iter_rate:.2f} iter/s</td></tr>
         <tr><td class="hl">Data Received</td><td class="num">{_fmt_bytes(data_rx)}</td><td class="num">{_fmt_bytes(rx_rate)}/s</td></tr>
         <tr><td class="hl">Data Sent</td><td class="num">{_fmt_bytes(data_tx)}</td><td class="num">{_fmt_bytes(tx_rate)}/s</td></tr>
