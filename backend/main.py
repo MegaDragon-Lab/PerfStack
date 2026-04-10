@@ -551,29 +551,38 @@ async def _query_influx_stats(from_ms: int, to_ms: int) -> dict:
     """Query InfluxDB for aggregate stats across all pods. Returns dict with peak_rps,
     total_reqs, avg, med, p90, p95, p99, p_min, p_max (all floats; 0 on failure)."""
     import httpx
-    result = {"peak_rps": 0.0, "total_reqs": 0,
+    result = {"peak_rps": 0.0, "total_reqs": 0, "total_iters": 0,
               "avg": 0.0, "med": 0.0, "p90": 0.0, "p95": 0.0, "p99": 0.0,
               "p_min": 0.0, "p_max": 0.0}
     try:
-        q_rps = (f'SELECT sum("value") FROM "http_reqs" '
-                 f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms '
-                 f'GROUP BY time(1s) fill(0)')
-        q_lat = (f'SELECT median("value") AS med, mean("value") AS avg, '
-                 f'percentile("value",90) AS p90, percentile("value",95) AS p95, '
-                 f'percentile("value",99) AS p99, min("value") AS p_min, max("value") AS p_max '
-                 f'FROM "http_req_duration" '
-                 f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms')
+        q_rps  = (f'SELECT sum("value") FROM "http_reqs" '
+                  f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms '
+                  f'GROUP BY time(1s) fill(0)')
+        q_iter = (f'SELECT count("value") FROM "iterations" '
+                  f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms')
+        q_lat  = (f'SELECT median("value") AS med, mean("value") AS avg, '
+                  f'percentile("value",90) AS p90, percentile("value",95) AS p95, '
+                  f'percentile("value",99) AS p99, min("value") AS p_min, max("value") AS p_max '
+                  f'FROM "http_req_duration" '
+                  f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms')
         async with httpx.AsyncClient(timeout=15) as c:
-            r_rps = await c.get("http://influxdb:8086/query",
-                                params={"db": "k6", "q": q_rps, "epoch": "ms"},
-                                headers={"Authorization": "Token perfstack-token"})
-            r_lat = await c.get("http://influxdb:8086/query",
-                                params={"db": "k6", "q": q_lat, "epoch": "ms"},
-                                headers={"Authorization": "Token perfstack-token"})
+            r_rps  = await c.get("http://influxdb:8086/query",
+                                 params={"db": "k6", "q": q_rps,  "epoch": "ms"},
+                                 headers={"Authorization": "Token perfstack-token"})
+            r_iter = await c.get("http://influxdb:8086/query",
+                                 params={"db": "k6", "q": q_iter, "epoch": "ms"},
+                                 headers={"Authorization": "Token perfstack-token"})
+            r_lat  = await c.get("http://influxdb:8086/query",
+                                 params={"db": "k6", "q": q_lat,  "epoch": "ms"},
+                                 headers={"Authorization": "Token perfstack-token"})
 
         counts = [v[1] for v in r_rps.json()["results"][0]["series"][0]["values"] if v[1] is not None]
         result["peak_rps"]   = float(max(counts, default=0))
         result["total_reqs"] = int(sum(counts))
+        try:
+            result["total_iters"] = int(r_iter.json()["results"][0]["series"][0]["values"][0][1] or 0)
+        except Exception:
+            pass
 
         lat_series = r_lat.json()["results"][0]["series"][0]
         cols = lat_series["columns"]   # ["time","med","avg","p90","p95","p99","p_min","p_max"]
@@ -613,6 +622,7 @@ async def _save_report_to_pvc(job_name: str) -> None:
     service_name   = hist_entry.get("service_name", "")
     parallelism    = hist_entry.get("parallelism", 1)
     sleep_interval = hist_entry.get("sleep_interval", 0.0)
+    scenario       = hist_entry.get("scenario", "")
 
     # Fetch all panels (sequentially to avoid saturating the renderer)
     panel_ids = [1, 17, 7, 5, 8]
@@ -624,7 +634,7 @@ async def _save_report_to_pvc(job_name: str) -> None:
     html = _build_report_html(job_name, summary, from_ms, to_ms,
                               service_name=service_name, influx_stats=stats,
                               parallelism=parallelism, sleep_interval=sleep_interval,
-                              panels=panels)
+                              scenario=scenario, panels=panels)
     saved_path.write_text(html)
     logger.info("Report saved to PVC: %s", saved_path)
 
@@ -666,9 +676,11 @@ async def get_report(job_name: str):
     service_name   = hist_entry.get("service_name", "")
     parallelism    = hist_entry.get("parallelism", 1)
     sleep_interval = hist_entry.get("sleep_interval", 0.0)
+    scenario       = hist_entry.get("scenario", "")
     html = _build_report_html(job_name, summary, from_ms, to_ms,
                               service_name=service_name, influx_stats=stats,
-                              parallelism=parallelism, sleep_interval=sleep_interval)
+                              parallelism=parallelism, sleep_interval=sleep_interval,
+                              scenario=scenario)
     return HTMLResponse(content=html)
 
 
@@ -734,6 +746,7 @@ def _build_report_html(
     influx_stats: dict | None = None,
     parallelism: int = 1,
     sleep_interval: float = 0.0,
+    scenario: str = "",
     panels: dict | None = None,
 ) -> str:
     from datetime import datetime, timezone
@@ -791,13 +804,13 @@ def _build_report_html(
     _k6_reqs  = int(m.get("http_reqs", {}).get("count", 0))
     total_reqs    = ix.get("total_reqs") or _k6_reqs
     peak_rps      = ix.get("peak_rps", peak_rps)
-    avg_rps       = total_reqs / dur_s if dur_s > 0 else 0
     err_rate      = m.get("http_req_failed", {}).get("rate", 0) * 100
     data_rx       = m.get("data_received",   {}).get("count", 0)
     data_tx       = m.get("data_sent",       {}).get("count", 0)
     peak_vus      = int(m.get("vus_max", {}).get("value", meta.get("vus", 0)))
     checks_pass   = m.get("checks", {}).get("rate", 0) * 100
-    iters         = int(m.get("iterations",  {}).get("count", 0))
+    _k6_iters     = int(m.get("iterations",  {}).get("count", 0))
+    total_iters   = ix.get("total_iters") or (_k6_iters * parallelism)
     iter_rate     = m.get("iterations",    {}).get("rate",  0)
     rx_rate       = m.get("data_received", {}).get("rate",  0)
     tx_rate       = m.get("data_sent",     {}).get("rate",  0)
@@ -821,13 +834,15 @@ def _build_report_html(
 
     gen_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     test_ts  = meta.get("timestamp", "")[:19].replace("T", " ") if meta.get("timestamp") else gen_time
-    target        = meta.get("target_url", "—")
-    svc_label     = service_name or ""
-    scenario_name = (meta.get("scenario") or "—").capitalize()
+    target         = meta.get("target_url", "—")
+    svc_label      = service_name or ""
+    scenario_name  = (scenario or meta.get("scenario") or "—").capitalize()
     interval_label = (f"{int(sleep_interval*1000)} ms" if sleep_interval > 0
                       else "0 ms (max throughput)")
     conf_vus = meta.get("vus", peak_vus)
     conf_dur = meta.get("duration", round(dur_s))
+    # Use configured test duration (not padded InfluxDB window) for avg rate
+    avg_rps  = total_reqs / conf_dur if conf_dur > 0 else (total_reqs / dur_s if dur_s > 0 else 0)
 
     checks_html = ""
     for ck in checks[:20]:
@@ -928,7 +943,7 @@ def _build_report_html(
   <!-- KPI CARDS -->
   <div class="kpi-grid">
     <div class="kpi-card"><div class="kpi-value blue">{total_reqs:,}</div><div class="kpi-label">Total Requests</div><div class="kpi-sub">{avg_rps:.1f} req/s avg</div></div>
-    <div class="kpi-card"><div class="kpi-value purple">{peak_rps:.1f}</div><div class="kpi-label">Peak req/s</div><div class="kpi-sub">{iters:,} iterations (per pod)</div></div>
+    <div class="kpi-card"><div class="kpi-value purple">{peak_rps:.1f}</div><div class="kpi-label">Peak req/s</div><div class="kpi-sub">{total_iters:,} total iterations</div></div>
     <div class="kpi-card"><div class="kpi-value" style="color:{err_color}">{err_rate:.2f}%</div><div class="kpi-label">Error Rate</div><div class="kpi-sub">{int(total_reqs*err_rate/100):,} failed</div></div>
     <div class="kpi-card"><div class="kpi-value" style="color:{check_color}">{checks_pass:.1f}%</div><div class="kpi-label">Checks Passed</div><div class="kpi-sub">{_fmt_bytes(data_rx)} received</div></div>
     <div class="kpi-card"><div class="kpi-value yellow">{_fmt_ms(p_avg)}</div><div class="kpi-label">Avg Response</div><div class="kpi-sub">med {_fmt_ms(p_med)}</div></div>
@@ -979,7 +994,7 @@ def _build_report_html(
       <thead><tr><th>Metric</th><th class="num">Total</th><th class="num">Rate</th></tr></thead>
       <tbody>
         <tr><td class="hl">HTTP Requests (all pods)</td><td class="num">{total_reqs:,}</td><td class="num">{avg_rps:.2f} req/s</td></tr>
-        <tr><td class="hl">Iterations</td><td class="num">{iters:,}</td><td class="num">{iter_rate:.2f} iter/s</td></tr>
+        <tr><td class="hl">Iterations (all pods)</td><td class="num">{total_iters:,}</td><td class="num">{total_iters/conf_dur if conf_dur else 0:.2f} iter/s</td></tr>
         <tr><td class="hl">Data Received</td><td class="num">{_fmt_bytes(data_rx)}</td><td class="num">{_fmt_bytes(rx_rate)}/s</td></tr>
         <tr><td class="hl">Data Sent</td><td class="num">{_fmt_bytes(data_tx)}</td><td class="num">{_fmt_bytes(tx_rate)}/s</td></tr>
       </tbody>
