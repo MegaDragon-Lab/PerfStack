@@ -543,6 +543,46 @@ async def _fetch_panel_b64(job_name: str, panel_id: int, from_ms: int, to_ms: in
     return ""
 
 
+async def _query_influx_stats(from_ms: int, to_ms: int) -> dict:
+    """Query InfluxDB for aggregate stats across all pods. Returns dict with peak_rps,
+    total_reqs, avg, med, p90, p95, p99, p_min, p_max (all floats; 0 on failure)."""
+    import httpx
+    result = {"peak_rps": 0.0, "total_reqs": 0,
+              "avg": 0.0, "med": 0.0, "p90": 0.0, "p95": 0.0, "p99": 0.0,
+              "p_min": 0.0, "p_max": 0.0}
+    try:
+        q_rps = (f'SELECT sum("value") FROM "http_reqs" '
+                 f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms '
+                 f'GROUP BY time(1s) fill(0)')
+        q_lat = (f'SELECT median("value") AS med, mean("value") AS avg, '
+                 f'percentile("value",90) AS p90, percentile("value",95) AS p95, '
+                 f'percentile("value",99) AS p99, min("value") AS p_min, max("value") AS p_max '
+                 f'FROM "http_req_duration" '
+                 f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms')
+        async with httpx.AsyncClient(timeout=15) as c:
+            r_rps = await c.get("http://influxdb:8086/query",
+                                params={"db": "k6", "q": q_rps, "epoch": "ms"},
+                                headers={"Authorization": "Token perfstack-token"})
+            r_lat = await c.get("http://influxdb:8086/query",
+                                params={"db": "k6", "q": q_lat, "epoch": "ms"},
+                                headers={"Authorization": "Token perfstack-token"})
+
+        counts = [v[1] for v in r_rps.json()["results"][0]["series"][0]["values"] if v[1] is not None]
+        result["peak_rps"]   = float(max(counts, default=0))
+        result["total_reqs"] = int(sum(counts))
+
+        lat_series = r_lat.json()["results"][0]["series"][0]
+        cols = lat_series["columns"]   # ["time","med","avg","p90","p95","p99","p_min","p_max"]
+        row  = lat_series["values"][0]
+        for key in ("med", "avg", "p90", "p95", "p99", "p_min", "p_max"):
+            idx = next((i for i, c in enumerate(cols) if c == key), None)
+            if idx is not None and row[idx] is not None:
+                result[key] = float(row[idx])
+    except Exception as e:
+        logger.warning("InfluxDB stats query failed: %s", e)
+    return result
+
+
 async def _save_report_to_pvc(job_name: str) -> None:
     """Background task: render all panels inline and write self-contained HTML to PVC."""
     import asyncio, time as _t, httpx
@@ -564,25 +604,7 @@ async def _save_report_to_pvc(job_name: str) -> None:
         to_ms   = int(_t.time() * 1000)
         from_ms = to_ms - 30 * 60 * 1000
 
-    peak_rps = 0.0
-    total_reqs_influx = 0
-    try:
-        q = (f'SELECT sum("value") FROM "http_reqs" '
-             f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms '
-             f'GROUP BY time(1s) fill(0)')
-        async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(
-                "http://influxdb:8086/query",
-                params={"db": "k6", "q": q, "epoch": "ms"},
-                headers={"Authorization": "Token perfstack-token"},
-            )
-            vals = r.json()["results"][0]["series"][0]["values"]
-            counts = [v[1] for v in vals if v[1] is not None]
-            peak_rps = float(max(counts, default=0))
-            total_reqs_influx = int(sum(counts))
-    except Exception as e:
-        logger.warning("Peak/total RPS query failed during PVC save: %s", e)
-
+    stats = await _query_influx_stats(from_ms, to_ms)
     service_name = next((h.get("service_name", "") for h in _read_history() if h.get("job_name") == job_name), "")
 
     # Fetch all panels (sequentially to avoid saturating the renderer)
@@ -592,8 +614,8 @@ async def _save_report_to_pvc(job_name: str) -> None:
         panels[pid] = await _fetch_panel_b64(job_name, pid, from_ms, to_ms)
         await asyncio.sleep(0.5)
 
-    html = _build_report_html(job_name, summary, from_ms, to_ms, peak_rps,
-                              service_name=service_name, total_reqs_influx=total_reqs_influx,
+    html = _build_report_html(job_name, summary, from_ms, to_ms,
+                              service_name=service_name, influx_stats=stats,
                               panels=panels)
     saved_path.write_text(html)
     logger.info("Report saved to PVC: %s", saved_path)
@@ -603,7 +625,7 @@ async def _save_report_to_pvc(job_name: str) -> None:
     for h in history:
         if h.get("job_name") == job_name:
             h["report_saved"] = True
-            h["peak_rps"] = peak_rps
+            h["peak_rps"] = stats.get("peak_rps", 0.0)
             break
     _write_history(history)
 
@@ -631,29 +653,10 @@ async def get_report(job_name: str):
         to_ms   = int(_t.time() * 1000)
         from_ms = to_ms - 30 * 60 * 1000
 
-    # Query InfluxDB for peak req/s and total requests across all pods
-    peak_rps = 0.0
-    total_reqs_influx = 0
-    try:
-        q = (f'SELECT sum("value") FROM "http_reqs" '
-             f'WHERE time >= {from_ms}ms AND time <= {to_ms}ms '
-             f'GROUP BY time(1s) fill(0)')
-        async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(
-                "http://influxdb:8086/query",
-                params={"db": "k6", "q": q, "epoch": "ms"},
-                headers={"Authorization": "Token perfstack-token"},
-            )
-            vals = r.json()["results"][0]["series"][0]["values"]
-            counts = [v[1] for v in vals if v[1] is not None]
-            peak_rps = float(max(counts, default=0))
-            total_reqs_influx = int(sum(counts))
-    except Exception as e:
-        logger.warning("Peak RPS query failed: %s", e)
-
+    stats = await _query_influx_stats(from_ms, to_ms)
     service_name = next((h.get("service_name", "") for h in _read_history() if h.get("job_name") == job_name), "")
-    html = _build_report_html(job_name, summary, from_ms, to_ms, peak_rps,
-                              service_name=service_name, total_reqs_influx=total_reqs_influx)
+    html = _build_report_html(job_name, summary, from_ms, to_ms,
+                              service_name=service_name, influx_stats=stats)
     return HTMLResponse(content=html)
 
 
@@ -714,10 +717,10 @@ def _build_report_html(
     summary: dict,
     from_ms: int,
     to_ms: int,
-    peak_rps: float,
+    peak_rps: float = 0.0,        # kept for backwards compat; overridden by influx_stats
     service_name: str = "",
-    total_reqs_influx: int = 0,   # total across all pods from InfluxDB; 0 = use k6 summary fallback
-    panels: dict | None = None,   # panel_id → base64 str; if provided, embed inline (no JS)
+    influx_stats: dict | None = None,   # from _query_influx_stats(); overrides k6-summary metrics
+    panels: dict | None = None,         # panel_id → base64 str; if provided, embed inline (no JS)
 ) -> str:
     from datetime import datetime, timezone
 
@@ -769,8 +772,11 @@ def _build_report_html(
     dur_ms  = to_ms - from_ms
     dur_s   = dur_ms / 1000
 
+    ix = influx_stats or {}
+
     _k6_reqs  = int(m.get("http_reqs", {}).get("count", 0))
-    total_reqs    = total_reqs_influx if total_reqs_influx > 0 else _k6_reqs
+    total_reqs    = ix.get("total_reqs") or _k6_reqs
+    peak_rps      = ix.get("peak_rps", peak_rps)
     avg_rps       = total_reqs / dur_s if dur_s > 0 else 0
     err_rate      = m.get("http_req_failed", {}).get("rate", 0) * 100
     data_rx       = m.get("data_received",   {}).get("count", 0)
@@ -786,13 +792,14 @@ def _build_report_html(
     if dur_key not in m and "custom_req_duration" in m:
         dur_key = "custom_req_duration"
     dr = m.get(dur_key, {})
-    p_avg = dr.get("avg",   0)
-    p_min = dr.get("min",   0)
-    p_med = dr.get("med",   0)
-    p90   = dr.get("p(90)", 0)
-    p95   = dr.get("p(95)", 0)
-    p99   = dr.get("p(99)", 0) or dr.get("p99", 0)
-    p_max = dr.get("max",   0)
+    # Prefer InfluxDB aggregate (all pods); fall back to single-pod k6 summary
+    p_avg = ix.get("avg")  or dr.get("avg",   0)
+    p_min = ix.get("p_min") or dr.get("min",   0)
+    p_med = ix.get("med")  or dr.get("med",   0)
+    p90   = ix.get("p90")  or dr.get("p(90)", 0)
+    p95   = ix.get("p95")  or dr.get("p(95)", 0)
+    p99   = ix.get("p99")  or dr.get("p(99)", 0) or dr.get("p99", 0)
+    p_max = ix.get("p_max") or dr.get("max",   0)
 
     err_color   = "#ef4444" if err_rate > 5 else "#22c55e" if err_rate == 0 else "#f59e0b"
     check_color = "#22c55e" if checks_pass >= 99 else "#f59e0b" if checks_pass >= 90 else "#ef4444"
