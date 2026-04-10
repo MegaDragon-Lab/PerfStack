@@ -112,6 +112,8 @@ class TestHistoryEntry(BaseModel):
     scenario: str = "load"
     vus: int = 10
     duration: int = 60
+    parallelism: int = 1
+    sleep_interval: float = 0.0
     started_at: str = ""
     completed_at: str = ""
     status: str = "running"
@@ -473,6 +475,8 @@ async def run_test(config: TestConfig, ps_session: str = Cookie(default=None)):
         scenario=config.scenario,
         vus=config.vus,
         duration=config.duration,
+        parallelism=config.parallelism,
+        sleep_interval=config.sleep_interval,
         started_at=datetime.now(timezone.utc).isoformat(),
         status="running",
     )
@@ -605,7 +609,10 @@ async def _save_report_to_pvc(job_name: str) -> None:
         from_ms = to_ms - 30 * 60 * 1000
 
     stats = await _query_influx_stats(from_ms, to_ms)
-    service_name = next((h.get("service_name", "") for h in _read_history() if h.get("job_name") == job_name), "")
+    hist_entry = next((h for h in _read_history() if h.get("job_name") == job_name), {})
+    service_name   = hist_entry.get("service_name", "")
+    parallelism    = hist_entry.get("parallelism", 1)
+    sleep_interval = hist_entry.get("sleep_interval", 0.0)
 
     # Fetch all panels (sequentially to avoid saturating the renderer)
     panel_ids = [1, 17, 7, 5, 8]
@@ -616,6 +623,7 @@ async def _save_report_to_pvc(job_name: str) -> None:
 
     html = _build_report_html(job_name, summary, from_ms, to_ms,
                               service_name=service_name, influx_stats=stats,
+                              parallelism=parallelism, sleep_interval=sleep_interval,
                               panels=panels)
     saved_path.write_text(html)
     logger.info("Report saved to PVC: %s", saved_path)
@@ -654,9 +662,13 @@ async def get_report(job_name: str):
         from_ms = to_ms - 30 * 60 * 1000
 
     stats = await _query_influx_stats(from_ms, to_ms)
-    service_name = next((h.get("service_name", "") for h in _read_history() if h.get("job_name") == job_name), "")
+    hist_entry = next((h for h in _read_history() if h.get("job_name") == job_name), {})
+    service_name   = hist_entry.get("service_name", "")
+    parallelism    = hist_entry.get("parallelism", 1)
+    sleep_interval = hist_entry.get("sleep_interval", 0.0)
     html = _build_report_html(job_name, summary, from_ms, to_ms,
-                              service_name=service_name, influx_stats=stats)
+                              service_name=service_name, influx_stats=stats,
+                              parallelism=parallelism, sleep_interval=sleep_interval)
     return HTMLResponse(content=html)
 
 
@@ -717,10 +729,12 @@ def _build_report_html(
     summary: dict,
     from_ms: int,
     to_ms: int,
-    peak_rps: float = 0.0,        # kept for backwards compat; overridden by influx_stats
+    peak_rps: float = 0.0,
     service_name: str = "",
-    influx_stats: dict | None = None,   # from _query_influx_stats(); overrides k6-summary metrics
-    panels: dict | None = None,         # panel_id → base64 str; if provided, embed inline (no JS)
+    influx_stats: dict | None = None,
+    parallelism: int = 1,
+    sleep_interval: float = 0.0,
+    panels: dict | None = None,
 ) -> str:
     from datetime import datetime, timezone
 
@@ -807,8 +821,11 @@ def _build_report_html(
 
     gen_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     test_ts  = meta.get("timestamp", "")[:19].replace("T", " ") if meta.get("timestamp") else gen_time
-    target   = meta.get("target_url", "—")
-    svc_label = service_name or ""
+    target        = meta.get("target_url", "—")
+    svc_label     = service_name or ""
+    scenario_name = (meta.get("scenario") or "—").capitalize()
+    interval_label = (f"{int(sleep_interval*1000)} ms" if sleep_interval > 0
+                      else "0 ms (max throughput)")
     conf_vus = meta.get("vus", peak_vus)
     conf_dur = meta.get("duration", round(dur_s))
 
@@ -841,7 +858,7 @@ def _build_report_html(
   .logo-text{{font-size:22px;font-weight:700;letter-spacing:-0.5px;background:linear-gradient(135deg,#6366f1,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}}
   .job-name{{font-size:20px;font-weight:600;color:#f1f5f9;margin-bottom:4px}}
   .badge{{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.5px;background:#166534;color:#86efac;text-transform:uppercase}}
-  .header-meta{{display:grid;grid-template-columns:repeat(4,auto);gap:12px 28px}}
+  .header-meta{{display:grid;grid-template-columns:repeat(4,auto);gap:10px 28px}}
   .meta-item{{display:flex;flex-direction:column;gap:2px}}
   .meta-label{{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.6px}}
   .meta-value{{font-size:13px;color:#cbd5e1;font-weight:500;word-break:break-all}}
@@ -894,14 +911,17 @@ def _build_report_html(
       </div>
     </div>
     <div class="header-meta">
-      <div class="meta-item">
+      <div class="meta-item" style="grid-column:1/-1">
         <span class="meta-label">Target</span>
         {"<div class='meta-svc'>"+svc_label+"</div>" if svc_label else ""}
         <span class="meta-value">{target}</span>
       </div>
       <div class="meta-item"><span class="meta-label">Config</span><span class="meta-value">{conf_vus} VUs · {conf_dur}s</span></div>
+      <div class="meta-item"><span class="meta-label">Scenario</span><span class="meta-value">{scenario_name}</span></div>
+      <div class="meta-item"><span class="meta-label">k6 Pods</span><span class="meta-value">{parallelism}</span></div>
+      <div class="meta-item"><span class="meta-label">Request Interval</span><span class="meta-value">{interval_label}</span></div>
       <div class="meta-item"><span class="meta-label">Started</span><span class="meta-value">{test_ts}</span></div>
-      <div class="meta-item"><span class="meta-label">Report generated</span><span class="meta-value">{gen_time}</span></div>
+      <div class="meta-item"><span class="meta-label">Report Generated</span><span class="meta-value">{gen_time}</span></div>
     </div>
   </div>
 
