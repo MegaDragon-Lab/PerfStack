@@ -344,15 +344,16 @@ export default function App() {
   }, []);
 
   const [form, setForm] = useState({
-    iam_url:        "",
-    client_id:      "",
-    client_secret:  "",
-    target_url:     "",
-    payload:        '{\n  "key": "value"\n}',
-    vus:            10,
-    duration:       60,
-    sleep_interval: 0.1,
-    parallelism:    4,
+    iam_url:         "",
+    client_id:       "",
+    client_secret:   "",
+    use_user_token:  false,
+    target_url:      "",
+    payload:         '{\n  "key": "value"\n}',
+    vus:             10,
+    duration:        60,
+    sleep_interval:  0.1,
+    parallelism:     4,
   });
 
   const [status,      setStatus]      = useState(() => { const s = localStorage.getItem("ps_status"); return (s === "running" || s === "pending") ? s : "idle"; });
@@ -456,10 +457,11 @@ export default function App() {
   const saveService = async () => {
     const name = saveName.trim();
     if (!name) return;
+    const { use_user_token: _uut, ...formToSave } = form;
     await fetch(`${API_BASE}/api/services`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, folder: saveFolder.trim(), ...form }),
+      body: JSON.stringify({ name, folder: saveFolder.trim(), ...formToSave }),
     });
     const updated = await fetch(`${API_BASE}/api/services`).then(r => r.json());
     setServices(updated);
@@ -469,7 +471,7 @@ export default function App() {
 
   const loadService = (idx) => {
     const { name, folder, ...config } = services[idx];
-    setForm(config);
+    setForm({ ...config, use_user_token: false });
     setActiveIdx(idx);
     setSaveFolder(folder || "");
   };
@@ -612,8 +614,8 @@ export default function App() {
     };
   }, []);
 
-  const canRun = !loading && status !== "running" && !jsonError &&
-    form.iam_url && form.client_id && form.client_secret && form.target_url;
+  const canRun = !loading && status !== "running" && !jsonError && form.target_url &&
+    (form.use_user_token ? currentUser?.has_token : (form.iam_url && form.client_id && form.client_secret));
 
   const [pingResult, setPingResult] = useState(null);
   const [pinging,    setPinging]    = useState(false);
@@ -630,6 +632,7 @@ export default function App() {
           iam_url: form.iam_url,
           client_id: form.client_id,
           client_secret: form.client_secret,
+          use_user_token: form.use_user_token,
           target_url: form.target_url,
           payload: JSON.parse(form.payload),
         }),
@@ -848,7 +851,7 @@ export default function App() {
   if (!authChecked) return null;
 
   if (!currentUser) {
-    const bookmarklet = `javascript:(function(){fetch('/rest/user').then(r=>r.json()).then(u=>{window.location.href='${window.location.origin}/api/auth/dms-login?uid='+encodeURIComponent(u.uid)+'&cn='+encodeURIComponent(u.cn)+'&o='+encodeURIComponent(u.o);});})()`;
+    const bookmarklet = `javascript:(function(){fetch('/rest/user').then(r=>r.json()).then(u=>{window.location.href='${window.location.origin}/api/auth/dms-login?uid='+encodeURIComponent(u.uid)+'&cn='+encodeURIComponent(u.cn)+'&o='+encodeURIComponent(u.o)+'&token='+encodeURIComponent(u.access_token_encoded||'')+'&token_exp='+encodeURIComponent(u.access_token_expiration_time||'');});})()`;
     return (
       <div style={{ minHeight: '100vh', background: t.bg, color: t.text, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'IBM Plex Sans, sans-serif' }}>
         <div style={{ maxWidth: 480, width: '100%', padding: '0 24px', textAlign: 'center' }}>
@@ -1685,19 +1688,42 @@ export default function App() {
               <div className="panel-title collapsible" onClick={() => setIamOpen(o => !o)}>
                 <span className="section-num">01</span>
                 IAM Configuration
-                {!iamOpen && form.iam_url && <span className="iam-filled-badge">✓ configured</span>}
+                {!iamOpen && (form.use_user_token ? <span className="iam-filled-badge">✓ DMS token</span> : form.iam_url ? <span className="iam-filled-badge">✓ configured</span> : null)}
                 <span className="collapse-chevron">{iamOpen ? '▲' : '▾'}</span>
               </div>
               {iamOpen && (
                 <>
-                  <Field label="IAM Token URL" value={form.iam_url} onChange={set("iam_url")}
-                    placeholder="https://iam.example.com/oauth2/token" mono />
-                  <div className="row2">
-                    <Field label="Client ID" value={form.client_id} onChange={set("client_id")}
-                      placeholder="my-client-id" />
-                    <Field label="Client Secret" type="password" value={form.client_secret}
-                      onChange={set("client_secret")} placeholder="••••••••" />
+                  {/* Toggle: use DMS session token vs client credentials */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '8px 12px', background: t.bgPanel, borderRadius: 6, border: `1px solid ${t.borderLight}` }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, userSelect: 'none' }}>
+                      <input type="checkbox" checked={form.use_user_token}
+                        onChange={e => setForm(f => ({ ...f, use_user_token: e.target.checked }))}
+                        style={{ accentColor: t.accent, width: 14, height: 14 }} />
+                      <span style={{ fontWeight: 600 }}>Use my DMS session token</span>
+                    </label>
+                    {form.use_user_token && currentUser?.token_exp && (
+                      <span style={{ fontSize: 11, color: t.textDim, marginLeft: 'auto' }}>
+                        expires {new Date(currentUser.token_exp).toLocaleTimeString()}
+                      </span>
+                    )}
+                    {form.use_user_token && !currentUser?.has_token && (
+                      <span style={{ fontSize: 11, color: '#f87171', marginLeft: 'auto' }}>
+                        ⚠ no token in session — re-login with bookmarklet
+                      </span>
+                    )}
                   </div>
+                  {!form.use_user_token && (
+                    <>
+                      <Field label="IAM Token URL" value={form.iam_url} onChange={set("iam_url")}
+                        placeholder="https://iam.example.com/oauth2/token" mono />
+                      <div className="row2">
+                        <Field label="Client ID" value={form.client_id} onChange={set("client_id")}
+                          placeholder="my-client-id" />
+                        <Field label="Client Secret" type="password" value={form.client_secret}
+                          onChange={set("client_secret")} placeholder="••••••••" />
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -1710,9 +1736,9 @@ export default function App() {
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                   <button
                     onClick={runPingTest}
-                    disabled={pinging || !form.iam_url || !form.client_id || !form.client_secret || !form.target_url || !!jsonError}
+                    disabled={pinging || !form.target_url || !!jsonError || (form.use_user_token ? !currentUser?.has_token : (!form.iam_url || !form.client_id || !form.client_secret))}
                     title="Dry Run — fire a single request to validate config"
-                    style={{ padding: '5px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #3b82f6aa', background: '#3b82f625', color: '#3b82f6', cursor: 'pointer', opacity: (pinging || !form.iam_url || !form.target_url) ? .35 : 1, display: 'flex', alignItems: 'center', gap: 5 }}
+                    style={{ padding: '5px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #3b82f6aa', background: '#3b82f625', color: '#3b82f6', cursor: 'pointer', opacity: (pinging || !form.target_url) ? .35 : 1, display: 'flex', alignItems: 'center', gap: 5 }}
                   >
                     {pinging
                       ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" strokeDasharray="31.4" strokeDashoffset="10"/></svg>

@@ -92,9 +92,10 @@ class StageConfig(BaseModel):
     target: int
 
 class TestConfig(BaseModel):
-    iam_url: str = Field(..., description="IAM token endpoint URL")
-    client_id: str = Field(..., description="OAuth2 client ID")
-    client_secret: str = Field(..., description="OAuth2 client secret")
+    iam_url: str = Field(default="", description="IAM token endpoint URL")
+    client_id: str = Field(default="", description="OAuth2 client ID")
+    client_secret: str = Field(default="", description="OAuth2 client secret")
+    use_user_token: bool = Field(default=False, description="Use the logged-in user's DMS session token instead of client credentials")
     target_url: str = Field(..., description="URL to load test")
     payload: dict[str, Any] = Field(default={}, description="JSON body for each request")
     vus: int = Field(default=10, ge=1, le=2000, description="Virtual users")
@@ -231,11 +232,11 @@ ALLOWED_ORG   = "FICO-GPS-TENANT"
 _sessions: dict[str, dict] = {}   # session_id → {uid, cn, org}
 
 @app.get("/auth/dms-login", summary="DMS bookmarklet callback — sets session cookie")
-async def dms_login(uid: str, cn: str, o: str):
+async def dms_login(uid: str, cn: str, o: str, token: str = "", token_exp: str = ""):
     if o != ALLOWED_ORG:
         raise HTTPException(403, f"Access denied — organisation '{o}' is not allowed")
     session_id = secrets.token_urlsafe(32)
-    _sessions[session_id] = {"uid": uid, "cn": cn, "org": o}
+    _sessions[session_id] = {"uid": uid, "cn": cn, "org": o, "token": token, "token_exp": token_exp}
     response = RedirectResponse(url="/", status_code=302)
     response.set_cookie("ps_session", session_id, httponly=True, samesite="lax", max_age=86400 * 7)
     return response
@@ -244,7 +245,9 @@ async def dms_login(uid: str, cn: str, o: str):
 async def auth_me(ps_session: str = Cookie(default=None)):
     if not ps_session or ps_session not in _sessions:
         raise HTTPException(401, "Not authenticated")
-    return _sessions[ps_session]
+    s = _sessions[ps_session]
+    return {"uid": s["uid"], "cn": s["cn"], "org": s["org"],
+            "has_token": bool(s.get("token")), "token_exp": s.get("token_exp", "")}
 
 @app.get("/auth/logout", summary="Clear session and redirect to home")
 async def auth_logout(ps_session: str = Cookie(default=None)):
@@ -333,26 +336,36 @@ async def health():
 
 
 class PingConfig(BaseModel):
-    iam_url: str
-    client_id: str
-    client_secret: str
+    iam_url: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    use_user_token: bool = False
     target_url: str
     payload: dict[str, Any] = {}
 
 
 @app.post("/ping-test", summary="Single dry-run request to validate config")
-async def ping_test(config: PingConfig):
-    """Authenticates with IAM, fires one POST to the target URL and returns the result."""
+async def ping_test(config: PingConfig, ps_session: str = Cookie(default=None)):
+    """Authenticates with IAM (or uses DMS session token), fires one POST to the target URL and returns the result."""
     import httpx, time
 
-    # Step 1 — IAM auth
+    # Step 1 — resolve bearer token
     try:
-        auth = IamAuthClient(
-            iam_url=config.iam_url,
-            client_id=config.client_id,
-            client_secret=config.client_secret,
-        )
-        bearer_token = await auth.get_bearer_token()
+        if config.use_user_token:
+            if not ps_session or ps_session not in _sessions:
+                raise HTTPException(status_code=401, detail="No active DMS session — please log in again")
+            bearer_token = _sessions[ps_session].get("token", "")
+            if not bearer_token:
+                raise HTTPException(status_code=401, detail="DMS session has no token — re-login with the bookmarklet")
+        else:
+            auth = IamAuthClient(
+                iam_url=config.iam_url,
+                client_id=config.client_id,
+                client_secret=config.client_secret,
+            )
+            bearer_token = await auth.get_bearer_token()
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"IAM authentication failed: {e}")
 
@@ -408,20 +421,29 @@ async def reset_influxdb():
 
 
 @app.post("/run-test", response_model=TestResult, summary="Start a load test")
-async def run_test(config: TestConfig):
+async def run_test(config: TestConfig, ps_session: str = Cookie(default=None)):
     """
-    1. Fetches a Bearer token from the IAM endpoint (OAuth2 client credentials)
+    1. Fetches a Bearer token (from IAM or DMS session)
     2. Renders a dynamic K6 script with the token and test parameters
     3. Creates a Kubernetes Job that runs K6 and streams metrics to InfluxDB
     """
-    # Step 1 — IAM authentication
+    # Step 1 — resolve bearer token
     try:
-        auth = IamAuthClient(
-            iam_url=config.iam_url,
-            client_id=config.client_id,
-            client_secret=config.client_secret,
-        )
-        bearer_token = await auth.get_bearer_token()
+        if config.use_user_token:
+            if not ps_session or ps_session not in _sessions:
+                raise HTTPException(status_code=401, detail="No active DMS session — please log in again")
+            bearer_token = _sessions[ps_session].get("token", "")
+            if not bearer_token:
+                raise HTTPException(status_code=401, detail="DMS session has no token — re-login with the bookmarklet")
+        else:
+            auth = IamAuthClient(
+                iam_url=config.iam_url,
+                client_id=config.client_id,
+                client_secret=config.client_secret,
+            )
+            bearer_token = await auth.get_bearer_token()
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("IAM auth failed: %s", e)
         raise HTTPException(status_code=401, detail=f"IAM authentication failed: {e}")
