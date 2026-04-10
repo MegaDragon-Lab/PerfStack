@@ -251,7 +251,7 @@ echo ""
 # ── Restart deployments to pick up new images / config changes ────────────────
 log "Restarting deployments to apply latest images and config..."
 # grafana restarts in case grafana-config.yaml changed (datasource/dashboards)
-for deploy in grafana backend frontend; do
+for deploy in grafana grafana-renderer backend frontend; do
   kubectl rollout restart deployment/$deploy -n $NS >/dev/null 2>&1 || true
 done
 ok "Rollout restarts triggered"
@@ -259,7 +259,7 @@ echo ""
 
 # ── Wait for app deployments ──────────────────────────────────────────────────
 log "Waiting for deployments to be ready (timeout: 3 min)..."
-for deploy in influxdb grafana backend frontend; do
+for deploy in influxdb grafana grafana-renderer backend frontend; do
   echo -ne "  ${DIM}waiting for ${deploy}...${NC}"
   kubectl rollout status deployment/$deploy -n $NS --timeout=3m >/dev/null 2>&1
   echo -e "\r  ${GREEN}✓${NC} ${deploy} is ready           "
