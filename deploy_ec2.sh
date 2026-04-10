@@ -129,7 +129,7 @@ echo ""
 
 # ── Build and push backend ───────────────────────────────────────────────────
 log "Building perfstack-backend:latest (amd64)..."
-docker build --platform linux/amd64 -t perfstack-backend:latest ./backend
+docker build --no-cache --platform linux/amd64 -t perfstack-backend:latest ./backend
 docker tag perfstack-backend:latest localhost:${REG_PORT}/library/perfstack-backend:latest
 docker push localhost:${REG_PORT}/library/perfstack-backend:latest
 ok "Backend image built and pushed"
@@ -137,7 +137,7 @@ echo ""
 
 # ── Build and push frontend ──────────────────────────────────────────────────
 log "Building perfstack-frontend:latest (amd64)..."
-docker build --platform linux/amd64 -t perfstack-frontend:latest ./frontend
+docker build --no-cache --platform linux/amd64 -t perfstack-frontend:latest ./frontend
 docker tag perfstack-frontend:latest localhost:${REG_PORT}/library/perfstack-frontend:latest
 docker push localhost:${REG_PORT}/library/perfstack-frontend:latest
 ok "Frontend image built and pushed"
@@ -145,7 +145,7 @@ echo ""
 
 # ── Build and push k6 (custom xk6-output-influxdb) ───────────────────────────
 log "Building perfstack-k6:latest (amd64, xk6-output-influxdb)..."
-docker build --platform linux/amd64 -t perfstack-k6:latest ./k6
+docker build --no-cache --platform linux/amd64 -t perfstack-k6:latest ./k6
 docker tag perfstack-k6:latest localhost:${REG_PORT}/library/perfstack-k6:latest
 docker push localhost:${REG_PORT}/library/perfstack-k6:latest
 ok "k6 image built and pushed"

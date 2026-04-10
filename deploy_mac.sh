@@ -188,11 +188,11 @@ echo ""
 log "Building perfstack-backend:latest..."
 if [[ "$ZSCALER_FOUND" == "true" ]]; then
   cp "$ZSCALER_CERT" ./backend/zscaler.pem
-  docker build --platform linux/arm64 --build-arg CERT_FILE=zscaler.pem \
+  docker build --no-cache --platform linux/arm64 --build-arg CERT_FILE=zscaler.pem \
     -t perfstack-backend:latest ./backend
   rm -f ./backend/zscaler.pem
 else
-  docker build --platform linux/arm64 -t perfstack-backend:latest ./backend
+  docker build --no-cache --platform linux/arm64 -t perfstack-backend:latest ./backend
 fi
 ok "perfstack-backend:latest built"
 
@@ -204,11 +204,11 @@ ok "Backend image pushed to registry"
 log "Building perfstack-frontend:latest..."
 if [[ "$ZSCALER_FOUND" == "true" ]]; then
   cp "$ZSCALER_CERT" ./frontend/zscaler.pem
-  docker build --platform linux/arm64 --build-arg CERT_FILE=zscaler.pem \
+  docker build --no-cache --platform linux/arm64 --build-arg CERT_FILE=zscaler.pem \
     -t perfstack-frontend:latest ./frontend
   rm -f ./frontend/zscaler.pem
 else
-  docker build --platform linux/arm64 -t perfstack-frontend:latest ./frontend
+  docker build --no-cache --platform linux/arm64 -t perfstack-frontend:latest ./frontend
 fi
 ok "perfstack-frontend:latest built"
 
@@ -220,11 +220,11 @@ ok "Frontend image pushed to registry"
 log "Building perfstack-k6:latest (custom k6 + xk6-output-influxdb)..."
 if [[ "$ZSCALER_FOUND" == "true" ]]; then
   cp "$ZSCALER_CERT" ./k6/zscaler.pem
-  docker build --platform linux/arm64 --build-arg CERT_FILE=zscaler.pem \
+  docker build --no-cache --platform linux/arm64 --build-arg CERT_FILE=zscaler.pem \
     -t perfstack-k6:latest ./k6
   rm -f ./k6/zscaler.pem
 else
-  docker build --platform linux/arm64 -t perfstack-k6:latest ./k6
+  docker build --no-cache --platform linux/arm64 -t perfstack-k6:latest ./k6
 fi
 ok "perfstack-k6:latest built"
 
