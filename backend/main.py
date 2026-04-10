@@ -993,8 +993,7 @@ def _build_report_html(
     <table>
       <thead><tr><th>Metric</th><th class="num">Total</th><th class="num">Rate</th></tr></thead>
       <tbody>
-        <tr><td class="hl">HTTP Requests (all pods)</td><td class="num">{total_reqs:,}</td><td class="num">{avg_rps:.2f} req/s</td></tr>
-        <tr><td class="hl">Iterations (all pods)</td><td class="num">{total_iters:,}</td><td class="num">{total_iters/conf_dur if conf_dur else 0:.2f} iter/s</td></tr>
+        <tr><td class="hl">HTTP Requests</td><td class="num">{total_reqs:,}</td><td class="num">{avg_rps:.2f} req/s</td></tr>
         <tr><td class="hl">Data Received</td><td class="num">{_fmt_bytes(data_rx)}</td><td class="num">{_fmt_bytes(rx_rate)}/s</td></tr>
         <tr><td class="hl">Data Sent</td><td class="num">{_fmt_bytes(data_tx)}</td><td class="num">{_fmt_bytes(tx_rate)}/s</td></tr>
       </tbody>
