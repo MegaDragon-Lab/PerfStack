@@ -161,7 +161,7 @@ function SettingsMenu({ theme, onSelect, t }) {
               <div style={{ color: t.textDim, fontSize: '0.68rem', marginTop: 3, letterSpacing: '0.04em' }}>Performance Testing Platform</div>
             </div>
             <div style={{ background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: '0.63rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0 }}>
-              v2.4.0
+              v2.5.0
             </div>
           </div>
 
@@ -195,7 +195,7 @@ function SettingsMenu({ theme, onSelect, t }) {
             <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', color: t.textDim, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Release Info</div>
             {[
               { label: 'Version',  value: '2.4.0' },
-              { label: 'Released', value: 'Apr 9, 2026' },
+              { label: 'Released', value: 'Apr 10, 2026' },
               { label: 'Stack',    value: 'k6 · Grafana · k3d' },
             ].map(({ label, value }) => (
               <div key={label} style={metaRow}>
@@ -1493,7 +1493,7 @@ export default function App() {
                     <div style={{ fontSize: 28, fontWeight: 800, color: t.text, letterSpacing: '.01em', lineHeight: 1.1 }}>GSA Platform Suite</div>
                     <div style={{ fontSize: 13, color: t.textDim, marginTop: 4, letterSpacing: '.04em' }}>Performance Testing &amp; API Monitoring Platform</div>
                   </div>
-                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v2.4.0</span>
+                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v2.5.0</span>
                 </div>
                 <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.7, maxWidth: 620 }}>
                   An internal platform for load-testing REST APIs using k6 on Kubernetes, and continuously monitoring service health with scheduled checks and email alerting.
@@ -1531,6 +1531,7 @@ export default function App() {
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textDim, marginBottom: 16 }}>Release History</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderLeft: `2px solid ${t.borderLight}`, paddingLeft: 20 }}>
                   {[
+                    { version: 'v2.5.0', date: '2026-04-10', notes: ['Report header redesigned — large logo, job ID, COMPLETED badge, Target Information section', 'Dark & light reports both cached in PVC with theme-matched Grafana panels', 'Avg request & response payload size in report Target Information', 'deploy_ec2 aligned with deploy_mac — pre-pull + mirror all images to local registry', 'Backend dependencies updated to latest stable versions'] },
                     { version: 'v2.4.0', date: '2026-04-09', notes: ['DMS SSO login — bookmarklet auth via FICO-GPS-TENANT Okta session', 'Parametrized runner pods (1–20) per load test', 'Request interval auto-suggest per scenario', 'Monitor response payload check — inline field trace on failure', 'Status bar fixed: no longer persists across page reloads'] },
                     { version: 'v2.3.0', date: '2026-04-08', notes: ['MonitorStack — scheduled API monitoring with email alerts', 'Landing home page', 'Sidebar folder tree with visual nesting', 'Pod metrics inline table in status block', 'Grafana inline / new-tab toggle in View Live Metrics'] },
                     { version: 'v2.2.0', date: '2026-04-08', notes: ['Test History — persisted HTML reports per run saved to PVC', 'k6 lag reduced: 500ms InfluxDB flush, --no-usage-report flag', 'Elapsed time in deploy scripts'] },
@@ -1538,9 +1539,9 @@ export default function App() {
                     { version: 'v2.0.0', date: '2026-04-07', notes: ['Multi-service sidebar with folder grouping', 'Custom scenario builder', 'IAM OAuth2 token integration'] },
                   ].map(r => (
                     <div key={r.version} style={{ marginBottom: 24, position: 'relative' }}>
-                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v2.4.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
+                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v2.5.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v2.4.0' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v2.5.0' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
                         <span style={{ fontSize: 11, color: t.textDim, fontFamily: 'monospace' }}>{r.date}</span>
                       </div>
                       <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
