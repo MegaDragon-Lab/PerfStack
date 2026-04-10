@@ -525,7 +525,7 @@ async def test_status(job_name: str):
     return TestResult(job_name=job_name, status=status, message=message)
 
 
-async def _fetch_panel_b64(job_name: str, panel_id: int, from_ms: int, to_ms: int) -> str:
+async def _fetch_panel_b64(job_name: str, panel_id: int, from_ms: int, to_ms: int, theme: str = "dark") -> str:
     """Fetch a single Grafana panel as base64 PNG, with retries. Returns empty string on failure."""
     import asyncio, base64, httpx
     PANEL_SIZES = {1: (600, 280), 17: (600, 280), 7: (600, 280), 5: (1400, 420), 8: (1400, 420)}
@@ -533,7 +533,7 @@ async def _fetch_panel_b64(job_name: str, panel_id: int, from_ms: int, to_ms: in
     url = (
         f"http://grafana:3000/grafana/render/d-solo/k6/k6-load-testing-results"
         f"?orgId=1&panelId={panel_id}&from={from_ms}&to={to_ms}"
-        f"&width={w}&height={h}&theme=dark&var-Measurement=http_req_duration"
+        f"&width={w}&height={h}&theme={theme}&var-Measurement=http_req_duration"
     )
     for attempt in range(3):
         try:
@@ -624,19 +624,25 @@ async def _save_report_to_pvc(job_name: str) -> None:
     sleep_interval = hist_entry.get("sleep_interval", 0.0)
     scenario       = hist_entry.get("scenario", "")
 
-    # Fetch all panels (sequentially to avoid saturating the renderer)
+    # Fetch all panels for both themes (sequentially to avoid saturating the renderer)
     panel_ids = [1, 17, 7, 5, 8]
-    panels: dict[int, str] = {}
+    panels_dark:  dict[int, str] = {}
+    panels_light: dict[int, str] = {}
     for pid in panel_ids:
-        panels[pid] = await _fetch_panel_b64(job_name, pid, from_ms, to_ms)
+        panels_dark[pid]  = await _fetch_panel_b64(job_name, pid, from_ms, to_ms, theme="dark")
+        await asyncio.sleep(0.5)
+        panels_light[pid] = await _fetch_panel_b64(job_name, pid, from_ms, to_ms, theme="light")
         await asyncio.sleep(0.5)
 
-    html = _build_report_html(job_name, summary, from_ms, to_ms,
-                              service_name=service_name, influx_stats=stats,
-                              parallelism=parallelism, sleep_interval=sleep_interval,
-                              scenario=scenario, panels=panels)
-    saved_path.write_text(html)
-    logger.info("Report saved to PVC: %s", saved_path)
+    common = dict(job_name=job_name, summary=summary, from_ms=from_ms, to_ms=to_ms,
+                  service_name=service_name, influx_stats=stats,
+                  parallelism=parallelism, sleep_interval=sleep_interval, scenario=scenario)
+
+    (REPORTS_DIR / f"{job_name}.html").write_text(
+        _build_report_html(**common, theme="dark",  panels=panels_dark))
+    (REPORTS_DIR / f"{job_name}-light.html").write_text(
+        _build_report_html(**common, theme="light", panels=panels_light))
+    logger.info("Reports (dark + light) saved to PVC: %s", REPORTS_DIR)
 
     # Update history entry
     history = _read_history()
@@ -655,10 +661,10 @@ async def get_report(job_name: str, theme: str = Query(default="dark")):
     import httpx
     from fastapi.responses import HTMLResponse
 
-    # Serve cached PVC report only when no theme preference was explicitly passed
-    saved_path = REPORTS_DIR / f"{job_name}.html"
-    if saved_path.exists() and theme == "dark":   # PVC reports are always saved as dark
-        return HTMLResponse(content=saved_path.read_text())
+    # Serve cached PVC report when available for the requested theme
+    cache_path = REPORTS_DIR / (f"{job_name}-light.html" if theme == "light" else f"{job_name}.html")
+    if cache_path.exists():
+        return HTMLResponse(content=cache_path.read_text())
 
     try:
         summary = await get_job_summary(job_name)
@@ -685,7 +691,8 @@ async def get_report(job_name: str, theme: str = Query(default="dark")):
 
 
 @app.get("/report/{job_name}/panel/{panel_id}", summary="Render one Grafana panel (progressive loading)")
-async def get_report_panel(job_name: str, panel_id: int, from_ms: int, to_ms: int):
+async def get_report_panel(job_name: str, panel_id: int, from_ms: int, to_ms: int,
+                           theme: str = Query(default="dark")):
     """Renders a single Grafana panel via image renderer. Called by the report page JS for progressive chart loading."""
     import base64, httpx
     from fastapi.responses import JSONResponse
@@ -698,7 +705,7 @@ async def get_report_panel(job_name: str, panel_id: int, from_ms: int, to_ms: in
     url = (
         f"http://grafana:3000/grafana/render/d-solo/k6/k6-load-testing-results"
         f"?orgId=1&panelId={panel_id}&from={from_ms}&to={to_ms}"
-        f"&width={width}&height={height}&theme=dark&var-Measurement=http_req_duration"
+        f"&width={width}&height={height}&theme={theme}&var-Measurement=http_req_duration"
     )
     import asyncio
     last_err: Exception | None = None
@@ -1370,9 +1377,10 @@ async def delete_history(job_name: str):
     if len(updated) == len(history):
         raise HTTPException(status_code=404, detail=f"History entry '{job_name}' not found")
     _write_history(updated)
-    report_path = REPORTS_DIR / f"{job_name}.html"
-    if report_path.exists():
-        report_path.unlink()
+    for fname in (f"{job_name}.html", f"{job_name}-light.html"):
+        p = REPORTS_DIR / fname
+        if p.exists():
+            p.unlink()
     return {"status": "deleted", "job_name": job_name}
 
 
