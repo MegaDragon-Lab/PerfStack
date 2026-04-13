@@ -1650,6 +1650,13 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
         apps.create_namespaced_deployment(namespace=ns, body=deploy_body)
     except Exception:
         apps.replace_namespaced_deployment(name=app_name, namespace=ns, body=deploy_body)
+        # Force pod restart so the new :latest image is actually pulled
+        apps.patch_namespaced_deployment(
+            name=app_name, namespace=ns,
+            body={"spec": {"template": {"metadata": {"annotations": {
+                "kubectl.kubernetes.io/restartedAt": _now_iso()
+            }}}}}
+        )
 
     # Service
     svc_body = k8s_client.V1Service(
