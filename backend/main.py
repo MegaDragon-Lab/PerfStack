@@ -9,8 +9,14 @@ import os
 import pathlib
 import asyncio
 import time as _time
+import tarfile
+import io
+import re
 from datetime import datetime, timezone
 from typing import Any
+
+import yaml
+from kubernetes import client as k8s_client
 
 import secrets
 from fastapi import FastAPI, HTTPException, Cookie, Request, Query
@@ -187,6 +193,16 @@ REPORTS_DIR        = DATA_DIR / "reports"
 MONITORS_FILE      = DATA_DIR / "monitors.json"
 MONITOR_RUNS_FILE  = DATA_DIR / "monitor_runs.json"
 EMAIL_CONFIG_FILE  = DATA_DIR / "email_config.json"
+APPS_FILE          = DATA_DIR / "deployed_apps.json"
+BUILDS_FILE        = DATA_DIR / "builds.json"
+
+# ── DeployStack constants ─────────────────────────────────────────────────────
+GITEA_INTERNAL_URL = "http://gitea.gitea.svc.cluster.local:3000"
+GITEA_ADMIN_USER   = "gsaadmin"
+GITEA_ADMIN_PASS   = "admin"
+LOCAL_REGISTRY     = "localhost:5001"
+WEBHOOK_SECRET     = "perfstack-deploy-secret"
+BUILDS_CONTEXT_DIR = DATA_DIR / "builds"
 
 
 def _read_file(path: pathlib.Path) -> list:
@@ -221,6 +237,10 @@ def _read_monitor_runs() -> list:    return _read_file(MONITOR_RUNS_FILE)
 def _write_monitor_runs(data):       _write_file(MONITOR_RUNS_FILE, data)
 def _read_email_config() -> dict:    return _read_file_dict(EMAIL_CONFIG_FILE)
 def _write_email_config(data: dict): _write_file_dict(EMAIL_CONFIG_FILE, data)
+def _read_apps() -> list:            return _read_file(APPS_FILE)
+def _write_apps(data):               _write_file(APPS_FILE, data)
+def _read_builds() -> list:          return _read_file(BUILDS_FILE)
+def _write_builds(data):             _write_file(BUILDS_FILE, data)
 
 
 class CustomScenario(BaseModel):
@@ -1033,7 +1053,7 @@ def _build_report_html(
   <thead><tr><th>Name</th><th class="num">Passes</th><th class="num">Fails</th></tr></thead>
   <tbody>{checks_html}</tbody></table></div>'''}
 
-  <div class="footer">PerfStack v2.5.0 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
+  <div class="footer">GSA Platform Suite v3.0.0 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
 </div>
 {lazy_js}
 </body>
@@ -1416,3 +1436,535 @@ async def test_summary(job_name: str):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# DeployStack — Gitea + auto-build + auto-deploy
+# ════════════════════════════════════════════════════════════════════════════════
+
+class AppConfig(BaseModel):
+    app: str
+    port: int = 8080
+    replicas: int = 1
+    env: list[dict] = []
+
+class DeployedApp(BaseModel):
+    name: str
+    repo: str
+    image: str = ""
+    port: int = 8080
+    replicas: int = 1
+    namespace: str = ""
+    status: str = "pending"   # pending / building / deploying / running / failed
+    build_job: str = ""
+    last_deployed: str = ""
+    url: str = ""
+    error: str = ""
+
+class BuildEntry(BaseModel):
+    id: str
+    app_name: str
+    commit: str
+    started_at: str
+    status: str = "building"  # building / success / failed
+    log: str = ""
+
+class NewAppRequest(BaseModel):
+    name: str
+    description: str = ""
+
+def _slugify(name: str) -> str:
+    """Convert an app name to a DNS-safe slug."""
+    slug = re.sub(r"[^a-z0-9-]", "-", name.lower().strip())
+    slug = re.sub(r"-+", "-", slug).strip("-")
+    return slug[:40]
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+# ── Kubernetes helper: get a BatchV1Api client ────────────────────────────────
+def _batch_v1():
+    from kubernetes import config as k8s_config
+    try:
+        k8s_config.load_incluster_config()
+    except Exception:
+        k8s_config.load_kube_config()
+    return k8s_client.BatchV1Api()
+
+def _apps_v1():
+    from kubernetes import config as k8s_config
+    try:
+        k8s_config.load_incluster_config()
+    except Exception:
+        k8s_config.load_kube_config()
+    return k8s_client.AppsV1Api()
+
+def _core_v1():
+    from kubernetes import config as k8s_config
+    try:
+        k8s_config.load_incluster_config()
+    except Exception:
+        k8s_config.load_kube_config()
+    return k8s_client.CoreV1Api()
+
+def _networking_v1():
+    from kubernetes import config as k8s_config
+    try:
+        k8s_config.load_incluster_config()
+    except Exception:
+        k8s_config.load_kube_config()
+    return k8s_client.NetworkingV1Api()
+
+# ── Create a Docker build Job ─────────────────────────────────────────────────
+def _create_build_job(app_name: str, repo: str, commit: str, image_tag: str) -> str:
+    """
+    Creates a batch/v1 Job that:
+      1. Downloads the repo archive from Gitea API
+      2. Extracts it
+      3. docker build + docker push to local registry
+    Returns the Job name.
+    """
+    short = commit[:8]
+    job_name = f"build-{app_name}-{short}"
+    context_path = f"/data/builds/{app_name}/{short}"
+
+    cmd = (
+        f"apk add --no-cache curl tar >/dev/null 2>&1 && "
+        f"mkdir -p {context_path} && "
+        f"curl -u {GITEA_ADMIN_USER}:{GITEA_ADMIN_PASS} -sL "
+        f"'{GITEA_INTERNAL_URL}/api/v1/repos/{GITEA_ADMIN_USER}/{repo}/archive/{commit}.tar.gz' "
+        f"| tar xz --strip-components=1 -C {context_path} && "
+        f"docker build -t {image_tag} {context_path} && "
+        f"docker push {image_tag}"
+    )
+
+    job = k8s_client.V1Job(
+        metadata=k8s_client.V1ObjectMeta(
+            name=job_name,
+            namespace="perfstack",
+            labels={"app": "deploy-builder", "deploy-app": app_name}
+        ),
+        spec=k8s_client.V1JobSpec(
+            ttl_seconds_after_finished=3600,
+            backoff_limit=0,
+            template=k8s_client.V1PodTemplateSpec(
+                spec=k8s_client.V1PodSpec(
+                    restart_policy="Never",
+                    containers=[k8s_client.V1Container(
+                        name="builder",
+                        image="docker:27-cli",
+                        command=["sh", "-c"],
+                        args=[cmd],
+                        volume_mounts=[
+                            k8s_client.V1VolumeMount(
+                                name="docker-sock",
+                                mount_path="/var/run/docker.sock"
+                            ),
+                            k8s_client.V1VolumeMount(
+                                name="build-data",
+                                mount_path="/data"
+                            ),
+                        ]
+                    )],
+                    volumes=[
+                        k8s_client.V1Volume(
+                            name="docker-sock",
+                            host_path=k8s_client.V1HostPathVolumeSource(
+                                path="/var/run/docker.sock",
+                                type="Socket"
+                            )
+                        ),
+                        k8s_client.V1Volume(
+                            name="build-data",
+                            persistent_volume_claim=k8s_client.V1PersistentVolumeClaimVolumeSource(
+                                claim_name="backend-data"
+                            )
+                        ),
+                    ]
+                )
+            )
+        )
+    )
+
+    batch = _batch_v1()
+    try:
+        batch.delete_namespaced_job(
+            name=job_name, namespace="perfstack",
+            body=k8s_client.V1DeleteOptions(propagation_policy="Background")
+        )
+    except Exception:
+        pass
+    batch.create_namespaced_job(namespace="perfstack", body=job)
+    return job_name
+
+# ── Deploy app to its own namespace ──────────────────────────────────────────
+def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list):
+    """Create (or replace) Namespace + Deployment + Service + Ingress for an app."""
+    ns = f"app-{app_name}"
+    core = _core_v1()
+    apps = _apps_v1()
+    net = _networking_v1()
+
+    # Namespace
+    try:
+        core.create_namespace(k8s_client.V1Namespace(
+            metadata=k8s_client.V1ObjectMeta(
+                name=ns,
+                labels={"app.kubernetes.io/managed-by": "gsa-platform-suite", "deploy-app": app_name}
+            )
+        ))
+    except Exception:
+        pass  # already exists
+
+    # Deployment
+    env = [k8s_client.V1EnvVar(name=e["name"], value=str(e.get("value", ""))) for e in env_vars]
+    deploy_body = k8s_client.V1Deployment(
+        metadata=k8s_client.V1ObjectMeta(name=app_name, namespace=ns),
+        spec=k8s_client.V1DeploymentSpec(
+            replicas=min(max(replicas, 1), 5),
+            selector=k8s_client.V1LabelSelector(match_labels={"app": app_name}),
+            template=k8s_client.V1PodTemplateSpec(
+                metadata=k8s_client.V1ObjectMeta(labels={"app": app_name}),
+                spec=k8s_client.V1PodSpec(containers=[
+                    k8s_client.V1Container(
+                        name=app_name,
+                        image=image_tag,
+                        image_pull_policy="Always",
+                        ports=[k8s_client.V1ContainerPort(container_port=port)],
+                        env=env,
+                        resources=k8s_client.V1ResourceRequirements(
+                            requests={"cpu": "100m", "memory": "128Mi"},
+                            limits={"cpu": "500m", "memory": "256Mi"}
+                        )
+                    )
+                ])
+            )
+        )
+    )
+    try:
+        apps.create_namespaced_deployment(namespace=ns, body=deploy_body)
+    except Exception:
+        apps.replace_namespaced_deployment(name=app_name, namespace=ns, body=deploy_body)
+
+    # Service
+    svc_body = k8s_client.V1Service(
+        metadata=k8s_client.V1ObjectMeta(name=app_name, namespace=ns),
+        spec=k8s_client.V1ServiceSpec(
+            selector={"app": app_name},
+            ports=[k8s_client.V1ServicePort(port=port, target_port=port)]
+        )
+    )
+    try:
+        core.create_namespaced_service(namespace=ns, body=svc_body)
+    except Exception:
+        core.replace_namespaced_service(name=app_name, namespace=ns, body=svc_body)
+
+    # Ingress
+    path_val = f"/apps/{app_name}(/|$)(.*)"
+    ingress_body = k8s_client.V1Ingress(
+        metadata=k8s_client.V1ObjectMeta(
+            name=app_name, namespace=ns,
+            annotations={
+                "nginx.ingress.kubernetes.io/rewrite-target": "/$2",
+                "nginx.ingress.kubernetes.io/proxy-read-timeout": "60",
+            }
+        ),
+        spec=k8s_client.V1IngressSpec(
+            ingress_class_name="nginx",
+            rules=[k8s_client.V1IngressRule(
+                http=k8s_client.V1HTTPIngressRuleValue(paths=[
+                    k8s_client.V1HTTPIngressPath(
+                        path=path_val,
+                        path_type="ImplementationSpecific",
+                        backend=k8s_client.V1IngressBackend(
+                            service=k8s_client.V1IngressServiceBackend(
+                                name=app_name,
+                                port=k8s_client.V1ServiceBackendPort(number=port)
+                            )
+                        )
+                    )
+                ])
+            )]
+        )
+    )
+    try:
+        net.create_namespaced_ingress(namespace=ns, body=ingress_body)
+    except Exception:
+        net.replace_namespaced_ingress(name=app_name, namespace=ns, body=ingress_body)
+
+# ── Background: poll build job, then deploy ───────────────────────────────────
+async def _watch_build_and_deploy(app_name: str, build_id: str, image_tag: str,
+                                   cfg: dict, job_name: str):
+    """Polls the build Job until completion, then deploys the app."""
+    batch = _batch_v1()
+    ns = "perfstack"
+    MAX_WAIT = 600  # 10 minutes
+
+    start = _time.time()
+    while _time.time() - start < MAX_WAIT:
+        await asyncio.sleep(5)
+        try:
+            job = batch.read_namespaced_job(name=job_name, namespace=ns)
+            if job.status.succeeded and job.status.succeeded >= 1:
+                break
+            if job.status.failed and job.status.failed >= 1:
+                _update_app_status(app_name, "failed", error="Build job failed")
+                _update_build_status(build_id, "failed")
+                return
+        except Exception as e:
+            logger.warning("Build poll error: %s", e)
+
+    else:
+        _update_app_status(app_name, "failed", error="Build timed out")
+        _update_build_status(build_id, "failed")
+        return
+
+    # Build succeeded — now deploy
+    _update_build_status(build_id, "success")
+    _update_app_status(app_name, "deploying")
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: _deploy_app_k8s(
+            app_name, image_tag, cfg.get("port", 8080),
+            cfg.get("replicas", 1), cfg.get("env", [])
+        ))
+        now = _now_iso()
+        _update_app_status(app_name, "running",
+                           last_deployed=now,
+                           url=f"http://localhost/apps/{app_name}")
+    except Exception as e:
+        logger.error("Deploy failed for %s: %s", app_name, e)
+        _update_app_status(app_name, "failed", error=str(e))
+
+def _update_app_status(name: str, status: str, **kwargs):
+    apps = _read_apps()
+    for a in apps:
+        if a.get("name") == name:
+            a["status"] = status
+            for k, v in kwargs.items():
+                a[k] = v
+            break
+    _write_apps(apps)
+
+def _update_build_status(build_id: str, status: str):
+    builds = _read_builds()
+    for b in builds:
+        if b.get("id") == build_id:
+            b["status"] = status
+            break
+    _write_builds(builds)
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+
+@app.get("/deploy/apps", summary="List all DeployStack apps")
+async def list_deploy_apps():
+    return _read_apps()
+
+
+@app.post("/deploy/apps", summary="Create a new app and its Gitea repo")
+async def create_deploy_app(req: NewAppRequest):
+    name = _slugify(req.name)
+    if not name:
+        raise HTTPException(status_code=400, detail="Invalid app name")
+
+    apps = _read_apps()
+    if any(a.get("name") == name for a in apps):
+        raise HTTPException(status_code=409, detail=f"App '{name}' already exists")
+
+    # Create Gitea repo via API
+    async with __import__("httpx").AsyncClient(timeout=15) as hx:
+        r = await hx.post(
+            f"{GITEA_INTERNAL_URL}/api/v1/user/repos",
+            auth=(GITEA_ADMIN_USER, GITEA_ADMIN_PASS),
+            json={"name": name, "description": req.description,
+                  "private": False, "auto_init": True, "default_branch": "main"}
+        )
+        if r.status_code not in (201, 409):
+            raise HTTPException(status_code=502,
+                                detail=f"Gitea repo creation failed: {r.text}")
+
+        # Register webhook pointing to backend
+        await hx.post(
+            f"{GITEA_INTERNAL_URL}/api/v1/repos/{GITEA_ADMIN_USER}/{name}/hooks",
+            auth=(GITEA_ADMIN_USER, GITEA_ADMIN_PASS),
+            json={
+                "type": "gitea",
+                "active": True,
+                "events": ["push"],
+                "config": {
+                    "url": f"http://backend.perfstack.svc.cluster.local:8000/deploy/webhook",
+                    "content_type": "json",
+                    "secret": WEBHOOK_SECRET,
+                }
+            }
+        )
+
+    app_entry = {
+        "name": name,
+        "repo": name,
+        "image": f"{LOCAL_REGISTRY}/apps/{name}:latest",
+        "port": 8080,
+        "replicas": 1,
+        "namespace": f"app-{name}",
+        "status": "pending",
+        "build_job": "",
+        "last_deployed": "",
+        "url": f"http://localhost/apps/{name}",
+        "error": "",
+        "gitea_url": f"http://localhost/gitea/{GITEA_ADMIN_USER}/{name}",
+        "clone_url": f"http://localhost/gitea/{GITEA_ADMIN_USER}/{name}.git",
+    }
+    apps.append(app_entry)
+    _write_apps(apps)
+    return app_entry
+
+
+@app.get("/deploy/apps/{name}", summary="Get app status")
+async def get_deploy_app(name: str):
+    apps = _read_apps()
+    app_entry = next((a for a in apps if a.get("name") == name), None)
+    if not app_entry:
+        raise HTTPException(status_code=404, detail=f"App '{name}' not found")
+    return app_entry
+
+
+@app.delete("/deploy/apps/{name}", summary="Delete app and its Kubernetes namespace")
+async def delete_deploy_app(name: str):
+    apps = _read_apps()
+    if not any(a.get("name") == name for a in apps):
+        raise HTTPException(status_code=404, detail=f"App '{name}' not found")
+
+    # Delete k8s namespace (removes Deployment + Service + Ingress)
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: _core_v1().delete_namespace(
+            name=f"app-{name}",
+            body=k8s_client.V1DeleteOptions(propagation_policy="Background")
+        ))
+    except Exception:
+        pass
+
+    updated = [a for a in apps if a.get("name") != name]
+    _write_apps(updated)
+    builds = [b for b in _read_builds() if b.get("app_name") != name]
+    _write_builds(builds)
+    return {"status": "deleted", "name": name}
+
+
+@app.get("/deploy/apps/{name}/builds", summary="Build history for an app (last 20)")
+async def deploy_app_builds(name: str):
+    builds = _read_builds()
+    app_builds = [b for b in builds if b.get("app_name") == name]
+    return sorted(app_builds, key=lambda b: b.get("started_at", ""), reverse=True)[:20]
+
+
+@app.get("/deploy/apps/{name}/pods", summary="Pod status for a deployed app")
+async def deploy_app_pods(name: str):
+    ns = f"app-{name}"
+    try:
+        loop = asyncio.get_event_loop()
+        pod_list = await loop.run_in_executor(
+            None,
+            lambda: _core_v1().list_namespaced_pod(namespace=ns)
+        )
+        result = []
+        for pod in pod_list.items:
+            phase = pod.status.phase or "Unknown"
+            ready = all(
+                cs.ready for cs in (pod.status.container_statuses or [])
+            )
+            result.append({
+                "name": pod.metadata.name,
+                "phase": phase,
+                "ready": ready,
+                "node": pod.spec.node_name or "",
+            })
+        return result
+    except Exception as e:
+        return []
+
+
+@app.post("/deploy/webhook", summary="Gitea push webhook receiver")
+async def deploy_webhook(request: Request):
+    """Receives push events from Gitea, triggers build + deploy pipeline."""
+    # Validate event type
+    event = request.headers.get("X-Gitea-Event", "")
+    if event != "push":
+        return {"status": "ignored", "event": event}
+
+    body = await request.json()
+    repo_name = body.get("repository", {}).get("name", "")
+    commit = body.get("after", "")
+    if not repo_name or not commit or commit == "0000000000000000000000000000000000000000":
+        return {"status": "ignored", "reason": "no commit"}
+
+    # Find app entry
+    apps = _read_apps()
+    app_entry = next((a for a in apps if a.get("repo") == repo_name), None)
+    if not app_entry:
+        return {"status": "ignored", "reason": "no app registered for this repo"}
+
+    app_name = app_entry["name"]
+    short = commit[:8]
+    image_tag = f"{LOCAL_REGISTRY}/apps/{app_name}:latest"
+    build_id = str(uuid.uuid4())
+
+    # Persist build entry
+    build = {
+        "id": build_id,
+        "app_name": app_name,
+        "commit": commit,
+        "started_at": _now_iso(),
+        "status": "building",
+        "log": "",
+    }
+    builds = _read_builds()
+    builds.insert(0, build)
+    _write_builds(builds[:200])
+
+    # Update app status
+    _update_app_status(app_name, "building", build_job=f"build-{app_name}-{short}")
+
+    # Create build Job
+    try:
+        job_name = _create_build_job(app_name, repo_name, commit, image_tag)
+    except Exception as e:
+        _update_app_status(app_name, "failed", error=str(e))
+        _update_build_status(build_id, "failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Read perfstack.yaml from archive to get port/replicas/env
+    cfg: dict = {"port": 8080, "replicas": 1, "env": []}
+    try:
+        async with __import__("httpx").AsyncClient(timeout=10) as hx:
+            r = await hx.get(
+                f"{GITEA_INTERNAL_URL}/api/v1/repos/{GITEA_ADMIN_USER}/{repo_name}/archive/{commit}.tar.gz",
+                auth=(GITEA_ADMIN_USER, GITEA_ADMIN_PASS)
+            )
+            if r.status_code == 200:
+                with tarfile.open(fileobj=io.BytesIO(r.content), mode="r:gz") as tf:
+                    for member in tf.getmembers():
+                        if member.name.endswith("perfstack.yaml"):
+                            f = tf.extractfile(member)
+                            if f:
+                                raw = yaml.safe_load(f.read())
+                                if isinstance(raw, dict):
+                                    cfg["port"] = int(raw.get("port", 8080))
+                                    cfg["replicas"] = int(raw.get("replicas", 1))
+                                    cfg["env"] = raw.get("env", [])
+                            break
+    except Exception as e:
+        logger.warning("Could not read perfstack.yaml: %s", e)
+
+    # Update port/replicas in app entry
+    for a in apps:
+        if a.get("name") == app_name:
+            a["port"] = cfg["port"]
+            a["replicas"] = cfg["replicas"]
+            break
+    _write_apps(apps)
+
+    # Start background watcher
+    asyncio.create_task(_watch_build_and_deploy(app_name, build_id, image_tag, cfg, job_name))
+
+    return {"status": "building", "app": app_name, "commit": short, "build_id": build_id}

@@ -35,6 +35,8 @@ spec:
           volumeMounts:
             - name: backend-data
               mountPath: /data
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
           livenessProbe:
             httpGet:
               path: /health
@@ -51,6 +53,10 @@ spec:
         - name: backend-data
           persistentVolumeClaim:
             claimName: backend-data
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
 ---
 apiVersion: v1
 kind: Service

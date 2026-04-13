@@ -19,6 +19,16 @@ rules:
   - apiGroups: ["k6.io"]
     resources: ["testruns", "testruns/status"]
     verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
+  # DeployStack — build jobs, app deployments, services, ingresses
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -32,6 +42,41 @@ subjects:
 roleRef:
   kind: Role
   name: k6-job-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+# ClusterRole for DeployStack — create/manage namespaces + cross-namespace resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gsa-platform-suite-deployer
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["services", "pods", "pods/log"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gsa-platform-suite-deployer-binding
+subjects:
+  - kind: ServiceAccount
+    name: k6-runner-sa
+    namespace: perfstack
+roleRef:
+  kind: ClusterRole
+  name: gsa-platform-suite-deployer
   apiGroup: rbac.authorization.k8s.io
 ---
 # ClusterRole needed because metrics.k8s.io is a cluster-scoped aggregated API

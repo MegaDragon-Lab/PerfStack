@@ -87,6 +87,8 @@ INFRA_IMAGES=(
   "influxdb:2.7"
   "grafana/grafana:12.2.0"
   "grafana/grafana-image-renderer:latest"
+  "gitea/gitea:1.22"
+  "docker:27-cli"
 )
 
 for img in "${INGRESS_IMAGES[@]}" "${INFRA_IMAGES[@]}"; do
@@ -128,11 +130,12 @@ mirrors:
       - "http://k3d-${REG_NAME}:5000"
 EOF
 
-# ── Persistent data directory (survives cluster delete) ───────────────────────
+# ── Persistent data directories (survive cluster delete) ─────────────────────
 PERSIST_DIR="${HOME}/.perfstack/data"
-log "Ensuring persistent data dir: ${PERSIST_DIR}..."
-mkdir -p "${PERSIST_DIR}"
-ok "Persistent data dir ready"
+GITEA_DIR="${HOME}/.perfstack/gitea"
+log "Ensuring persistent data dirs..."
+mkdir -p "${PERSIST_DIR}" "${GITEA_DIR}"
+ok "Persistent data dirs ready"
 
 # ── Create k3d cluster (always fresh) ────────────────────────────────────────
 log "Deleting existing cluster (if any)..."
@@ -147,6 +150,8 @@ k3d cluster create ${CLUSTER_NAME} \
   --registry-use k3d-${REG_NAME}:${REG_PORT} \
   --registry-config /tmp/perfstack-registries.yaml \
   --volume "${PERSIST_DIR}:/host-data/perfstack@all" \
+  --volume "${GITEA_DIR}:/host-data/gitea@all" \
+  --volume "/var/run/docker.sock:/var/run/docker.sock@all" \
   --timeout 120s 2>&1 | grep -E "Cluster|error|Error" || true
 ok "Cluster '${CLUSTER_NAME}' created"
 echo ""
@@ -236,15 +241,18 @@ echo ""
 
 # ── Apply Kubernetes manifests ────────────────────────────────────────────────
 log "Applying Kubernetes manifests..."
-kubectl apply -f k8s/namespace.yaml       >/dev/null
-kubectl apply -f k8s/rbac.yaml            >/dev/null
-kubectl apply -f k8s/backend-pvc.yaml     >/dev/null
-kubectl apply -f k8s/influxdb.yaml        >/dev/null
-kubectl apply -f k8s/grafana-config.yaml  >/dev/null
-kubectl apply -f k8s/grafana.yaml         >/dev/null
-kubectl apply -f k8s/backend.yaml         >/dev/null
-kubectl apply -f k8s/frontend.yaml        >/dev/null
-kubectl apply -f k8s/ingress.yaml         >/dev/null
+kubectl apply -f k8s/namespace.yaml          >/dev/null
+kubectl apply -f k8s/rbac.yaml               >/dev/null
+kubectl apply -f k8s/backend-pvc.yaml        >/dev/null
+kubectl apply -f k8s/influxdb.yaml           >/dev/null
+kubectl apply -f k8s/grafana-config.yaml     >/dev/null
+kubectl apply -f k8s/grafana.yaml            >/dev/null
+kubectl apply -f k8s/backend.yaml            >/dev/null
+kubectl apply -f k8s/frontend.yaml           >/dev/null
+kubectl apply -f k8s/gitea-namespace.yaml    >/dev/null
+kubectl apply -f k8s/gitea-pvc.yaml          >/dev/null
+kubectl apply -f k8s/gitea.yaml              >/dev/null
+kubectl apply -f k8s/ingress.yaml            >/dev/null
 ok "All manifests applied"
 echo ""
 
@@ -264,6 +272,20 @@ for deploy in influxdb grafana grafana-renderer backend frontend; do
   kubectl rollout status deployment/$deploy -n $NS --timeout=3m >/dev/null 2>&1
   echo -e "\r  ${GREEN}✓${NC} ${deploy} is ready           "
 done
+echo -ne "  ${DIM}waiting for gitea...${NC}"
+kubectl rollout status deployment/gitea -n gitea --timeout=5m >/dev/null 2>&1
+echo -e "\r  ${GREEN}✓${NC} gitea is ready           "
+echo ""
+
+# ── Bootstrap Gitea admin user (idempotent) ───────────────────────────────────
+log "Bootstrapping Gitea admin user..."
+kubectl exec -n gitea deployment/gitea -- \
+  su-exec git gitea admin user create --admin \
+  --username gsaadmin --password admin \
+  --email admin@gsa.gov \
+  --must-change-password=false >/dev/null 2>&1 \
+  && ok "Gitea admin user created (admin / admin)" \
+  || ok "Gitea admin user already exists"
 echo ""
 
 # ── Done ──────────────────────────────────────────────────────────────────────
@@ -274,6 +296,7 @@ echo "  ════════════════════════
 echo ""
 echo -e "  ${BLUE}Frontend UI${NC}   ->  http://localhost"
 echo -e "  ${BLUE}Grafana${NC}       ->  http://localhost/grafana   (admin / admin)"
+echo -e "  ${BLUE}Gitea${NC}         ->  http://localhost/gitea     (gsaadmin / admin)"
 echo -e "  ${BLUE}Backend API${NC}   ->  http://localhost/api/docs"
 echo ""
 _elapsed=$(( SECONDS - DEPLOY_START ))

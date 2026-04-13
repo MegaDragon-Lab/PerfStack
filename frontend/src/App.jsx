@@ -160,7 +160,7 @@ function SettingsMenu({ theme, onSelect, t }) {
               <div style={{ color: t.text, fontWeight: 700, fontSize: '0.92rem', letterSpacing: '0.02em', lineHeight: 1.2 }}>GSA Platform Suite</div>
             </div>
             <div style={{ background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: '0.63rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0 }}>
-              v2.5.0
+              v3.0.0
             </div>
           </div>
 
@@ -193,8 +193,8 @@ function SettingsMenu({ theme, onSelect, t }) {
           <div style={{ padding: '14px 18px', borderBottom: `1px solid ${t.borderLight}` }}>
             <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', color: t.textDim, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Release Info</div>
             {[
-              { label: 'Version',  value: '2.5.0' },
-              { label: 'Released', value: 'Apr 10, 2026' },
+              { label: 'Version',  value: '3.0.0' },
+              { label: 'Released', value: 'Apr 13, 2026' },
               { label: 'Stack',    value: 'k6 · Grafana · k3d' },
             ].map(({ label, value }) => (
               <div key={label} style={metaRow}>
@@ -713,6 +713,70 @@ export default function App() {
   const [monitorEmailInput,  setMonitorEmailInput]  = useState("");
   const [monitorPayloadStr,  setMonitorPayloadStr]  = useState("{}");
   const [monitorHeadersStr,  setMonitorHeadersStr]  = useState("{}");
+
+  // ── DeployStack state ────────────────────────────────────────────────────────
+  const [deployApps,       setDeployApps]       = useState([]);
+  const [selectedDeploy,   setSelectedDeploy]   = useState(null); // app name
+  const [deployDetail,     setDeployDetail]      = useState(null); // full app object
+  const [deployBuilds,     setDeployBuilds]      = useState([]);
+  const [deployPods,       setDeployPods]        = useState([]);
+  const [newAppName,       setNewAppName]        = useState("");
+  const [newAppDesc,       setNewAppDesc]        = useState("");
+  const [deployCreating,   setDeployCreating]    = useState(false);
+  const [deployShowNew,    setDeployShowNew]     = useState(false);
+  const deployPollRef = useRef(null);
+
+  const refreshDeployApps = () =>
+    fetch(`${API_BASE}/api/deploy/apps`).then(r => r.json()).then(d => Array.isArray(d) && setDeployApps(d)).catch(() => {});
+
+  const loadDeployDetail = (name) => {
+    fetch(`${API_BASE}/api/deploy/apps/${name}`).then(r => r.json()).then(d => setDeployDetail(d)).catch(() => {});
+    fetch(`${API_BASE}/api/deploy/apps/${name}/builds`).then(r => r.json()).then(d => Array.isArray(d) && setDeployBuilds(d)).catch(() => {});
+    fetch(`${API_BASE}/api/deploy/apps/${name}/pods`).then(r => r.json()).then(d => Array.isArray(d) && setDeployPods(d)).catch(() => {});
+  };
+
+  useEffect(() => {
+    if (selectedDeploy) {
+      clearInterval(deployPollRef.current);
+      loadDeployDetail(selectedDeploy);
+      deployPollRef.current = setInterval(() => {
+        refreshDeployApps();
+        loadDeployDetail(selectedDeploy);
+      }, 4000);
+    }
+    return () => clearInterval(deployPollRef.current);
+  }, [selectedDeploy]);
+
+  const createDeployApp = async () => {
+    if (!newAppName.trim()) return;
+    setDeployCreating(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/deploy/apps`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newAppName.trim(), description: newAppDesc.trim() }),
+      });
+      if (!r.ok) { const e = await r.json(); alert(e.detail || "Error"); return; }
+      const app = await r.json();
+      setDeployShowNew(false);
+      setNewAppName(""); setNewAppDesc("");
+      refreshDeployApps();
+      setSelectedDeploy(app.name);
+    } catch (e) { alert(String(e)); }
+    finally { setDeployCreating(false); }
+  };
+
+  const deleteDeployApp = async (name) => {
+    if (!confirm(`Delete app "${name}" and its Kubernetes namespace?`)) return;
+    await fetch(`${API_BASE}/api/deploy/apps/${name}`, { method: "DELETE" });
+    if (selectedDeploy === name) { setSelectedDeploy(null); setDeployDetail(null); }
+    refreshDeployApps();
+  };
+
+  const DEPLOY_STATUS_COLOR = {
+    running: '#22c55e', building: '#f59e0b', deploying: '#3b82f6',
+    failed: '#ef4444', pending: '#6b7280',
+  };
 
   const refreshMonitors = () =>
     fetch(`${API_BASE}/api/monitors`).then(r => r.json()).then(d => Array.isArray(d) && setMonitors(d)).catch(() => {});
@@ -1421,7 +1485,7 @@ export default function App() {
             />
             <span className="logo">GSA PLATFORM SUITE</span>
             <span className="logo-sub">
-              {activeTab === "load" ? "// perfstack" : activeTab === "monitoring" ? "// monitorstack" : ""}
+              {activeTab === "load" ? "// perfstack" : activeTab === "monitoring" ? "// monitorstack" : activeTab === "deploy" ? "// deploystack" : ""}
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -1433,6 +1497,12 @@ export default function App() {
                 🔍 MonitorStack
                 {monitors.filter(m => m.enabled).length > 0 && (
                   <span className="tab-badge">{monitors.filter(m => m.enabled).length}</span>
+                )}
+              </button>
+              <button className={`tab-btn${activeTab === "deploy" ? " active" : ""}`} onClick={() => { setActiveTab("deploy"); refreshDeployApps(); }}>
+                🚀 DeployStack
+                {deployApps.filter(a => a.status === "running").length > 0 && (
+                  <span className="tab-badge" style={{ background: '#22c55e' }}>{deployApps.filter(a => a.status === "running").length}</span>
                 )}
               </button>
             </div>
@@ -1492,7 +1562,7 @@ export default function App() {
                     <div style={{ fontSize: 28, fontWeight: 800, color: t.text, letterSpacing: '.01em', lineHeight: 1.1 }}>GSA Platform Suite</div>
                     <div style={{ fontSize: 13, color: t.textDim, marginTop: 4, letterSpacing: '.04em' }}>Performance Testing &amp; API Monitoring Platform</div>
                   </div>
-                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v2.5.0</span>
+                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.0.0</span>
                 </div>
                 <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.7, maxWidth: 620 }}>
                   An internal platform for load-testing REST APIs using k6 on Kubernetes, and continuously monitoring service health with scheduled checks and email alerting.
@@ -1500,7 +1570,7 @@ export default function App() {
               </div>
 
               {/* Modules */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 48 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20, marginBottom: 48 }}>
                 <div
                   onClick={() => setActiveTab("load")}
                   style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s' }}
@@ -1523,6 +1593,17 @@ export default function App() {
                   <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.6 }}>Schedule recurring health checks on your web services. Verifies HTTP status, response time, and payload fields. Sends email alerts when a check fails.</div>
                   <div style={{ marginTop: 16, fontSize: 11, color: t.accent, fontWeight: 600 }}>Open MonitorStack →</div>
                 </div>
+                <div
+                  onClick={() => { setActiveTab("deploy"); refreshDeployApps(); }}
+                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s' }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = '#22c55e'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = t.border}
+                >
+                  <div style={{ fontSize: 28, marginBottom: 12 }}>🚀</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 6 }}>DeployStack</div>
+                  <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.6 }}>Push projects to integrated Gitea. DeployStack auto-builds your Docker image and deploys it to its own Kubernetes namespace — live at <code style={{ fontSize: 11 }}>localhost/apps/&#123;name&#125;</code>.</div>
+                  <div style={{ marginTop: 16, fontSize: 11, color: '#22c55e', fontWeight: 600 }}>Open DeployStack →</div>
+                </div>
               </div>
 
               {/* Release history */}
@@ -1530,7 +1611,8 @@ export default function App() {
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textDim, marginBottom: 16 }}>Release History</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderLeft: `2px solid ${t.borderLight}`, paddingLeft: 20 }}>
                   {[
-                    { version: 'v2.5.0', date: '2026-04-10', notes: ['Report header redesigned — large logo, job ID, COMPLETED badge, Target Information section', 'Dark & light reports both cached in PVC with theme-matched Grafana panels', 'Avg request & response payload size in report Target Information', 'deploy_ec2 aligned with deploy_mac — pre-pull + mirror all images to local registry', 'Backend dependencies updated to latest stable versions'] },
+                    { version: 'v3.0.0', date: '2026-04-13', notes: ['DeployStack — new module: push to integrated Gitea, auto-build Docker image, auto-deploy to dedicated k3d namespace', 'Gitea integrated into platform at /gitea (admin / admin)', 'Apps live at localhost/apps/{name} with their own Kubernetes namespace', 'Build pipeline via Docker socket + docker:27-cli Job', 'deploy_mac + deploy_ec2 updated: Gitea + docker:27-cli pre-pulled, docker socket mounted, Gitea admin bootstrapped'] },
+                    { version: 'v2.5.0', date: '2026-04-10', notes: ['Report header redesigned — large logo, job ID, COMPLETED badge, Target Information section', 'Dark & light reports both cached in PVC with theme-matched Grafana panels', 'deploy_ec2 aligned with deploy_mac — pre-pull + mirror all images to local registry', 'Backend dependencies updated to latest stable versions'] },
                     { version: 'v2.4.0', date: '2026-04-09', notes: ['DMS SSO login — bookmarklet auth via FICO-GPS-TENANT Okta session', 'Parametrized runner pods (1–20) per load test', 'Request interval auto-suggest per scenario', 'Monitor response payload check — inline field trace on failure', 'Status bar fixed: no longer persists across page reloads'] },
                     { version: 'v2.3.0', date: '2026-04-08', notes: ['MonitorStack — scheduled API monitoring with email alerts', 'Landing home page', 'Sidebar folder tree with visual nesting', 'Pod metrics inline table in status block', 'Grafana inline / new-tab toggle in View Live Metrics'] },
                     { version: 'v2.2.0', date: '2026-04-08', notes: ['Test History — persisted HTML reports per run saved to PVC', 'k6 lag reduced: 500ms InfluxDB flush, --no-usage-report flag', 'Elapsed time in deploy scripts'] },
@@ -1538,9 +1620,9 @@ export default function App() {
                     { version: 'v2.0.0', date: '2026-04-07', notes: ['Multi-service sidebar with folder grouping', 'Custom scenario builder', 'IAM OAuth2 token integration'] },
                   ].map(r => (
                     <div key={r.version} style={{ marginBottom: 24, position: 'relative' }}>
-                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v2.5.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
+                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v3.0.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v2.5.0' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v3.0.0' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
                         <span style={{ fontSize: 11, color: t.textDim, fontFamily: 'monospace' }}>{r.date}</span>
                       </div>
                       <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
@@ -2646,6 +2728,229 @@ export default function App() {
                   </div>
                 );
               })()}
+            </div>
+          </div>
+        )}
+
+        {/* ── DeployStack Tab ── */}
+        {activeTab === "deploy" && (
+          <div style={{ display: 'flex', height: 'calc(100vh - 52px)', overflow: 'hidden' }}>
+
+            {/* Left panel — app list */}
+            <div style={{ width: 280, flexShrink: 0, borderRight: `1px solid ${t.border}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              {/* Header */}
+              <div style={{ padding: '14px 16px', borderBottom: `1px solid ${t.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textDim }}>Applications</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <a href="http://localhost/gitea" target="_blank" rel="noreferrer"
+                    style={{ fontSize: 10, color: t.textDim, textDecoration: 'none', padding: '3px 8px', borderRadius: 4, border: `1px solid ${t.borderLight}` }}>
+                    Open Gitea ↗
+                  </a>
+                  <button onClick={() => { setDeployShowNew(true); setSelectedDeploy(null); }}
+                    style={{ fontSize: 11, fontWeight: 600, color: '#22c55e', background: 'rgba(34,197,94,.1)', border: '1px solid rgba(34,197,94,.3)', borderRadius: 4, padding: '3px 10px', cursor: 'pointer' }}>
+                    + New App
+                  </button>
+                </div>
+              </div>
+
+              {/* App list */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+                {deployApps.length === 0 && (
+                  <div style={{ padding: '32px 20px', textAlign: 'center', color: t.textDim, fontSize: 12 }}>
+                    No apps yet.<br />Click <strong>+ New App</strong> to get started.
+                  </div>
+                )}
+                {deployApps.map(app => (
+                  <div key={app.name}
+                    onClick={() => { setSelectedDeploy(app.name); setDeployShowNew(false); }}
+                    style={{ padding: '10px 16px', cursor: 'pointer', borderLeft: `3px solid ${selectedDeploy === app.name ? DEPLOY_STATUS_COLOR[app.status] || '#6b7280' : 'transparent'}`, background: selectedDeploy === app.name ? (theme === 'dark' ? 'rgba(255,255,255,.04)' : 'rgba(0,0,0,.03)') : 'transparent' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: DEPLOY_STATUS_COLOR[app.status] || '#6b7280', display: 'inline-block' }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: t.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{app.name}</span>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: DEPLOY_STATUS_COLOR[app.status] || '#6b7280', textTransform: 'uppercase', letterSpacing: '.04em' }}>{app.status}</span>
+                    </div>
+                    {app.last_deployed && (
+                      <div style={{ fontSize: 10, color: t.textDim, marginTop: 3, paddingLeft: 16 }}>
+                        {new Date(app.last_deployed).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Right panel */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: 32 }}>
+
+              {/* ── New App form ── */}
+              {deployShowNew && (
+                <div style={{ maxWidth: 560 }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: t.text, marginBottom: 20 }}>New Application</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 6 }}>App Name</label>
+                      <input value={newAppName} onChange={e => setNewAppName(e.target.value)}
+                        placeholder="my-service"
+                        style={{ width: '100%', background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 6, padding: '8px 12px', color: t.text, fontSize: 13, boxSizing: 'border-box' }} />
+                      <div style={{ fontSize: 10, color: t.textDim, marginTop: 4 }}>Will be slugified — lowercase letters, numbers, hyphens only.</div>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 6 }}>Description (optional)</label>
+                      <input value={newAppDesc} onChange={e => setNewAppDesc(e.target.value)}
+                        placeholder="Short description"
+                        style={{ width: '100%', background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 6, padding: '8px 12px', color: t.text, fontSize: 13, boxSizing: 'border-box' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                      <button onClick={createDeployApp} disabled={deployCreating || !newAppName.trim()}
+                        style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: deployCreating ? .6 : 1 }}>
+                        {deployCreating ? 'Creating…' : 'Create Repo & Register'}
+                      </button>
+                      <button onClick={() => setDeployShowNew(false)}
+                        style={{ padding: '8px 16px', background: 'transparent', color: t.textDim, border: `1px solid ${t.border}`, borderRadius: 6, fontSize: 13, cursor: 'pointer' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* perfstack.yaml example */}
+                  <div style={{ marginTop: 32, background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: 20 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 12 }}>perfstack.yaml — add this to your repo root</div>
+                    <pre style={{ margin: 0, fontSize: 12, color: t.text, lineHeight: 1.7, fontFamily: 'monospace' }}>{`app: my-service\nport: 8080\nreplicas: 1\nenv:\n  - name: ENV_VAR\n    value: some-value`}</pre>
+                    <div style={{ marginTop: 12, fontSize: 11, color: t.textDim, lineHeight: 1.6 }}>
+                      After creating, push your project to:<br />
+                      <code style={{ color: t.text, fontSize: 11 }}>http://localhost/gitea/admin/&#123;name&#125;.git</code>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── App detail ── */}
+              {selectedDeploy && deployDetail && !deployShowNew && (() => {
+                const app = deployDetail;
+                const statusColor = DEPLOY_STATUS_COLOR[app.status] || '#6b7280';
+                return (
+                  <div style={{ maxWidth: 700 }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 28 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 22, fontWeight: 800, color: t.text }}>{app.name}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}55`, borderRadius: 20, padding: '3px 10px', textTransform: 'uppercase', letterSpacing: '.06em' }}>{app.status}</span>
+                          {app.status === 'running' && (
+                            <a href={app.url} target="_blank" rel="noreferrer"
+                              style={{ fontSize: 11, color: '#22c55e', textDecoration: 'none', fontWeight: 600 }}>
+                              Open App ↗
+                            </a>
+                          )}
+                        </div>
+                        <div style={{ marginTop: 6, fontSize: 12, color: t.textDim }}>
+                          Gitea: <a href={app.gitea_url} target="_blank" rel="noreferrer" style={{ color: t.accent, textDecoration: 'none' }}>{app.gitea_url}</a>
+                        </div>
+                      </div>
+                      <button onClick={() => deleteDeployApp(app.name)}
+                        style={{ padding: '6px 14px', background: 'rgba(239,68,68,.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,.3)', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                        Delete
+                      </button>
+                    </div>
+
+                    {/* Error */}
+                    {app.error && (
+                      <div style={{ background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 6, padding: '10px 14px', marginBottom: 20, fontSize: 12, color: '#ef4444' }}>
+                        {app.error}
+                      </div>
+                    )}
+
+                    {/* Config */}
+                    <div style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: '16px 20px', marginBottom: 20 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 12 }}>Configuration</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                        {[['Port', app.port], ['Replicas', app.replicas], ['Namespace', app.namespace]].map(([k, v]) => (
+                          <div key={k}>
+                            <div style={{ fontSize: 10, color: t.textDim, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 2 }}>{k}</div>
+                            <div style={{ fontSize: 13, color: t.text, fontFamily: 'monospace' }}>{v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {app.url && (
+                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.borderLight}` }}>
+                          <div style={{ fontSize: 10, color: t.textDim, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 2 }}>URL</div>
+                          <code style={{ fontSize: 12, color: t.text }}>{app.url}</code>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Push instructions */}
+                    <div style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: '16px 20px', marginBottom: 20 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 10 }}>Push to deploy</div>
+                      <pre style={{ margin: 0, fontSize: 11, color: t.text, lineHeight: 1.8, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>{`git remote add origin ${app.clone_url || `http://localhost/gitea/admin/${app.repo}.git`}\ngit push -u origin main`}</pre>
+                    </div>
+
+                    {/* Pods */}
+                    {deployPods.length > 0 && (
+                      <div style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: '16px 20px', marginBottom: 20 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 12 }}>Pods</div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                          <thead>
+                            <tr style={{ color: t.textDim }}>
+                              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 600 }}>Name</th>
+                              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 600 }}>Phase</th>
+                              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 600 }}>Ready</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {deployPods.map(pod => (
+                              <tr key={pod.name} style={{ borderTop: `1px solid ${t.borderLight}` }}>
+                                <td style={{ padding: '5px 8px', color: t.text, fontFamily: 'monospace', fontSize: 11 }}>{pod.name}</td>
+                                <td style={{ padding: '5px 8px', color: pod.phase === 'Running' ? '#22c55e' : t.textDim }}>{pod.phase}</td>
+                                <td style={{ padding: '5px 8px', color: pod.ready ? '#22c55e' : '#f59e0b' }}>{pod.ready ? '✓' : '…'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Build history */}
+                    {deployBuilds.length > 0 && (
+                      <div style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: '16px 20px' }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 12 }}>Build History</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {deployBuilds.map(b => {
+                            const bc = b.status === 'success' ? '#22c55e' : b.status === 'failed' ? '#ef4444' : '#f59e0b';
+                            return (
+                              <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: `1px solid ${t.borderLight}` }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: bc, flexShrink: 0 }} />
+                                <code style={{ fontSize: 11, color: t.text, fontFamily: 'monospace' }}>{b.commit.slice(0, 8)}</code>
+                                <span style={{ fontSize: 11, color: bc, fontWeight: 600, textTransform: 'uppercase' }}>{b.status}</span>
+                                <span style={{ fontSize: 10, color: t.textDim, marginLeft: 'auto' }}>{b.started_at ? new Date(b.started_at).toLocaleString() : ''}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* ── Empty state ── */}
+              {!selectedDeploy && !deployShowNew && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16, color: t.textDim }}>
+                  <div style={{ fontSize: 48 }}>🚀</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: t.text }}>DeployStack</div>
+                  <div style={{ fontSize: 13, textAlign: 'center', maxWidth: 360, lineHeight: 1.7 }}>
+                    Push projects to Gitea and DeployStack will auto-build and deploy them to Kubernetes.
+                  </div>
+                  <button onClick={() => setDeployShowNew(true)}
+                    style={{ marginTop: 8, padding: '10px 24px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    + Create your first app
+                  </button>
+                  <a href="http://localhost/gitea" target="_blank" rel="noreferrer"
+                    style={{ fontSize: 12, color: t.accent, textDecoration: 'none' }}>
+                    Or browse Gitea ↗
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -1,4 +1,4 @@
-# ⚡ GSA Platform Suite v2.5.0
+# ⚡ GSA Platform Suite v3.0.0
 
 > Load Testing Platform — K6 + Grafana on Kubernetes
 
