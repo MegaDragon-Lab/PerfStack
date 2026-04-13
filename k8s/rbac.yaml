@@ -58,7 +58,7 @@ rules:
     verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
   - apiGroups: [""]
     resources: ["services", "pods", "pods/log"]
-    verbs: ["create", "get", "list", "watch", "delete"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
     verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]

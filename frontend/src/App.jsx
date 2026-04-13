@@ -2812,9 +2812,9 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* perfstack.yaml example */}
+                  {/* GSA-Platform-Suite.yaml example */}
                   <div style={{ marginTop: 32, background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: 20 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 12 }}>perfstack.yaml — add this to your repo root</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 12 }}>GSA-Platform-Suite.yaml — add this to your repo root</div>
                     <pre style={{ margin: 0, fontSize: 12, color: t.text, lineHeight: 1.7, fontFamily: 'monospace' }}>{`app: my-service\nport: 8080\nreplicas: 1\nenv:\n  - name: ENV_VAR\n    value: some-value`}</pre>
                     <div style={{ marginTop: 12, fontSize: 11, color: t.textDim, lineHeight: 1.6 }}>
                       After creating, push your project to:<br />
@@ -2853,8 +2853,8 @@ export default function App() {
                       </button>
                     </div>
 
-                    {/* Error */}
-                    {app.error && (
+                    {/* Error — only show when failed */}
+                    {app.error && app.status === 'failed' && (
                       <div style={{ background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 6, padding: '10px 14px', marginBottom: 20, fontSize: 12, color: '#ef4444' }}>
                         {app.error}
                       </div>

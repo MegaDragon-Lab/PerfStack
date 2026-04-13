@@ -200,7 +200,8 @@ BUILDS_FILE        = DATA_DIR / "builds.json"
 GITEA_INTERNAL_URL = "http://gitea.gitea.svc.cluster.local:3000"
 GITEA_ADMIN_USER   = "gsaadmin"
 GITEA_ADMIN_PASS   = "admin"
-LOCAL_REGISTRY     = "localhost:5001"
+LOCAL_REGISTRY     = "localhost:5001"          # host-side push (via Docker socket)
+CLUSTER_REGISTRY   = "k3d-perfstack-registry:5000"  # in-cluster pull reference
 WEBHOOK_SECRET     = "perfstack-deploy-secret"
 BUILDS_CONTEXT_DIR = DATA_DIR / "builds"
 
@@ -1528,11 +1529,15 @@ def _create_build_job(app_name: str, repo: str, commit: str, image_tag: str) -> 
     job_name = f"build-{app_name}-{short}"
     context_path = f"/data/builds/{app_name}/{short}"
 
+    # docker:27-cli is Alpine/busybox — wget and tar are built-in, no apk needed
+    archive_url = (
+        f"http://{GITEA_ADMIN_USER}:{GITEA_ADMIN_PASS}"
+        f"@gitea.gitea.svc.cluster.local:3000"
+        f"/api/v1/repos/{GITEA_ADMIN_USER}/{repo}/archive/{commit}.tar.gz"
+    )
     cmd = (
-        f"apk add --no-cache curl tar >/dev/null 2>&1 && "
         f"mkdir -p {context_path} && "
-        f"curl -u {GITEA_ADMIN_USER}:{GITEA_ADMIN_PASS} -sL "
-        f"'{GITEA_INTERNAL_URL}/api/v1/repos/{GITEA_ADMIN_USER}/{repo}/archive/{commit}.tar.gz' "
+        f"wget -qO- '{archive_url}' "
         f"| tar xz --strip-components=1 -C {context_path} && "
         f"docker build -t {image_tag} {context_path} && "
         f"docker push {image_tag}"
@@ -1741,6 +1746,8 @@ def _update_app_status(name: str, status: str, **kwargs):
     for a in apps:
         if a.get("name") == name:
             a["status"] = status
+            if status in ("running", "deploying", "building"):
+                a["error"] = ""
             for k, v in kwargs.items():
                 a[k] = v
             break
@@ -1906,7 +1913,8 @@ async def deploy_webhook(request: Request):
 
     app_name = app_entry["name"]
     short = commit[:8]
-    image_tag = f"{LOCAL_REGISTRY}/apps/{app_name}:latest"
+    push_image_tag    = f"{LOCAL_REGISTRY}/apps/{app_name}:latest"    # for docker push (host daemon)
+    deploy_image_tag  = f"{CLUSTER_REGISTRY}/apps/{app_name}:latest"  # for k8s Deployment (in-cluster pull)
     build_id = str(uuid.uuid4())
 
     # Persist build entry
@@ -1927,13 +1935,13 @@ async def deploy_webhook(request: Request):
 
     # Create build Job
     try:
-        job_name = _create_build_job(app_name, repo_name, commit, image_tag)
+        job_name = _create_build_job(app_name, repo_name, commit, push_image_tag)
     except Exception as e:
         _update_app_status(app_name, "failed", error=str(e))
         _update_build_status(build_id, "failed")
         raise HTTPException(status_code=500, detail=str(e))
 
-    # Read perfstack.yaml from archive to get port/replicas/env
+    # Read GSA-Platform-Suite.yaml from archive to get port/replicas/env
     cfg: dict = {"port": 8080, "replicas": 1, "env": []}
     try:
         async with __import__("httpx").AsyncClient(timeout=10) as hx:
@@ -1944,7 +1952,7 @@ async def deploy_webhook(request: Request):
             if r.status_code == 200:
                 with tarfile.open(fileobj=io.BytesIO(r.content), mode="r:gz") as tf:
                     for member in tf.getmembers():
-                        if member.name.endswith("perfstack.yaml"):
+                        if member.name.endswith("GSA-Platform-Suite.yaml"):
                             f = tf.extractfile(member)
                             if f:
                                 raw = yaml.safe_load(f.read())
@@ -1954,7 +1962,7 @@ async def deploy_webhook(request: Request):
                                     cfg["env"] = raw.get("env", [])
                             break
     except Exception as e:
-        logger.warning("Could not read perfstack.yaml: %s", e)
+        logger.warning("Could not read GSA-Platform-Suite.yaml: %s", e)
 
     # Update port/replicas in app entry
     for a in apps:
@@ -1965,6 +1973,6 @@ async def deploy_webhook(request: Request):
     _write_apps(apps)
 
     # Start background watcher
-    asyncio.create_task(_watch_build_and_deploy(app_name, build_id, image_tag, cfg, job_name))
+    asyncio.create_task(_watch_build_and_deploy(app_name, build_id, deploy_image_tag, cfg, job_name))
 
     return {"status": "building", "app": app_name, "commit": short, "build_id": build_id}
