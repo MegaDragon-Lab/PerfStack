@@ -21,7 +21,7 @@ spec:
                 port:
                   number: 8000
 ---
-# Gitea ingress — lives in gitea namespace, nginx watches all namespaces
+# Gitea ingress — strips /gitea prefix before forwarding (Gitea serves at /)
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -32,13 +32,14 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
 spec:
   ingressClassName: nginx
   rules:
     - http:
         paths:
-          - path: /gitea
-            pathType: Prefix
+          - path: /gitea(/|$)(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: gitea
