@@ -202,11 +202,20 @@ docker push localhost:${REG_PORT}/library/perfstack-k6:latest
 ok "k6 image pushed to registry"
 echo ""
 
-# ── Detect EC2 public hostname ────────────────────────────────────────────────
+# ── Detect EC2 public hostname (IMDSv2) ──────────────────────────────────────
 log "Detecting public hostname..."
-PUBLIC_HOST=$(curl -sf --max-time 3 http://169.254.169.254/latest/meta-data/public-hostname \
-  || curl -sf --max-time 3 http://169.254.169.254/latest/meta-data/public-ipv4 \
-  || hostname -f)
+IMDS_TOKEN=$(curl -sf --max-time 3 -X PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)
+if [ -n "$IMDS_TOKEN" ]; then
+  PUBLIC_HOST=$(curl -sf --max-time 3 -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+    http://169.254.169.254/latest/meta-data/public-hostname 2>/dev/null \
+    || curl -sf --max-time 3 -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+    http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null \
+    || echo "localhost")
+else
+  PUBLIC_HOST=$(curl -sf --max-time 5 https://checkip.amazonaws.com 2>/dev/null \
+    || echo "localhost")
+fi
 ok "Public host: ${PUBLIC_HOST}"
 echo ""
 
