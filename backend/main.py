@@ -203,6 +203,7 @@ GITEA_ADMIN_PASS   = "admin"
 LOCAL_REGISTRY     = "localhost:5001"          # host-side push (via Docker socket)
 CLUSTER_REGISTRY   = "k3d-perfstack-registry:5000"  # in-cluster pull reference
 WEBHOOK_SECRET     = "perfstack-deploy-secret"
+PUBLIC_HOST        = os.getenv("PUBLIC_HOST", "localhost")
 BUILDS_CONTEXT_DIR = DATA_DIR / "builds"
 
 
@@ -1743,7 +1744,7 @@ async def _watch_build_and_deploy(app_name: str, build_id: str, image_tag: str,
         now = _now_iso()
         _update_app_status(app_name, "running",
                            last_deployed=now,
-                           url=f"http://localhost/apps/{app_name}")
+                           url=f"http://{PUBLIC_HOST}/apps/{app_name}")
     except Exception as e:
         logger.error("Deploy failed for %s: %s", app_name, e)
         _update_app_status(app_name, "failed", error=str(e))
@@ -1823,10 +1824,10 @@ async def create_deploy_app(req: NewAppRequest):
         "status": "pending",
         "build_job": "",
         "last_deployed": "",
-        "url": f"http://localhost/apps/{name}",
+        "url": f"http://{PUBLIC_HOST}/apps/{name}",
         "error": "",
-        "gitea_url": f"http://localhost/gitea/{GITEA_ADMIN_USER}/{name}",
-        "clone_url": f"http://localhost/gitea/{GITEA_ADMIN_USER}/{name}.git",
+        "gitea_url": f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}",
+        "clone_url": f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}.git",
     }
     apps.append(app_entry)
     _write_apps(apps)

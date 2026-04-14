@@ -202,6 +202,14 @@ docker push localhost:${REG_PORT}/library/perfstack-k6:latest
 ok "k6 image pushed to registry"
 echo ""
 
+# ── Detect EC2 public hostname ────────────────────────────────────────────────
+log "Detecting public hostname..."
+PUBLIC_HOST=$(curl -sf --max-time 3 http://169.254.169.254/latest/meta-data/public-hostname \
+  || curl -sf --max-time 3 http://169.254.169.254/latest/meta-data/public-ipv4 \
+  || hostname -f)
+ok "Public host: ${PUBLIC_HOST}"
+echo ""
+
 # ── Apply Kubernetes manifests ────────────────────────────────────────────────
 log "Applying Kubernetes manifests..."
 kubectl apply -f k8s/namespace.yaml          >/dev/null
@@ -211,6 +219,7 @@ kubectl apply -f k8s/influxdb.yaml           >/dev/null
 kubectl apply -f k8s/grafana-config.yaml     >/dev/null
 kubectl apply -f k8s/grafana.yaml            >/dev/null
 kubectl apply -f k8s/backend.yaml            >/dev/null
+kubectl set env deployment/backend -n $NS PUBLIC_HOST="${PUBLIC_HOST}" >/dev/null
 kubectl apply -f k8s/frontend.yaml           >/dev/null
 kubectl apply -f k8s/gitea-namespace.yaml    >/dev/null
 kubectl apply -f k8s/gitea-pvc.yaml          >/dev/null

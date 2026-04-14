@@ -32,6 +32,8 @@ spec:
           env:
             - name: DATA_DIR
               value: "/data"
+            - name: PUBLIC_HOST
+              value: "localhost"
           volumeMounts:
             - name: backend-data
               mountPath: /data
