@@ -288,6 +288,22 @@ kubectl exec -n gitea deployment/gitea -- \
   || ok "Gitea admin user already exists"
 echo ""
 
+# ── Restart all DeployStack apps (images survive in registry) ────────────────
+log "Restarting DeployStack apps from existing images..."
+APPS=$(curl -sf http://localhost/api/deploy/apps 2>/dev/null || echo "[]")
+APP_NAMES=$(echo "$APPS" | python3 -c "import sys,json; [print(a['name']) for a in json.load(sys.stdin)]" 2>/dev/null || true)
+if [ -z "$APP_NAMES" ]; then
+  dim "No apps registered — skipping"
+else
+  for app_name in $APP_NAMES; do
+    echo -ne "  ${DIM}restarting ${app_name}...${NC}"
+    curl -sf -X POST "http://localhost/api/deploy/apps/${app_name}/restart" >/dev/null 2>&1 \
+      && echo -e "\r  ${GREEN}✓${NC} ${app_name} restarted           " \
+      || echo -e "\r  ${AMBER}!${NC} ${app_name} restart failed      "
+  done
+fi
+echo ""
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo "  ══════════════════════════════════════════════════════"
 echo -e "  ${GREEN}🚀 PerfStack is up!${NC}"

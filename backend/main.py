@@ -1843,6 +1843,31 @@ async def get_deploy_app(name: str):
     return app_entry
 
 
+@app.post("/deploy/apps/{name}/restart", summary="Redeploy app using existing image (no rebuild)")
+async def restart_deploy_app(name: str):
+    apps = _read_apps()
+    app_entry = next((a for a in apps if a.get("name") == name), None)
+    if not app_entry:
+        raise HTTPException(status_code=404, detail=f"App '{name}' not found")
+
+    image_tag     = f"{CLUSTER_REGISTRY}/apps/{name}:latest"
+    port          = app_entry.get("port", 8080)
+    replicas      = app_entry.get("replicas", 1)
+    env_vars      = app_entry.get("env", [])
+
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars))
+        _update_app_status(name, "running",
+                           last_deployed=_now_iso(),
+                           url=f"http://{PUBLIC_HOST}/apps/{name}")
+    except Exception as e:
+        _update_app_status(name, "failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"status": "restarted", "app": name}
+
+
 @app.delete("/deploy/apps/{name}", summary="Delete app and its Kubernetes namespace")
 async def delete_deploy_app(name: str):
     apps = _read_apps()
