@@ -1771,9 +1771,19 @@ def _update_build_status(build_id: str, status: str):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+def _fix_app_urls(app: dict) -> dict:
+    """Rewrite stored localhost URLs to use the current PUBLIC_HOST."""
+    name = app.get("name", "")
+    repo = app.get("repo", name)
+    app["url"]        = f"http://{PUBLIC_HOST}/apps/{name}"
+    app["gitea_url"]  = f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{repo}"
+    app["clone_url"]  = f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{repo}.git"
+    return app
+
+
 @app.get("/deploy/apps", summary="List all DeployStack apps")
 async def list_deploy_apps():
-    return _read_apps()
+    return [_fix_app_urls(a) for a in _read_apps()]
 
 
 @app.post("/deploy/apps", summary="Create a new app and its Gitea repo")
@@ -1840,7 +1850,7 @@ async def get_deploy_app(name: str):
     app_entry = next((a for a in apps if a.get("name") == name), None)
     if not app_entry:
         raise HTTPException(status_code=404, detail=f"App '{name}' not found")
-    return app_entry
+    return _fix_app_urls(app_entry)
 
 
 @app.post("/deploy/apps/{name}/restart", summary="Redeploy app using existing image (no rebuild)")
