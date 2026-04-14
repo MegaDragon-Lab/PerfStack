@@ -918,7 +918,7 @@ export default function App() {
     return (
       <div style={{ minHeight: '100vh', background: t.bg, color: t.text, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'IBM Plex Sans, sans-serif' }}>
         <div style={{ maxWidth: 480, width: '100%', padding: '0 24px', textAlign: 'center' }}>
-          <img src={theme === 'dark' ? '/assets/private/GSA_Logo_Inverted.png' : '/assets/private/GSA_Logo.jpg'} style={{ height: 48, objectFit: 'contain', marginBottom: 32 }} alt="GSA" />
+          <img src={theme === 'dark' ? '/assets/private/GSA_Logo_Inverted.png' : '/assets/private/GSA_Logo.jpg'} style={{ height: 192, objectFit: 'contain', marginBottom: 32 }} alt="GSA" />
           <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>GSA Platform Suite</h1>
           <p style={{ fontSize: 13, color: t.textMuted, marginBottom: 40 }}>Sign in with your FICO DMS account to continue</p>
           <div style={{ background: t.bgPanel, border: `1px solid ${t.borderLight}`, borderRadius: 12, padding: 28, textAlign: 'left' }}>
