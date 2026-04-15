@@ -3013,7 +3013,7 @@ export default function App() {
                     {/* Push instructions */}
                     <div className="ds-panel">
                       <div className="ds-panel-title">Push to deploy</div>
-                      <pre style={{ margin: 0, fontSize: 11, color: t.text, lineHeight: 1.8, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>{`git remote add origin ${app.clone_url || `${giteaBaseUrl}/gsaadmin/${app.repo}.git`}\ngit push -u origin main`}</pre>
+                      <pre style={{ margin: 0, fontSize: 11, color: t.text, lineHeight: 1.8, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>{`git init\ngit add -A\ngit commit -m "Initial commit"\ngit remote add origin ${app.clone_url || `${giteaBaseUrl}/gsaadmin/${app.repo}.git`}\ngit push -u origin main --force`}</pre>
                     </div>
 
                     {/* Pods */}
