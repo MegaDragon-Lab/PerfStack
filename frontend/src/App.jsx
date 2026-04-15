@@ -916,7 +916,7 @@ export default function App() {
   if (!authChecked) return null;
 
   if (!currentUser) {
-    const bookmarklet = `javascript:(function(){fetch('/rest/user').then(r=>r.json()).then(u=>{window.location.href='${window.location.origin}/api/auth/dms-login?uid='+encodeURIComponent(u.uid)+'&cn='+encodeURIComponent(u.cn)+'&o='+encodeURIComponent(u.o)+'&token='+encodeURIComponent(u.access_token_encoded||'')+'&token_exp='+encodeURIComponent(u.access_token_expiration_time||'');});})()`;
+    const bookmarklet = `javascript:(function(){fetch('/rest/user').then(r=>r.json()).then(u=>{window.location.href='${window.location.origin}/api/auth/dms-login?uid='+encodeURIComponent(u.uid)+'&cn='+encodeURIComponent(u.cn)+'&o='+encodeURIComponent(u.o)+'&token='+encodeURIComponent(u.access_token_encoded||'')+'&token_exp='+encodeURIComponent(u.access_token_expiration_time||'');}).catch(()=>{window.location.href='${window.location.origin}';});})()`;
     return (
       <div style={{ minHeight: '100vh', background: t.bg, color: t.text, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'IBM Plex Sans, sans-serif' }}>
         <div style={{ maxWidth: 480, width: '100%', padding: '0 24px', textAlign: 'center' }}>
