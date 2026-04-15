@@ -195,6 +195,7 @@ MONITOR_RUNS_FILE  = DATA_DIR / "monitor_runs.json"
 EMAIL_CONFIG_FILE  = DATA_DIR / "email_config.json"
 APPS_FILE          = DATA_DIR / "deployed_apps.json"
 BUILDS_FILE        = DATA_DIR / "builds.json"
+SESSIONS_FILE      = DATA_DIR / "sessions.json"
 
 # ── DeployStack constants ─────────────────────────────────────────────────────
 GITEA_INTERNAL_URL = "http://gitea.gitea.svc.cluster.local:3000"
@@ -243,6 +244,8 @@ def _read_apps() -> list:            return _read_file(APPS_FILE)
 def _write_apps(data):               _write_file(APPS_FILE, data)
 def _read_builds() -> list:          return _read_file(BUILDS_FILE)
 def _write_builds(data):             _write_file(BUILDS_FILE, data)
+def _read_sessions() -> dict:        return _read_file_dict(SESSIONS_FILE)
+def _write_sessions(data: dict):     _write_file_dict(SESSIONS_FILE, data)
 
 
 class CustomScenario(BaseModel):
@@ -253,33 +256,53 @@ class CustomScenario(BaseModel):
 # ── Auth — DMS Console SSO ───────────────────────────────────────────────────
 
 ALLOWED_ORG   = "FICO-GPS-TENANT"
-_sessions: dict[str, dict] = {}   # session_id → {uid, cn, org}
+SESSION_MAX_AGE = 86400 * 7  # 7 days
 
 @app.get("/auth/dms-login", summary="DMS bookmarklet callback — sets session cookie")
 async def dms_login(uid: str, cn: str, o: str, token: str = "", token_exp: str = ""):
     if o != ALLOWED_ORG:
         raise HTTPException(403, f"Access denied — organisation '{o}' is not allowed")
     session_id = secrets.token_urlsafe(32)
-    _sessions[session_id] = {"uid": uid, "cn": cn, "org": o, "token": token, "token_exp": token_exp}
+    sessions = _read_sessions()
+    sessions[session_id] = {"uid": uid, "cn": cn, "org": o, "token": token, "token_exp": token_exp}
+    _write_sessions(sessions)
     response = RedirectResponse(url="/", status_code=302)
-    response.set_cookie("ps_session", session_id, httponly=True, samesite="lax", max_age=86400 * 7)
+    response.set_cookie("ps_session", session_id, httponly=True, samesite="lax", max_age=SESSION_MAX_AGE)
     return response
 
 @app.get("/auth/me", summary="Return current user or 401")
 async def auth_me(ps_session: str = Cookie(default=None)):
-    if not ps_session or ps_session not in _sessions:
+    if not ps_session:
         raise HTTPException(401, "Not authenticated")
-    s = _sessions[ps_session]
+    sessions = _read_sessions()
+    if ps_session not in sessions:
+        raise HTTPException(401, "Not authenticated")
+    s = sessions[ps_session]
     return {"uid": s["uid"], "cn": s["cn"], "org": s["org"],
             "has_token": bool(s.get("token")), "token_exp": s.get("token_exp", "")}
 
 @app.get("/auth/logout", summary="Clear session and redirect to home")
 async def auth_logout(ps_session: str = Cookie(default=None)):
-    if ps_session and ps_session in _sessions:
-        del _sessions[ps_session]
+    if ps_session:
+        sessions = _read_sessions()
+        sessions.pop(ps_session, None)
+        _write_sessions(sessions)
     response = RedirectResponse(url="/", status_code=302)
     response.delete_cookie("ps_session")
     return response
+
+@app.get("/deploy/check-auth", summary="Nginx auth_request endpoint — validates ps_session cookie")
+async def deploy_check_auth(request: Request):
+    """Returns 200 if the request has a valid session, 401 otherwise. Used by Nginx auth_request."""
+    ps_session = request.cookies.get("ps_session")
+    if not ps_session:
+        return JSONResponse(status_code=401, content={"detail": "Not authenticated"},
+                            headers={"X-Auth-Redirect": f"http://{PUBLIC_HOST}/"})
+    sessions = _read_sessions()
+    if ps_session not in sessions:
+        return JSONResponse(status_code=401, content={"detail": "Session expired"},
+                            headers={"X-Auth-Redirect": f"http://{PUBLIC_HOST}/"})
+    return JSONResponse(status_code=200, content={"status": "ok"})
 
 
 # ── Custom scenarios (persisted to /data/custom_scenarios.json) ───────────────
@@ -376,9 +399,10 @@ async def ping_test(config: PingConfig, ps_session: str = Cookie(default=None)):
     # Step 1 — resolve bearer token
     try:
         if config.use_user_token:
-            if not ps_session or ps_session not in _sessions:
+            _s = _read_sessions()
+            if not ps_session or ps_session not in _s:
                 raise HTTPException(status_code=401, detail="No active DMS session — please log in again")
-            bearer_token = _sessions[ps_session].get("token", "")
+            bearer_token = _s[ps_session].get("token", "")
             if not bearer_token:
                 raise HTTPException(status_code=401, detail="DMS session has no token — re-login with the bookmarklet")
         else:
@@ -454,9 +478,10 @@ async def run_test(config: TestConfig, ps_session: str = Cookie(default=None)):
     # Step 1 — resolve bearer token
     try:
         if config.use_user_token:
-            if not ps_session or ps_session not in _sessions:
+            _s = _read_sessions()
+            if not ps_session or ps_session not in _s:
                 raise HTTPException(status_code=401, detail="No active DMS session — please log in again")
-            bearer_token = _sessions[ps_session].get("token", "")
+            bearer_token = _s[ps_session].get("token", "")
             if not bearer_token:
                 raise HTTPException(status_code=401, detail="DMS session has no token — re-login with the bookmarklet")
         else:
@@ -1474,6 +1499,7 @@ class BuildEntry(BaseModel):
 class NewAppRequest(BaseModel):
     name: str
     description: str = ""
+    auth_required: bool = False
 
 def _slugify(name: str) -> str:
     """Convert an app name to a DNS-safe slug."""
@@ -1604,7 +1630,7 @@ def _create_build_job(app_name: str, repo: str, commit: str, image_tag: str) -> 
     return job_name
 
 # ── Deploy app to its own namespace ──────────────────────────────────────────
-def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list):
+def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list, auth_required: bool = False):
     """Create (or replace) Namespace + Deployment + Service + Ingress for an app."""
     ns = f"app-{app_name}"
     core = _core_v1()
@@ -1674,13 +1700,19 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
 
     # Ingress
     path_val = f"/apps/{app_name}(/|$)(.*)"
+    ingress_annotations = {
+        "nginx.ingress.kubernetes.io/rewrite-target": "/$2",
+        "nginx.ingress.kubernetes.io/proxy-read-timeout": "60",
+    }
+    if auth_required:
+        ingress_annotations["nginx.ingress.kubernetes.io/auth-url"] = \
+            "http://backend.perfstack.svc.cluster.local:8000/deploy/check-auth"
+        ingress_annotations["nginx.ingress.kubernetes.io/auth-signin"] = \
+            f"http://{PUBLIC_HOST}/"
     ingress_body = k8s_client.V1Ingress(
         metadata=k8s_client.V1ObjectMeta(
             name=app_name, namespace=ns,
-            annotations={
-                "nginx.ingress.kubernetes.io/rewrite-target": "/$2",
-                "nginx.ingress.kubernetes.io/proxy-read-timeout": "60",
-            }
+            annotations=ingress_annotations,
         ),
         spec=k8s_client.V1IngressSpec(
             ingress_class_name="nginx",
@@ -1736,10 +1768,13 @@ async def _watch_build_and_deploy(app_name: str, build_id: str, image_tag: str,
     _update_build_status(build_id, "success")
     _update_app_status(app_name, "deploying")
     try:
+        apps_list = _read_apps()
+        app_entry = next((a for a in apps_list if a.get("name") == app_name), {})
+        auth_required = app_entry.get("auth_required", False)
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: _deploy_app_k8s(
             app_name, image_tag, cfg.get("port", 8080),
-            cfg.get("replicas", 1), cfg.get("env", [])
+            cfg.get("replicas", 1), cfg.get("env", []), auth_required
         ))
         now = _now_iso()
         _update_app_status(app_name, "running",
@@ -1836,6 +1871,7 @@ async def create_deploy_app(req: NewAppRequest):
         "last_deployed": "",
         "url": f"http://{PUBLIC_HOST}/apps/{name}",
         "error": "",
+        "auth_required": req.auth_required,
         "gitea_url": f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}",
         "clone_url": f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}.git",
     }
@@ -1853,6 +1889,33 @@ async def get_deploy_app(name: str):
     return _fix_app_urls(app_entry)
 
 
+@app.post("/deploy/apps/{name}/toggle-auth", summary="Toggle auth_required for a DeployStack app")
+async def toggle_deploy_app_auth(name: str):
+    apps = _read_apps()
+    app_entry = next((a for a in apps if a.get("name") == name), None)
+    if not app_entry:
+        raise HTTPException(status_code=404, detail=f"App '{name}' not found")
+
+    app_entry["auth_required"] = not app_entry.get("auth_required", False)
+    _write_apps(apps)
+
+    # Re-deploy with updated ingress annotations (no rebuild needed)
+    image_tag = f"{CLUSTER_REGISTRY}/apps/{name}:latest"
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: _deploy_app_k8s(
+            name, image_tag,
+            app_entry.get("port", 8080),
+            app_entry.get("replicas", 1),
+            app_entry.get("env", []),
+            app_entry["auth_required"],
+        ))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"app": name, "auth_required": app_entry["auth_required"]}
+
+
 @app.post("/deploy/apps/{name}/restart", summary="Redeploy app using existing image (no rebuild)")
 async def restart_deploy_app(name: str):
     apps = _read_apps()
@@ -1864,10 +1927,11 @@ async def restart_deploy_app(name: str):
     port          = app_entry.get("port", 8080)
     replicas      = app_entry.get("replicas", 1)
     env_vars      = app_entry.get("env", [])
+    auth_required = app_entry.get("auth_required", False)
 
     try:
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars))
+        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars, auth_required))
         _update_app_status(name, "running",
                            last_deployed=_now_iso(),
                            url=f"http://{PUBLIC_HOST}/apps/{name}")

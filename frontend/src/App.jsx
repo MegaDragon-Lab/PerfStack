@@ -722,6 +722,7 @@ export default function App() {
   const [deployPods,       setDeployPods]        = useState([]);
   const [newAppName,       setNewAppName]        = useState("");
   const [newAppDesc,       setNewAppDesc]        = useState("");
+  const [newAppAuth,       setNewAppAuth]        = useState(false);
   const [deployCreating,   setDeployCreating]    = useState(false);
   const [deployShowNew,    setDeployShowNew]     = useState(false);
   const deployPollRef = useRef(null);
@@ -754,12 +755,12 @@ export default function App() {
       const r = await fetch(`${API_BASE}/api/deploy/apps`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newAppName.trim(), description: newAppDesc.trim() }),
+        body: JSON.stringify({ name: newAppName.trim(), description: newAppDesc.trim(), auth_required: newAppAuth }),
       });
       if (!r.ok) { const e = await r.json(); alert(e.detail || "Error"); return; }
       const app = await r.json();
       setDeployShowNew(false);
-      setNewAppName(""); setNewAppDesc("");
+      setNewAppName(""); setNewAppDesc(""); setNewAppAuth(false);
       refreshDeployApps();
       setSelectedDeploy(app.name);
     } catch (e) { alert(String(e)); }
@@ -2801,12 +2802,19 @@ export default function App() {
                         placeholder="Short description"
                         style={{ width: '100%', background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 6, padding: '8px 12px', color: t.text, fontSize: 13, boxSizing: 'border-box' }} />
                     </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                      <input type="checkbox" checked={newAppAuth} onChange={e => setNewAppAuth(e.target.checked)}
+                        style={{ width: 15, height: 15, accentColor: '#22c55e', cursor: 'pointer' }} />
+                      <span style={{ fontSize: 13, color: t.text }}>
+                        Require DMS authentication to access this app
+                      </span>
+                    </label>
                     <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
                       <button onClick={createDeployApp} disabled={deployCreating || !newAppName.trim()}
                         style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: deployCreating ? .6 : 1 }}>
                         {deployCreating ? 'Creating…' : 'Create Repo & Register'}
                       </button>
-                      <button onClick={() => setDeployShowNew(false)}
+                      <button onClick={() => { setDeployShowNew(false); setNewAppAuth(false); }}
                         style={{ padding: '8px 16px', background: 'transparent', color: t.textDim, border: `1px solid ${t.border}`, borderRadius: 6, fontSize: 13, cursor: 'pointer' }}>
                         Cancel
                       </button>
@@ -2878,6 +2886,26 @@ export default function App() {
                           <code style={{ fontSize: 12, color: t.text }}>{app.url}</code>
                         </div>
                       )}
+                    </div>
+
+                    {/* Auth toggle */}
+                    <div style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: '14px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Require DMS Authentication</div>
+                        <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>Only users logged in with the bookmarklet can access this app</div>
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+                        <input type="checkbox" checked={!!app.auth_required}
+                          onChange={async () => {
+                            await fetch(`${API_BASE}/api/deploy/apps/${app.name}/toggle-auth`, { method: 'POST' });
+                            refreshDeployApps();
+                            loadDeployDetail(app.name);
+                          }}
+                          style={{ width: 15, height: 15, accentColor: '#22c55e', cursor: 'pointer' }} />
+                        <span style={{ fontSize: 12, color: app.auth_required ? '#22c55e' : t.textDim, fontWeight: 600 }}>
+                          {app.auth_required ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </label>
                     </div>
 
                     {/* Push instructions */}
