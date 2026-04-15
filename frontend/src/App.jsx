@@ -933,12 +933,21 @@ export default function App() {
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 20 }}>
               <span style={{ background: t.accent, color: '#fff', borderRadius: '50%', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0, marginTop: 2 }}>2</span>
               <div>
-                <div style={{ fontSize: 13, marginBottom: 8 }}>Add this <strong>bookmarklet</strong> to your bookmark bar:</div>
-                <div style={{ background: t.bgInput, border: `1px solid ${t.inputBorder}`, borderRadius: 7, padding: '8px 12px', fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all', color: t.textMuted, marginBottom: 8 }}>{bookmarklet}</div>
-                <button onClick={() => navigator.clipboard.writeText(bookmarklet)}
-                  style={{ fontSize: 11, padding: '4px 12px', borderRadius: 5, border: `1px solid ${t.accent}55`, background: `${t.accent}15`, color: t.accent, cursor: 'pointer' }}>
-                  Copy bookmarklet
-                </button>
+                <div style={{ fontSize: 13, marginBottom: 12 }}>Drag this button to your <strong>bookmarks bar</strong>:</div>
+                <a href={bookmarklet}
+                  onClick={e => e.preventDefault()}
+                  draggable="true"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 16px', background: t.accent, color: '#fff', borderRadius: 7, fontSize: 13, fontWeight: 600, textDecoration: 'none', cursor: 'grab', userSelect: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+                  ⭐ GSA Platform Suite
+                </a>
+                <div style={{ fontSize: 11, color: t.textDim, marginTop: 8 }}>
+                  Can't drag?{' '}
+                  <button onClick={() => navigator.clipboard.writeText(bookmarklet)}
+                    style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: `1px solid ${t.accent}55`, background: 'transparent', color: t.accent, cursor: 'pointer' }}>
+                    Copy code
+                  </button>
+                  {' '}and create a bookmark manually.
+                </div>
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
