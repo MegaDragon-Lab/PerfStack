@@ -1500,6 +1500,7 @@ class NewAppRequest(BaseModel):
     name: str
     description: str = ""
     auth_required: bool = False
+    show_in_home: bool = False
 
 def _slugify(name: str) -> str:
     """Convert an app name to a DNS-safe slug."""
@@ -1872,6 +1873,7 @@ async def create_deploy_app(req: NewAppRequest):
         "url": f"http://{PUBLIC_HOST}/apps/{name}",
         "error": "",
         "auth_required": req.auth_required,
+        "show_in_home": req.show_in_home,
         "gitea_url": f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}",
         "clone_url": f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}.git",
     }
@@ -1914,6 +1916,17 @@ async def toggle_deploy_app_auth(name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"app": name, "auth_required": app_entry["auth_required"]}
+
+
+@app.post("/deploy/apps/{name}/toggle-home", summary="Toggle show_in_home for a DeployStack app")
+async def toggle_deploy_app_home(name: str):
+    apps = _read_apps()
+    app_entry = next((a for a in apps if a.get("name") == name), None)
+    if not app_entry:
+        raise HTTPException(status_code=404, detail=f"App '{name}' not found")
+    app_entry["show_in_home"] = not app_entry.get("show_in_home", False)
+    _write_apps(apps)
+    return {"app": name, "show_in_home": app_entry["show_in_home"]}
 
 
 @app.post("/deploy/apps/{name}/restart", summary="Redeploy app using existing image (no rebuild)")

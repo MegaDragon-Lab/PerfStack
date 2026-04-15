@@ -723,6 +723,7 @@ export default function App() {
   const [newAppName,       setNewAppName]        = useState("");
   const [newAppDesc,       setNewAppDesc]        = useState("");
   const [newAppAuth,       setNewAppAuth]        = useState(false);
+  const [newAppShowHome,   setNewAppShowHome]    = useState(false);
   const [deployCreating,   setDeployCreating]    = useState(false);
   const [deployShowNew,    setDeployShowNew]     = useState(false);
   const deployPollRef = useRef(null);
@@ -755,12 +756,12 @@ export default function App() {
       const r = await fetch(`${API_BASE}/api/deploy/apps`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newAppName.trim(), description: newAppDesc.trim(), auth_required: newAppAuth }),
+        body: JSON.stringify({ name: newAppName.trim(), description: newAppDesc.trim(), auth_required: newAppAuth, show_in_home: newAppShowHome }),
       });
       if (!r.ok) { const e = await r.json(); alert(e.detail || "Error"); return; }
       const app = await r.json();
       setDeployShowNew(false);
-      setNewAppName(""); setNewAppDesc(""); setNewAppAuth(false);
+      setNewAppName(""); setNewAppDesc(""); setNewAppAuth(false); setNewAppShowHome(false);
       refreshDeployApps();
       setSelectedDeploy(app.name);
     } catch (e) { alert(String(e)); }
@@ -1506,6 +1507,13 @@ export default function App() {
                   <span className="tab-badge" style={{ background: '#22c55e' }}>{deployApps.filter(a => a.status === "running").length}</span>
                 )}
               </button>
+              {deployApps.filter(a => a.show_in_home && a.status === 'running').map(a => (
+                <a key={a.name} href={a.url} target="_blank" rel="noreferrer"
+                  className="tab-btn"
+                  style={{ textDecoration: 'none' }}>
+                  {a.name} ↗
+                </a>
+              ))}
             </div>
             <SettingsMenu theme={theme} onSelect={toggleTheme} t={t} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderLeft: `1px solid ${t.borderLight}`, paddingLeft: 14 }}>
@@ -1561,12 +1569,12 @@ export default function App() {
                   <div style={{ width: 1, height: 44, background: t.borderLight, flexShrink: 0 }} />
                   <div>
                     <div style={{ fontSize: 28, fontWeight: 800, color: t.text, letterSpacing: '.01em', lineHeight: 1.1 }}>GSA Platform Suite</div>
-                    <div style={{ fontSize: 13, color: t.textDim, marginTop: 4, letterSpacing: '.04em' }}>Performance Testing &amp; API Monitoring Platform</div>
+                    <div style={{ fontSize: 13, color: t.textDim, marginTop: 4, letterSpacing: '.04em' }}>Internal Tools &amp; Platform Suite</div>
                   </div>
                   <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.1.0</span>
                 </div>
                 <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.7, maxWidth: 620 }}>
-                  An internal platform for load-testing REST APIs using k6 on Kubernetes, and continuously monitoring service health with scheduled checks and email alerting.
+                  An internal platform to build, deploy, and operate tools and applications — from load testing and API monitoring to any custom service your team needs.
                 </p>
               </div>
 
@@ -1606,6 +1614,27 @@ export default function App() {
                   <div style={{ marginTop: 16, fontSize: 11, color: '#22c55e', fontWeight: 600 }}>Open DeployStack →</div>
                 </div>
               </div>
+
+              {/* Dynamic app cards */}
+              {deployApps.filter(a => a.show_in_home).length > 0 && (
+                <div style={{ marginBottom: 48 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textDim, marginBottom: 16 }}>Deployed Applications</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
+                    {deployApps.filter(a => a.show_in_home).map(a => (
+                      <a key={a.name} href={a.url} target="_blank" rel="noreferrer"
+                        style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '20px 22px', textDecoration: 'none', display: 'block', transition: 'border-color .15s' }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = '#22c55e'}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = t.border}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.status === 'running' ? '#22c55e' : '#f59e0b', flexShrink: 0 }} />
+                          <span style={{ fontSize: 14, fontWeight: 700, color: t.text }}>{a.name}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 600 }}>Open App ↗</div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Release history */}
               <div>
@@ -2805,16 +2834,19 @@ export default function App() {
                     <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
                       <input type="checkbox" checked={newAppAuth} onChange={e => setNewAppAuth(e.target.checked)}
                         style={{ width: 15, height: 15, accentColor: '#22c55e', cursor: 'pointer' }} />
-                      <span style={{ fontSize: 13, color: t.text }}>
-                        Require DMS authentication to access this app
-                      </span>
+                      <span style={{ fontSize: 13, color: t.text }}>Require DMS authentication to access this app</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                      <input type="checkbox" checked={newAppShowHome} onChange={e => setNewAppShowHome(e.target.checked)}
+                        style={{ width: 15, height: 15, accentColor: '#c73000', cursor: 'pointer' }} />
+                      <span style={{ fontSize: 13, color: t.text }}>Show this app on the home page and navigation bar</span>
                     </label>
                     <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
                       <button onClick={createDeployApp} disabled={deployCreating || !newAppName.trim()}
                         style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: deployCreating ? .6 : 1 }}>
                         {deployCreating ? 'Creating…' : 'Create Repo & Register'}
                       </button>
-                      <button onClick={() => { setDeployShowNew(false); setNewAppAuth(false); }}
+                      <button onClick={() => { setDeployShowNew(false); setNewAppAuth(false); setNewAppShowHome(false); }}
                         style={{ padding: '8px 16px', background: 'transparent', color: t.textDim, border: `1px solid ${t.border}`, borderRadius: 6, fontSize: 13, cursor: 'pointer' }}>
                         Cancel
                       </button>
@@ -2904,6 +2936,26 @@ export default function App() {
                           style={{ width: 15, height: 15, accentColor: '#22c55e', cursor: 'pointer' }} />
                         <span style={{ fontSize: 12, color: app.auth_required ? '#22c55e' : t.textDim, fontWeight: 600 }}>
                           {app.auth_required ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </label>
+                    </div>
+
+                    {/* Show in home toggle */}
+                    <div style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: '14px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Show in Home & Navigation</div>
+                        <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>Adds this app as a card on the home page and a tab in the nav bar</div>
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+                        <input type="checkbox" checked={!!app.show_in_home}
+                          onChange={async () => {
+                            await fetch(`${API_BASE}/api/deploy/apps/${app.name}/toggle-home`, { method: 'POST' });
+                            refreshDeployApps();
+                            loadDeployDetail(app.name);
+                          }}
+                          style={{ width: 15, height: 15, accentColor: '#c73000', cursor: 'pointer' }} />
+                        <span style={{ fontSize: 12, color: app.show_in_home ? '#c73000' : t.textDim, fontWeight: 600 }}>
+                          {app.show_in_home ? 'Enabled' : 'Disabled'}
                         </span>
                       </label>
                     </div>
