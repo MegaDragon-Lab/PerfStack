@@ -382,6 +382,14 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/config", summary="Public client configuration (PUBLIC_HOST, Gitea URL)")
+async def get_config():
+    return {
+        "public_host": PUBLIC_HOST,
+        "gitea_url": f"http://{PUBLIC_HOST}/gitea",
+    }
+
+
 class PingConfig(BaseModel):
     iam_url: str = ""
     client_id: str = ""

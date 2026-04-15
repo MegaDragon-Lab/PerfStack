@@ -715,6 +715,7 @@ export default function App() {
   const [monitorHeadersStr,  setMonitorHeadersStr]  = useState("{}");
 
   // ── DeployStack state ────────────────────────────────────────────────────────
+  const [giteaBaseUrl,     setGiteaBaseUrl]     = useState("http://localhost/gitea");
   const [deployApps,       setDeployApps]       = useState([]);
   const [selectedDeploy,   setSelectedDeploy]   = useState(null); // app name
   const [deployDetail,     setDeployDetail]      = useState(null); // full app object
@@ -789,7 +790,11 @@ export default function App() {
   const loadEmailConfig = () =>
     fetch(`${API_BASE}/api/email-config`).then(r => r.json()).then(d => setEmailConfig(d || {})).catch(() => {});
 
-  useEffect(() => { refreshMonitors(); loadEmailConfig(); }, []);
+  useEffect(() => {
+    refreshMonitors();
+    loadEmailConfig();
+    fetch(`${API_BASE}/api/config`).then(r => r.json()).then(d => { if (d.gitea_url) setGiteaBaseUrl(d.gitea_url); }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (selectedMonitorId) {
@@ -1477,6 +1482,42 @@ export default function App() {
           border-top: 1px solid ${t.borderLight}; padding: 12px 14px; flex-shrink: 0;
           background: ${t.bgPanel};
         }
+
+        /* ── DeployStack ── */
+        .ds-workspace { display: flex; height: calc(100vh - 90px); overflow: hidden; }
+        .ds-sidebar {
+          width: 280px; flex-shrink: 0; border-right: 1px solid ${t.borderLight};
+          display: flex; flex-direction: column; overflow: hidden;
+          background: ${t.bgPanel};
+        }
+        .ds-sidebar-header {
+          padding: 14px 14px 10px; border-bottom: 1px solid ${t.borderLight};
+          display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+        }
+        .ds-list { flex: 1; overflow-y: auto; padding: 6px 6px; }
+        .ds-list-item {
+          padding: 9px 10px; border-radius: 7px; cursor: pointer; margin-bottom: 2px;
+          border: 1px solid transparent; transition: all .15s; display: flex; flex-direction: column; gap: 3px;
+        }
+        .ds-list-item:hover { background: ${t.bgHover}; }
+        .ds-list-item.active { background: ${t.accent}15; border-color: ${t.accent}55; }
+        .ds-detail { flex: 1; overflow-y: auto; padding: 24px 28px; }
+        .ds-panel {
+          background: ${t.bgPanel}; border: 1px solid ${t.border}; border-radius: 8px;
+          padding: 16px 20px; margin-bottom: 16px;
+        }
+        .ds-panel-title {
+          font-size: 11px; font-weight: 700; color: ${t.textDim}; text-transform: uppercase;
+          letter-spacing: .08em; margin-bottom: 12px;
+        }
+        .ds-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+        .ds-field label { font-size: 11px; font-weight: 600; color: ${t.textDim}; text-transform: uppercase; letter-spacing: .06em; }
+        .ds-field input {
+          padding: 8px 12px; border-radius: 6px; border: 1px solid ${t.inputBorder};
+          background: ${t.bgInput}; color: ${t.text}; font-size: 13px;
+          transition: border-color .15s; outline: none; font-family: inherit; box-sizing: border-box; width: 100%;
+        }
+        .ds-field input:focus { border-color: ${t.inputFocus}; }
 
         @media(max-width:700px) {
           .sidebar { display: none; }
@@ -2774,43 +2815,45 @@ export default function App() {
 
         {/* ── DeployStack Tab ── */}
         {activeTab === "deploy" && (
-          <div style={{ display: 'flex', height: 'calc(100vh - 52px)', overflow: 'hidden' }}>
+          <div className="ds-workspace">
 
             {/* Left panel — app list */}
-            <div style={{ width: 280, flexShrink: 0, borderRight: `1px solid ${t.border}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div className="ds-sidebar">
               {/* Header */}
-              <div style={{ padding: '14px 16px', borderBottom: `1px solid ${t.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textDim }}>Applications</span>
+              <div className="ds-sidebar-header">
+                <span style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Applications</span>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <a href="http://localhost/gitea" target="_blank" rel="noreferrer"
-                    style={{ fontSize: 10, color: t.textDim, textDecoration: 'none', padding: '3px 8px', borderRadius: 4, border: `1px solid ${t.borderLight}` }}>
+                  <a href={giteaBaseUrl} target="_blank" rel="noreferrer"
+                    style={{ fontSize: 10, color: t.textDim, textDecoration: 'none', padding: '3px 8px', borderRadius: 4, border: `1px solid ${t.borderLight}`, transition: 'border-color .15s' }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = t.accent}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = t.borderLight}>
                     Open Gitea ↗
                   </a>
                   <button onClick={() => { setDeployShowNew(true); setSelectedDeploy(null); }}
-                    style={{ fontSize: 11, fontWeight: 600, color: '#22c55e', background: 'rgba(34,197,94,.1)', border: '1px solid rgba(34,197,94,.3)', borderRadius: 4, padding: '3px 10px', cursor: 'pointer' }}>
-                    + New App
+                    style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(34,197,94,.35)', background: 'rgba(34,197,94,.12)', color: '#22c55e', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                    + New
                   </button>
                 </div>
               </div>
 
               {/* App list */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+              <div className="ds-list">
                 {deployApps.length === 0 && (
-                  <div style={{ padding: '32px 20px', textAlign: 'center', color: t.textDim, fontSize: 12 }}>
-                    No apps yet.<br />Click <strong>+ New App</strong> to get started.
+                  <div style={{ padding: '28px 10px', textAlign: 'center', color: t.textDim, fontSize: 11 }}>
+                    No apps yet.<br />Click <strong>+ New</strong> to get started.
                   </div>
                 )}
                 {deployApps.map(app => (
                   <div key={app.name}
-                    onClick={() => { setSelectedDeploy(app.name); setDeployShowNew(false); }}
-                    style={{ padding: '10px 16px', cursor: 'pointer', borderLeft: `3px solid ${selectedDeploy === app.name ? DEPLOY_STATUS_COLOR[app.status] || '#6b7280' : 'transparent'}`, background: selectedDeploy === app.name ? (theme === 'dark' ? 'rgba(255,255,255,.04)' : 'rgba(0,0,0,.03)') : 'transparent' }}>
+                    className={`ds-list-item${selectedDeploy === app.name ? ' active' : ''}`}
+                    onClick={() => { setSelectedDeploy(app.name); setDeployShowNew(false); }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: DEPLOY_STATUS_COLOR[app.status] || '#6b7280', display: 'inline-block' }} />
-                      <span style={{ fontSize: 13, fontWeight: 600, color: t.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{app.name}</span>
-                      <span style={{ fontSize: 10, fontWeight: 600, color: DEPLOY_STATUS_COLOR[app.status] || '#6b7280', textTransform: 'uppercase', letterSpacing: '.04em' }}>{app.status}</span>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: DEPLOY_STATUS_COLOR[app.status] || '#6b7280', display: 'inline-block', marginTop: 1 }} />
+                      <span style={{ fontSize: 12, fontWeight: 600, color: t.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{app.name}</span>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: DEPLOY_STATUS_COLOR[app.status] || '#6b7280', textTransform: 'uppercase', letterSpacing: '.04em' }}>{app.status}</span>
                     </div>
                     {app.last_deployed && (
-                      <div style={{ fontSize: 10, color: t.textDim, marginTop: 3, paddingLeft: 16 }}>
+                      <div style={{ fontSize: 10, color: t.textDim, paddingLeft: 16 }}>
                         {new Date(app.last_deployed).toLocaleString()}
                       </div>
                     )}
@@ -2820,55 +2863,53 @@ export default function App() {
             </div>
 
             {/* Right panel */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: 32 }}>
+            <div className="ds-detail">
 
               {/* ── New App form ── */}
               {deployShowNew && (
                 <div style={{ maxWidth: 560 }}>
                   <div style={{ fontSize: 18, fontWeight: 700, color: t.text, marginBottom: 20 }}>New Application</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    <div>
-                      <label style={{ fontSize: 11, fontWeight: 600, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 6 }}>App Name</label>
-                      <input value={newAppName} onChange={e => setNewAppName(e.target.value)}
-                        placeholder="my-service"
-                        style={{ width: '100%', background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 6, padding: '8px 12px', color: t.text, fontSize: 13, boxSizing: 'border-box' }} />
-                      <div style={{ fontSize: 10, color: t.textDim, marginTop: 4 }}>Will be slugified — lowercase letters, numbers, hyphens only.</div>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 11, fontWeight: 600, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 6 }}>Description (optional)</label>
-                      <input value={newAppDesc} onChange={e => setNewAppDesc(e.target.value)}
-                        placeholder="Short description"
-                        style={{ width: '100%', background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 6, padding: '8px 12px', color: t.text, fontSize: 13, boxSizing: 'border-box' }} />
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
-                      <input type="checkbox" checked={newAppAuth} onChange={e => setNewAppAuth(e.target.checked)}
-                        style={{ width: 15, height: 15, accentColor: '#22c55e', cursor: 'pointer' }} />
-                      <span style={{ fontSize: 13, color: t.text }}>Require DMS authentication to access this app</span>
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
-                      <input type="checkbox" checked={newAppShowHome} onChange={e => setNewAppShowHome(e.target.checked)}
-                        style={{ width: 15, height: 15, accentColor: '#c73000', cursor: 'pointer' }} />
-                      <span style={{ fontSize: 13, color: t.text }}>Show this app on the home page and navigation bar</span>
-                    </label>
-                    <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                      <button onClick={createDeployApp} disabled={deployCreating || !newAppName.trim()}
-                        style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: deployCreating ? .6 : 1 }}>
-                        {deployCreating ? 'Creating…' : 'Create Repo & Register'}
-                      </button>
-                      <button onClick={() => { setDeployShowNew(false); setNewAppAuth(false); setNewAppShowHome(false); }}
-                        style={{ padding: '8px 16px', background: 'transparent', color: t.textDim, border: `1px solid ${t.border}`, borderRadius: 6, fontSize: 13, cursor: 'pointer' }}>
-                        Cancel
-                      </button>
+                  <div className="ds-panel">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                      <div className="ds-field">
+                        <label>App Name</label>
+                        <input value={newAppName} onChange={e => setNewAppName(e.target.value)} placeholder="my-service" />
+                        <span style={{ fontSize: 10, color: t.textDim }}>Will be slugified — lowercase letters, numbers, hyphens only.</span>
+                      </div>
+                      <div className="ds-field">
+                        <label>Description (optional)</label>
+                        <input value={newAppDesc} onChange={e => setNewAppDesc(e.target.value)} placeholder="Short description" />
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                        <input type="checkbox" checked={newAppAuth} onChange={e => setNewAppAuth(e.target.checked)}
+                          style={{ width: 15, height: 15, accentColor: '#22c55e', cursor: 'pointer' }} />
+                        <span style={{ fontSize: 13, color: t.text }}>Require DMS authentication to access this app</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                        <input type="checkbox" checked={newAppShowHome} onChange={e => setNewAppShowHome(e.target.checked)}
+                          style={{ width: 15, height: 15, accentColor: '#c73000', cursor: 'pointer' }} />
+                        <span style={{ fontSize: 13, color: t.text }}>Show this app on the home page and navigation bar</span>
+                      </label>
+                      <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                        <button onClick={createDeployApp} disabled={deployCreating || !newAppName.trim()}
+                          style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: deployCreating ? .6 : 1 }}>
+                          {deployCreating ? 'Creating…' : 'Create Repo & Register'}
+                        </button>
+                        <button onClick={() => { setDeployShowNew(false); setNewAppAuth(false); setNewAppShowHome(false); }}
+                          style={{ padding: '8px 16px', background: 'transparent', color: t.textDim, border: `1px solid ${t.border}`, borderRadius: 6, fontSize: 13, cursor: 'pointer' }}>
+                          Cancel
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   {/* GSA-Platform-Suite.yaml example */}
-                  <div style={{ marginTop: 32, background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: 20 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 12 }}>GSA-Platform-Suite.yaml — add this to your repo root</div>
+                  <div className="ds-panel">
+                    <div className="ds-panel-title">GSA-Platform-Suite.yaml — add this to your repo root</div>
                     <pre style={{ margin: 0, fontSize: 12, color: t.text, lineHeight: 1.7, fontFamily: 'monospace' }}>{`app: my-service\nport: 8080\nreplicas: 1\nenv:\n  - name: ENV_VAR\n    value: some-value`}</pre>
-                    <div style={{ marginTop: 12, fontSize: 11, color: t.textDim, lineHeight: 1.6 }}>
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.borderLight}`, fontSize: 11, color: t.textDim, lineHeight: 1.6 }}>
                       After creating, push your project to:<br />
-                      <code style={{ color: t.text, fontSize: 11 }}>http://localhost/gitea/admin/&#123;name&#125;.git</code>
+                      <code style={{ color: t.text, fontSize: 11 }}>{giteaBaseUrl}/gsaadmin/&#123;name&#125;.git</code>
                     </div>
                   </div>
                 </div>
@@ -2881,10 +2922,10 @@ export default function App() {
                 return (
                   <div style={{ maxWidth: 700 }}>
                     {/* Header */}
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 28 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 22, fontWeight: 800, color: t.text }}>{app.name}</span>
+                          <span style={{ fontSize: 20, fontWeight: 800, color: t.text }}>{app.name}</span>
                           <span style={{ fontSize: 11, fontWeight: 700, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}55`, borderRadius: 20, padding: '3px 10px', textTransform: 'uppercase', letterSpacing: '.06em' }}>{app.status}</span>
                           {app.status === 'running' && (
                             <a href={app.url} target="_blank" rel="noreferrer"
@@ -2893,7 +2934,7 @@ export default function App() {
                             </a>
                           )}
                         </div>
-                        <div style={{ marginTop: 6, fontSize: 12, color: t.textDim }}>
+                        <div style={{ marginTop: 5, fontSize: 12, color: t.textDim }}>
                           Gitea: <a href={app.gitea_url} target="_blank" rel="noreferrer" style={{ color: t.accent, textDecoration: 'none' }}>{app.gitea_url}</a>
                         </div>
                       </div>
@@ -2905,14 +2946,14 @@ export default function App() {
 
                     {/* Error — only show when failed */}
                     {app.error && app.status === 'failed' && (
-                      <div style={{ background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 6, padding: '10px 14px', marginBottom: 20, fontSize: 12, color: '#ef4444' }}>
+                      <div style={{ background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 6, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#ef4444' }}>
                         {app.error}
                       </div>
                     )}
 
                     {/* Config */}
-                    <div style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: '16px 20px', marginBottom: 20 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 12 }}>Configuration</div>
+                    <div className="ds-panel">
+                      <div className="ds-panel-title">Configuration</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
                         {[['Port', app.port], ['Replicas', app.replicas], ['Namespace', app.namespace]].map(([k, v]) => (
                           <div key={k}>
@@ -2930,7 +2971,7 @@ export default function App() {
                     </div>
 
                     {/* Auth toggle */}
-                    <div style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: '14px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div className="ds-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Require DMS Authentication</div>
                         <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>Only users logged in with the bookmarklet can access this app</div>
@@ -2950,7 +2991,7 @@ export default function App() {
                     </div>
 
                     {/* Show in home toggle */}
-                    <div style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: '14px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div className="ds-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Show in Home & Navigation</div>
                         <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>Adds this app as a card on the home page and a tab in the nav bar</div>
@@ -2970,29 +3011,29 @@ export default function App() {
                     </div>
 
                     {/* Push instructions */}
-                    <div style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: '16px 20px', marginBottom: 20 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 10 }}>Push to deploy</div>
-                      <pre style={{ margin: 0, fontSize: 11, color: t.text, lineHeight: 1.8, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>{`git remote add origin ${app.clone_url || `http://localhost/gitea/admin/${app.repo}.git`}\ngit push -u origin main`}</pre>
+                    <div className="ds-panel">
+                      <div className="ds-panel-title">Push to deploy</div>
+                      <pre style={{ margin: 0, fontSize: 11, color: t.text, lineHeight: 1.8, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>{`git remote add origin ${app.clone_url || `${giteaBaseUrl}/gsaadmin/${app.repo}.git`}\ngit push -u origin main`}</pre>
                     </div>
 
                     {/* Pods */}
                     {deployPods.length > 0 && (
-                      <div style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: '16px 20px', marginBottom: 20 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 12 }}>Pods</div>
+                      <div className="ds-panel">
+                        <div className="ds-panel-title">Pods</div>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                           <thead>
                             <tr style={{ color: t.textDim }}>
-                              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 600 }}>Name</th>
-                              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 600 }}>Phase</th>
-                              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 600 }}>Ready</th>
+                              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: `1px solid ${t.borderLight}` }}>Name</th>
+                              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: `1px solid ${t.borderLight}` }}>Phase</th>
+                              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: `1px solid ${t.borderLight}` }}>Ready</th>
                             </tr>
                           </thead>
                           <tbody>
                             {deployPods.map(pod => (
                               <tr key={pod.name} style={{ borderTop: `1px solid ${t.borderLight}` }}>
-                                <td style={{ padding: '5px 8px', color: t.text, fontFamily: 'monospace', fontSize: 11 }}>{pod.name}</td>
-                                <td style={{ padding: '5px 8px', color: pod.phase === 'Running' ? '#22c55e' : t.textDim }}>{pod.phase}</td>
-                                <td style={{ padding: '5px 8px', color: pod.ready ? '#22c55e' : '#f59e0b' }}>{pod.ready ? '✓' : '…'}</td>
+                                <td style={{ padding: '6px 8px', color: t.text, fontFamily: 'monospace', fontSize: 11 }}>{pod.name}</td>
+                                <td style={{ padding: '6px 8px', color: pod.phase === 'Running' ? '#22c55e' : t.textDim }}>{pod.phase}</td>
+                                <td style={{ padding: '6px 8px', color: pod.ready ? '#22c55e' : '#f59e0b' }}>{pod.ready ? '✓' : '…'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -3002,9 +3043,9 @@ export default function App() {
 
                     {/* Build history */}
                     {deployBuilds.length > 0 && (
-                      <div style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 8, padding: '16px 20px' }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 12 }}>Build History</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div className="ds-panel">
+                        <div className="ds-panel-title">Build History</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                           {deployBuilds.map(b => {
                             const bc = b.status === 'success' ? '#22c55e' : b.status === 'failed' ? '#ef4444' : '#f59e0b';
                             return (
@@ -3026,16 +3067,16 @@ export default function App() {
               {/* ── Empty state ── */}
               {!selectedDeploy && !deployShowNew && (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16, color: t.textDim }}>
-                  <div style={{ fontSize: 48 }}>🚀</div>
+                  <div style={{ fontSize: 44 }}>🚀</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: t.text }}>DeployStack</div>
                   <div style={{ fontSize: 13, textAlign: 'center', maxWidth: 360, lineHeight: 1.7 }}>
                     Push projects to Gitea and DeployStack will auto-build and deploy them to Kubernetes.
                   </div>
                   <button onClick={() => setDeployShowNew(true)}
-                    style={{ marginTop: 8, padding: '10px 24px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    style={{ marginTop: 4, padding: '9px 22px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                     + Create your first app
                   </button>
-                  <a href="http://localhost/gitea" target="_blank" rel="noreferrer"
+                  <a href={giteaBaseUrl} target="_blank" rel="noreferrer"
                     style={{ fontSize: 12, color: t.accent, textDecoration: 'none' }}>
                     Or browse Gitea ↗
                   </a>
