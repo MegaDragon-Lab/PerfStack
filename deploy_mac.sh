@@ -242,6 +242,29 @@ echo ""
 # ── Apply Kubernetes manifests ────────────────────────────────────────────────
 log "Applying Kubernetes manifests..."
 kubectl apply -f k8s/namespace.yaml          >/dev/null
+
+# ── Shared secrets (persisted across cluster recreations) ─────────────────────
+# The cluster is destroyed on each deploy, but ~/.perfstack/data survives.
+# Load the existing key (preserves compatibility with deployed apps) or
+# generate a new one on first run.
+log "Setting up shared secrets..."
+SECRET_FILE="${HOME}/.perfstack/data/internal_api_key"
+if [ -f "$SECRET_FILE" ]; then
+  INTERNAL_API_KEY=$(cat "$SECRET_FILE")
+  ok "Loaded INTERNAL_API_KEY from ${SECRET_FILE}"
+else
+  INTERNAL_API_KEY=$(openssl rand -hex 32)
+  echo "$INTERNAL_API_KEY" > "$SECRET_FILE"
+  chmod 600 "$SECRET_FILE"
+  ok "Generated new INTERNAL_API_KEY → saved to ${SECRET_FILE}"
+fi
+kubectl create secret generic gsa-shared-secrets \
+  --namespace "$NS" \
+  --from-literal=INTERNAL_API_KEY="$INTERNAL_API_KEY" \
+  --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+ok "Secret 'gsa-shared-secrets' ready in namespace '${NS}'"
+echo ""
+
 kubectl apply -f k8s/rbac.yaml               >/dev/null
 kubectl apply -f k8s/backend-pvc.yaml        >/dev/null
 kubectl apply -f k8s/influxdb.yaml           >/dev/null
@@ -296,6 +319,14 @@ if [ -z "$APP_NAMES" ]; then
   dim "No apps registered — skipping"
 else
   for app_name in $APP_NAMES; do
+    APP_NS="app-${app_name}"
+    # Propagate shared secret into the app namespace before restarting
+    if kubectl get namespace "$APP_NS" >/dev/null 2>&1; then
+      kubectl create secret generic gsa-shared-secrets \
+        --namespace "$APP_NS" \
+        --from-literal=INTERNAL_API_KEY="$INTERNAL_API_KEY" \
+        --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1 || true
+    fi
     echo -ne "  ${DIM}restarting ${app_name}...${NC}"
     curl -sf -X POST "http://localhost/api/deploy/apps/${app_name}/restart" >/dev/null 2>&1 \
       && echo -e "\r  ${GREEN}✓${NC} ${app_name} restarted           " \
