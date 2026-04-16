@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in — GSA Platform Suite</title>
+  <link rel="icon" type="image/png" href="/assets/private/favicon_circle.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'IBM Plex Mono', monospace;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 48px 40px;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .logo {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #58a6ff;
+      margin-bottom: 32px;
+    }
+
+    .lock-icon {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 24px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+    }
+
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #e6edf3;
+      margin-bottom: 12px;
+    }
+
+    p {
+      font-size: 13px;
+      color: #8b949e;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .steps {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 16px 20px;
+      text-align: left;
+      margin-bottom: 32px;
+    }
+
+    .steps ol {
+      padding-left: 18px;
+      font-size: 12px;
+      color: #8b949e;
+      line-height: 2;
+    }
+
+    .steps ol li span {
+      color: #58a6ff;
+      font-weight: 500;
+    }
+
+    .btn {
+      display: inline-block;
+      background: #1f6feb;
+      color: #fff;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 10px 24px;
+      border-radius: 6px;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn:hover { background: #388bfd; }
+
+    .redirect-hint {
+      margin-top: 20px;
+      font-size: 11px;
+      color: #484f58;
+    }
+
+    .redirect-hint span {
+      color: #6e7681;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">GSA Platform Suite</div>
+
+    <div class="lock-icon">🔒</div>
+
+    <h1>Sign in required</h1>
+    <p>This app requires a valid GSA Platform Suite session.<br>
+       Please log in using the DMS bookmarklet.</p>
+
+    <div class="steps">
+      <ol>
+        <li>Go to <span>DMS Console</span></li>
+        <li>Run the <span>GSA Platform Suite bookmarklet</span></li>
+        <li>Return here — you will be let in automatically</li>
+      </ol>
+    </div>
+
+    <a class="btn" id="home-link" href="/">Go to GSA Platform Suite</a>
+
+    <div class="redirect-hint" id="redirect-hint" style="display:none">
+      After login you will be redirected to <span id="redirect-url"></span>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const rd = params.get('rd');
+    if (rd) {
+      const homeLink = document.getElementById('home-link');
+      // After visiting the home page the user will be logged in;
+      // encode the original destination so the home page can redirect back.
+      homeLink.href = '/?rd=' + encodeURIComponent(rd);
+
+      const hint = document.getElementById('redirect-hint');
+      const urlSpan = document.getElementById('redirect-url');
+      urlSpan.textContent = decodeURIComponent(rd);
+      hint.style.display = 'block';
+
+      // Auto-check every 2 s: if the user is now logged in, redirect them back.
+      const check = setInterval(async () => {
+        try {
+          const r = await fetch('/api/auth/me', { credentials: 'same-origin' });
+          if (r.ok) {
+            clearInterval(check);
+            location.replace(rd);
+          }
+        } catch (_) {}
+      }, 2000);
+    }
+  </script>
+</body>
+</html>

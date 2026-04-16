@@ -311,16 +311,28 @@ async def auth_logout(ps_session: str = Cookie(default=None)):
 
 @app.get("/deploy/check-auth", summary="Nginx auth_request endpoint — validates ps_session cookie")
 async def deploy_check_auth(request: Request):
-    """Returns 200 if the request has a valid session, 401 otherwise. Used by Nginx auth_request."""
+    """Returns 200 with user-identity headers if session valid, 401 otherwise.
+
+    On 200, nginx forwards X-User-Id / X-User-CN / X-User-Org to the upstream
+    app automatically via the auth-response-headers ingress annotation.
+    The app just reads these headers — no session logic needed.
+    """
     ps_session = request.cookies.get("ps_session")
     if not ps_session:
-        return JSONResponse(status_code=401, content={"detail": "Not authenticated"},
-                            headers={"X-Auth-Redirect": f"http://{PUBLIC_HOST}/"})
+        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
     sessions = _read_sessions()
     if ps_session not in sessions:
-        return JSONResponse(status_code=401, content={"detail": "Session expired"},
-                            headers={"X-Auth-Redirect": f"http://{PUBLIC_HOST}/"})
-    return JSONResponse(status_code=200, content={"status": "ok"})
+        return JSONResponse(status_code=401, content={"detail": "Session expired"})
+    s = sessions[ps_session]
+    return JSONResponse(
+        status_code=200,
+        content={"status": "ok"},
+        headers={
+            "X-User-Id":  s.get("uid", ""),
+            "X-User-CN":  s.get("cn", ""),
+            "X-User-Org": s.get("org", ""),
+        },
+    )
 
 
 # ── Custom scenarios (persisted to /data/custom_scenarios.json) ───────────────
@@ -1786,8 +1798,12 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
     if auth_required:
         ingress_annotations["nginx.ingress.kubernetes.io/auth-url"] = \
             "http://backend.perfstack.svc.cluster.local:8000/deploy/check-auth"
+        # Redirect unauthenticated users to the login page; nginx appends ?rd=<original-url>
         ingress_annotations["nginx.ingress.kubernetes.io/auth-signin"] = \
-            f"http://{PUBLIC_HOST}/"
+            f"http://{PUBLIC_HOST}/app-login"
+        # Forward user-identity headers from check-auth response to the upstream app
+        ingress_annotations["nginx.ingress.kubernetes.io/auth-response-headers"] = \
+            "X-User-Id,X-User-CN,X-User-Org"
     ingress_body = k8s_client.V1Ingress(
         metadata=k8s_client.V1ObjectMeta(
             name=app_name, namespace=ns,
