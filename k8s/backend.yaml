@@ -34,6 +34,8 @@ spec:
               value: "/data"
             - name: PUBLIC_HOST
               value: "localhost"
+            - name: INTERNAL_API_KEY
+              value: "change-me-use-a-strong-secret"
           volumeMounts:
             - name: backend-data
               mountPath: /data
