@@ -35,7 +35,10 @@ spec:
             - name: PUBLIC_HOST
               value: "localhost"
             - name: INTERNAL_API_KEY
-              value: "change-me-use-a-strong-secret"
+              valueFrom:
+                secretKeyRef:
+                  name: gsa-shared-secrets
+                  key: INTERNAL_API_KEY
           volumeMounts:
             - name: backend-data
               mountPath: /data

@@ -23,6 +23,12 @@ zscaler.pem
 *.pem
 *.crt
 
+# Kubernetes secrets with real values — never commit
+# Use k8s/secrets.example.yaml as reference and k8s/create-secrets.sh to apply
+k8s/secrets.yaml
+k8s/secrets.*.yaml
+!k8s/secrets.example.yaml
+
 # Private brand assets — never commit to GitHub
 frontend/public/assets/private/
 GSA_Logo.jpg

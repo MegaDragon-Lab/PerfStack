@@ -1656,6 +1656,58 @@ def _create_build_job(app_name: str, repo: str, commit: str, image_tag: str) -> 
     batch.create_namespaced_job(namespace="perfstack", body=job)
     return job_name
 
+# ── Resolve env vars from GSA-Platform-Suite.yaml ────────────────────────────
+def _resolve_env_vars(env_vars: list, target_ns: str) -> list:
+    """Convert env list from GSA-Platform-Suite.yaml into k8s V1EnvVar objects.
+
+    Supports two formats:
+      - Plain value:      { name: FOO, value: "bar" }
+      - Secret ref:       { name: FOO, valueFrom: { secretKeyRef: { namespace: src, name: secret, key: k } } }
+
+    For secretKeyRef with a source namespace different from target_ns, the secret
+    key is copied from the source namespace into target_ns so the pod can mount it.
+    """
+    core = _core_v1()
+    resolved = []
+    for e in env_vars:
+        name = e.get("name", "")
+        if not name:
+            continue
+        if "value" in e:
+            resolved.append(k8s_client.V1EnvVar(name=name, value=str(e["value"])))
+        elif "valueFrom" in e and "secretKeyRef" in e.get("valueFrom", {}):
+            ref         = e["valueFrom"]["secretKeyRef"]
+            src_ns      = ref.get("namespace", target_ns)
+            secret_name = ref["name"]
+            secret_key  = ref["key"]
+            # Copy secret to target namespace if it lives elsewhere
+            if src_ns != target_ns:
+                try:
+                    src = core.read_namespaced_secret(name=secret_name, namespace=src_ns)
+                    key_data = {secret_key: (src.data or {}).get(secret_key, "")}
+                    dst = k8s_client.V1Secret(
+                        metadata=k8s_client.V1ObjectMeta(name=secret_name, namespace=target_ns),
+                        data=key_data
+                    )
+                    try:
+                        core.create_namespaced_secret(namespace=target_ns, body=dst)
+                    except Exception:
+                        core.replace_namespaced_secret(name=secret_name, namespace=target_ns, body=dst)
+                    logger.info("Copied secret %s/%s → %s", src_ns, secret_name, target_ns)
+                except Exception as ex:
+                    logger.warning("Could not copy secret %s/%s → %s: %s", src_ns, secret_name, target_ns, ex)
+            resolved.append(k8s_client.V1EnvVar(
+                name=name,
+                value_from=k8s_client.V1EnvVarSource(
+                    secret_key_ref=k8s_client.V1SecretKeySelector(
+                        name=secret_name,
+                        key=secret_key,
+                        optional=False
+                    )
+                )
+            ))
+    return resolved
+
 # ── Deploy app to its own namespace ──────────────────────────────────────────
 def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list, auth_required: bool = False):
     """Create (or replace) Namespace + Deployment + Service + Ingress for an app."""
@@ -1676,7 +1728,7 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
         pass  # already exists
 
     # Deployment
-    env = [k8s_client.V1EnvVar(name=e["name"], value=str(e.get("value", ""))) for e in env_vars]
+    env = _resolve_env_vars(env_vars, ns)
     deploy_body = k8s_client.V1Deployment(
         metadata=k8s_client.V1ObjectMeta(name=app_name, namespace=ns),
         spec=k8s_client.V1DeploymentSpec(
