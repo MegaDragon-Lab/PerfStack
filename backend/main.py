@@ -328,9 +328,10 @@ async def deploy_check_auth(request: Request):
         status_code=200,
         content={"status": "ok"},
         headers={
-            "X-User-Id":  s.get("uid", ""),
-            "X-User-CN":  s.get("cn", ""),
-            "X-User-Org": s.get("org", ""),
+            "X-User-Id":    s.get("uid", ""),
+            "X-User-CN":    s.get("cn", ""),
+            "X-User-Org":   s.get("org", ""),
+            "X-User-Token": s.get("token", ""),
         },
     )
 
@@ -1803,7 +1804,7 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
             f"http://{PUBLIC_HOST}/app-login"
         # Forward user-identity headers from check-auth response to the upstream app
         ingress_annotations["nginx.ingress.kubernetes.io/auth-response-headers"] = \
-            "X-User-Id,X-User-CN,X-User-Org"
+            "X-User-Id,X-User-CN,X-User-Org,X-User-Token"
     ingress_body = k8s_client.V1Ingress(
         metadata=k8s_client.V1ObjectMeta(
             name=app_name, namespace=ns,
