@@ -281,6 +281,24 @@ async def auth_me(ps_session: str = Cookie(default=None)):
     return {"uid": s["uid"], "cn": s["cn"], "org": s["org"],
             "has_token": bool(s.get("token")), "token_exp": s.get("token_exp", "")}
 
+@app.get("/auth/internal-session", summary="Internal — return token for a ps_session (server-to-server only)")
+async def auth_internal_session(request: Request, ps_session: str = Cookie(default=None)):
+    """Called by internal services (e.g. dmp-cost-simulation) to retrieve the DMS token.
+    Requires X-Internal-Key header matching the INTERNAL_API_KEY env var."""
+    api_key = os.getenv("INTERNAL_API_KEY", "")
+    if not api_key or request.headers.get("X-Internal-Key") != api_key:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not ps_session:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    sessions = _read_sessions()
+    if ps_session not in sessions:
+        raise HTTPException(status_code=401, detail="Session not found or expired")
+    s = sessions[ps_session]
+    token = s.get("token", "")
+    if not token:
+        raise HTTPException(status_code=401, detail="No DMS token in session — please re-login with the bookmarklet")
+    return {"token": token, "uid": s.get("uid", ""), "cn": s.get("cn", ""), "token_exp": s.get("token_exp", "")}
+
 @app.get("/auth/logout", summary="Clear session and redirect to home")
 async def auth_logout(ps_session: str = Cookie(default=None)):
     if ps_session:
