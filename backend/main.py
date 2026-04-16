@@ -2017,6 +2017,29 @@ async def restart_deploy_app(name: str):
     if not app_entry:
         raise HTTPException(status_code=404, detail=f"App '{name}' not found")
 
+    # Always refresh env/port/replicas from the live GSA-Platform-Suite.yaml in
+    # Gitea so that cluster recreations pick up the correct config even when
+    # deployed_apps.json was written before this field was persisted.
+    repo_name = app_entry.get("repo", name)
+    try:
+        async with __import__("httpx").AsyncClient(timeout=10) as hx:
+            r = await hx.get(
+                f"{GITEA_INTERNAL_URL}/api/v1/repos/{GITEA_ADMIN_USER}/{repo_name}"
+                f"/raw/GSA-Platform-Suite.yaml",
+                auth=(GITEA_ADMIN_USER, GITEA_ADMIN_PASS),
+                params={"ref": "main"},
+            )
+            if r.status_code == 200:
+                raw = yaml.safe_load(r.text)
+                if isinstance(raw, dict):
+                    if "port"     in raw: app_entry["port"]     = int(raw["port"])
+                    if "replicas" in raw: app_entry["replicas"] = int(raw["replicas"])
+                    app_entry["env"] = raw.get("env", [])
+                    _write_apps(apps)
+                    logger.info("Refreshed config from GSA-Platform-Suite.yaml for %s", name)
+    except Exception as exc:
+        logger.warning("Could not refresh GSA-Platform-Suite.yaml for %s: %s", name, exc)
+
     image_tag     = f"{CLUSTER_REGISTRY}/apps/{name}:latest"
     port          = app_entry.get("port", 8080)
     replicas      = app_entry.get("replicas", 1)
