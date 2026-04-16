@@ -1858,7 +1858,10 @@ async def _watch_build_and_deploy(app_name: str, build_id: str, image_tag: str,
         now = _now_iso()
         _update_app_status(app_name, "running",
                            last_deployed=now,
-                           url=f"http://{PUBLIC_HOST}/apps/{app_name}")
+                           url=f"http://{PUBLIC_HOST}/apps/{app_name}",
+                           port=cfg.get("port", 8080),
+                           replicas=cfg.get("replicas", 1),
+                           env=cfg.get("env", []))
     except Exception as e:
         logger.error("Deploy failed for %s: %s", app_name, e)
         _update_app_status(app_name, "failed", error=str(e))
@@ -2162,11 +2165,12 @@ async def deploy_webhook(request: Request):
     except Exception as e:
         logger.warning("Could not read GSA-Platform-Suite.yaml: %s", e)
 
-    # Update port/replicas in app entry
+    # Update port/replicas/env in app entry (persisted so restarts use correct config)
     for a in apps:
         if a.get("name") == app_name:
             a["port"] = cfg["port"]
             a["replicas"] = cfg["replicas"]
+            a["env"] = cfg["env"]
             break
     _write_apps(apps)
 

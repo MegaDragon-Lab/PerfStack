@@ -158,7 +158,7 @@ log "Waiting for ingress controller pod..."
 kubectl wait --namespace ingress-nginx \
   --for=condition=ready pod \
   --selector=app.kubernetes.io/component=controller \
-  --timeout=120s >/dev/null 2>&1
+  --timeout=300s >/dev/null 2>&1
 ok "Ingress controller ready"
 echo ""
 
