@@ -2269,7 +2269,9 @@ export default function App() {
                       <div style={{ borderRight: `1px solid ${t.borderLight}` }}>
                         <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Request Payload</div>
                         <pre style={{ margin: 0, padding: "12px 14px", color: t.accent, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
-                          {JSON.stringify(pingResult.request_payload, null, 2)}
+                          {typeof pingResult.request_payload === "string"
+                            ? pingResult.request_payload
+                            : JSON.stringify(pingResult.request_payload, null, 2)}
                         </pre>
                       </div>
                       <div>
