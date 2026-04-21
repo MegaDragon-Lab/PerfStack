@@ -287,7 +287,8 @@ const DEFAULT_CUSTOM_STAGES = [
 
 const BLANK_FORM = {
   iam_url: "", client_id: "", client_secret: "", use_user_token: false,
-  target_url: "", method: "POST", headers: [], payload: '{\n  "key": "value"\n}',
+  target_url: "", method: "POST", headers: [], payload_type: "json",
+  payload: '{\n  "key": "value"\n}',
   vus: 10, duration: 60, sleep_interval: 0.1, parallelism: 4,
 };
 
@@ -595,11 +596,12 @@ export default function App() {
 
   const set = (key) => (val) => setForm((f) => ({ ...f, [key]: val }));
 
-  // Validate JSON as user types
+  // Validate JSON as user types (skip for XML/SOAP payloads)
   useEffect(() => {
+    if ((form.payload_type || "json") === "xml") { setJsonError(""); return; }
     try { JSON.parse(form.payload); setJsonError(""); }
     catch { setJsonError("Invalid JSON"); }
-  }, [form.payload]);
+  }, [form.payload, form.payload_type]);
 
   const runTest = async () => {
     if (jsonError) return;
@@ -613,7 +615,8 @@ export default function App() {
           ...form,
           headers: undefined,
           custom_headers: headersToDict(form.headers),
-          payload: JSON.parse(form.payload),
+          payload_type: form.payload_type || "json",
+          payload: (form.payload_type || "json") === "xml" ? form.payload : JSON.parse(form.payload),
           scenario,
           service_name: activeIdx !== null ? (services[activeIdx]?.name || "") : "",
           sleep_interval: form.sleep_interval ?? 0.1,
@@ -717,7 +720,8 @@ export default function App() {
           use_user_token: form.use_user_token,
           target_url: form.target_url,
           method: form.method || "POST",
-          payload: JSON.parse(form.payload),
+          payload_type: form.payload_type || "json",
+          payload: (form.payload_type || "json") === "xml" ? form.payload : JSON.parse(form.payload),
           custom_headers: headersToDict(form.headers),
         }),
       });
@@ -2143,14 +2147,37 @@ export default function App() {
                 {/* Body tab */}
                 {bodyTab === "body" && (
                   <>
-                    <div className="payload-toolbar">
-                      <button className="payload-btn" onClick={formatJson}>⌥ Format JSON</button>
-                      <button className="payload-btn" onClick={loadExamplePayload}>⊞ Load Example</button>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      {/* JSON / XML type pills */}
+                      <div style={{ display: 'flex', gap: 3 }}>
+                        {[["json", "JSON"], ["xml", "XML / SOAP"]].map(([pt, label]) => {
+                          const active = (form.payload_type || "json") === pt;
+                          return (
+                            <button key={pt} onClick={() => set("payload_type")(pt)} style={{
+                              padding: '3px 10px', fontSize: 10, borderRadius: 4, cursor: 'pointer',
+                              fontFamily: 'monospace', fontWeight: 700, letterSpacing: '.03em',
+                              background: active ? '#c73000' : 'transparent',
+                              color: active ? '#fff' : t.textMuted,
+                              border: `1px solid ${active ? '#c73000' : t.borderLight}`,
+                            }}>{label}</button>
+                          );
+                        })}
+                      </div>
+                      {/* JSON helpers — hidden for XML */}
+                      {(form.payload_type || "json") !== "xml" && (
+                        <div className="payload-toolbar" style={{ margin: 0 }}>
+                          <button className="payload-btn" onClick={formatJson}>⌥ Format JSON</button>
+                          <button className="payload-btn" onClick={loadExamplePayload}>⊞ Load Example</button>
+                        </div>
+                      )}
                     </div>
                     <textarea
                       value={form.payload}
                       onChange={(e) => set("payload")(e.target.value)}
-                      style={{ fontFamily: "monospace", minHeight: 100, maxHeight: 180, overflowY: "auto", resize: "vertical" }}
+                      placeholder={(form.payload_type || "json") === "xml"
+                        ? '<?xml version="1.0" encoding="utf-8"?>\n<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">\n  <soapenv:Body>\n    ...\n  </soapenv:Body>\n</soapenv:Envelope>'
+                        : ""}
+                      style={{ fontFamily: "monospace", minHeight: 100, maxHeight: 200, overflowY: "auto", resize: "vertical" }}
                     />
                     {jsonError && <span className="json-err">⚠ {jsonError}</span>}
                   </>

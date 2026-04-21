@@ -40,21 +40,26 @@ except k8s_config.ConfigException:
 def _render_k6_script(
     bearer_token: str,
     target_url: str,
-    payload: dict[str, Any],
+    payload: Any,
     vus: int,
     duration: int,
     stages: list[dict],
     sleep_interval: float = 0.1,
     method: str = "POST",
     custom_headers: dict[str, str] | None = None,
+    payload_type: str = "json",
 ) -> str:
     """Render the Jinja2 K6 template with runtime values."""
     template = _jinja_env.get_template(TEMPLATE_PATH.name)
+    # For XML: produce a JS string literal from the raw XML string
+    payload_xml_literal = json.dumps(payload if isinstance(payload, str) else "") if payload_type == "xml" else ""
     return template.render(
         bearer_token=bearer_token,
         target_url=target_url,
         method=method.upper(),
-        payload=json.dumps(payload),
+        payload=json.dumps(payload) if payload_type != "xml" else "{}",
+        payload_xml_literal=payload_xml_literal,
+        payload_type=payload_type,
         vus=vus,
         duration=duration,
         stages=json.dumps(stages),
@@ -88,7 +93,7 @@ async def create_k6_job(
     job_name: str,
     bearer_token: str,
     target_url: str,
-    payload: dict[str, Any],
+    payload: Any,
     vus: int,
     duration: int,
     stages: list[dict],
@@ -96,6 +101,7 @@ async def create_k6_job(
     parallelism: int = DEFAULT_PARALLELISM,
     method: str = "POST",
     custom_headers: dict[str, str] | None = None,
+    payload_type: str = "json",
 ) -> None:
     """Create a k6 Operator TestRun CR with configurable parallelism."""
     import asyncio, concurrent.futures
@@ -103,7 +109,7 @@ async def create_k6_job(
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _cleanup_completed_testruns)
 
-    k6_script = _render_k6_script(bearer_token, target_url, payload, vus, duration, stages, sleep_interval, method, custom_headers)
+    k6_script = _render_k6_script(bearer_token, target_url, payload, vus, duration, stages, sleep_interval, method, custom_headers, payload_type)
 
     # Store script in a ConfigMap
     core_v1  = client.CoreV1Api()

@@ -104,8 +104,9 @@ class TestConfig(BaseModel):
     use_user_token: bool = Field(default=False, description="Use the logged-in user's DMS session token instead of client credentials")
     target_url: str = Field(..., description="URL to load test")
     method: str = Field(default="POST", description="HTTP method (GET, POST, PUT, PATCH, DELETE, HEAD)")
+    payload_type: str = Field(default="json", description="Payload format: 'json' or 'xml'")
     custom_headers: dict[str, str] = Field(default={}, description="Additional request headers")
-    payload: Any = Field(default={}, description="JSON body for each request (object or array)")
+    payload: Any = Field(default={}, description="JSON body, array, or raw XML string")
     vus: int = Field(default=10, ge=1, le=2000, description="Virtual users")
     duration: int = Field(default=60, ge=10, le=3600, description="Test duration in seconds")
     scenario: str = Field(default="load", description="Test scenario type")
@@ -377,6 +378,7 @@ class ServiceEntry(BaseModel):
     target_url: str = ""
     method: str = "POST"
     headers: dict = {}
+    payload_type: str = "json"
     payload: str = '{}'
     vus: int = 10
     duration: int = 60
@@ -432,6 +434,7 @@ class PingConfig(BaseModel):
     use_user_token: bool = False
     target_url: str
     method: str = "POST"
+    payload_type: str = "json"
     payload: Any = {}
     custom_headers: dict[str, str] = {}
 
@@ -463,9 +466,10 @@ async def ping_test(config: PingConfig, ps_session: str = Cookie(default=None)):
         raise HTTPException(status_code=401, detail=f"IAM authentication failed: {e}")
 
     # Step 2 — single request
+    is_xml = config.payload_type == "xml"
     headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
+        "Content-Type": "text/xml; charset=utf-8" if is_xml else "application/json",
+        "Accept":       "text/xml"                if is_xml else "application/json",
     }
     # Merge user-defined headers (Authorization cannot be overridden)
     headers.update({k: v for k, v in config.custom_headers.items() if k.lower() != "authorization"})
@@ -474,8 +478,12 @@ async def ping_test(config: PingConfig, ps_session: str = Cookie(default=None)):
         async with httpx.AsyncClient(verify=False, timeout=30) as client:
             t0 = time.monotonic()
             method = config.method.upper()
-            body = None if method in ("GET", "HEAD") else config.payload
-            resp = await client.request(method, config.target_url, json=body, headers=headers)
+            if is_xml:
+                xml_str = config.payload if isinstance(config.payload, str) else ""
+                resp = await client.request(method, config.target_url, content=xml_str.encode("utf-8"), headers=headers)
+            else:
+                body = None if method in ("GET", "HEAD") else config.payload
+                resp = await client.request(method, config.target_url, json=body, headers=headers)
             elapsed_ms = round((time.monotonic() - t0) * 1000, 2)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Request failed: {e}")
@@ -555,6 +563,7 @@ async def run_test(config: TestConfig, ps_session: str = Cookie(default=None)):
             target_url=config.target_url,
             method=config.method,
             payload=config.payload,
+            payload_type=config.payload_type,
             vus=config.vus,
             duration=config.duration,
             stages=[s.model_dump() for s in config.stages],

@@ -20,15 +20,24 @@ export const options = {
 
 const TARGET_URL = '{{ target_url }}';
 const METHOD     = '{{ method }}';
+{% if payload_type == 'xml' %}
+const PAYLOAD    = {{ payload_xml_literal }};
+{% else %}
 const PAYLOAD    = JSON.stringify({{ payload }});
+{% endif %}
 const TOKEN      = '{{ bearer_token }}';
 
 const CUSTOM_HEADERS = {{ custom_headers }};
 
 const PARAMS = {
   headers: {
+    {% if payload_type == 'xml' %}
+    'Content-Type':  'text/xml; charset=utf-8',
+    'Accept':        'text/xml',
+    {% else %}
     'Content-Type':  'application/json',
     'Accept':        'application/json',
+    {% endif %}
     ...CUSTOM_HEADERS,
     'Authorization': `Bearer ${TOKEN}`,
   },
