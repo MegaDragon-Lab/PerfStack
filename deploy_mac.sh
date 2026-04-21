@@ -23,6 +23,22 @@ warn() { echo -e "${AMBER}!${NC} $1"; }
 err()  { echo -e "${RED}✗${NC} $1"; exit 1; }
 dim()  { echo -e "${DIM}  $1${NC}"; }
 
+# ── Safety wrapper — every kubectl call is pinned to the k3d context ──────────
+K3D_CTX="k3d-${CLUSTER_NAME}"
+kube() { kubectl --context "${K3D_CTX}" "$@"; }
+
+assert_k3d_context() {
+  local active
+  active=$(kubectl config current-context 2>/dev/null || echo "none")
+  if [[ "$active" != "${K3D_CTX}" ]]; then
+    warn "kubectl context is '$active' — but all commands are pinned to '${K3D_CTX}' via --context flag."
+  fi
+  # Hard-fail if the k3d cluster itself doesn't exist yet
+  if ! k3d cluster list 2>/dev/null | grep -q "^${CLUSTER_NAME}[[:space:]]"; then
+    err "k3d cluster '${CLUSTER_NAME}' not found. Cannot continue."
+  fi
+}
+
 # Push a Docker image to the local registry under the correct mirror path.
 # registry.k8s.io/foo/bar:tag  -> localhost:REG_PORT/foo/bar:tag
 # docker.io/grafana/foo:tag    -> localhost:REG_PORT/grafana/foo:tag
@@ -168,10 +184,10 @@ CURL_OPTS=(-s)
 [[ "$ZSCALER_FOUND" == "true" ]] && CURL_OPTS+=(--cacert "$ZSCALER_CERT")
 curl "${CURL_OPTS[@]}" "https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-${INGRESS_VERSION}/deploy/static/provider/cloud/deploy.yaml" \
   | sed 's|@sha256:[a-f0-9]*||g' \
-  | kubectl apply -f - >/dev/null 2>&1
+  | kube apply -f - >/dev/null 2>&1
 
 log "Waiting for ingress controller pod..."
-kubectl wait --namespace ingress-nginx \
+kube wait --namespace ingress-nginx \
   --for=condition=ready pod \
   --selector=app.kubernetes.io/component=controller \
   --timeout=300s >/dev/null 2>&1
@@ -181,9 +197,9 @@ echo ""
 # ── Install k6 Operator ───────────────────────────────────────────────────────
 log "Installing k6 Operator..."
 curl "${CURL_OPTS[@]}" "https://raw.githubusercontent.com/grafana/k6-operator/main/bundle.yaml" \
-  | kubectl apply -f - >/dev/null 2>&1
+  | kube apply -f - >/dev/null 2>&1
 log "Waiting for k6 Operator to be ready..."
-kubectl wait --namespace k6-operator-system \
+kube wait --namespace k6-operator-system \
   --for=condition=available deployment/k6-operator-controller-manager \
   --timeout=120s >/dev/null 2>&1 || true
 ok "k6 Operator ready"
@@ -239,9 +255,15 @@ docker push localhost:${REG_PORT}/library/perfstack-k6:latest
 ok "k6 image pushed to registry"
 echo ""
 
+# ── Safety gate: confirm k3d cluster is reachable before any apply ────────────
+log "Verifying k3d cluster is reachable before applying manifests..."
+assert_k3d_context
+ok "k3d cluster '${CLUSTER_NAME}' reachable — context pinned to '${K3D_CTX}'"
+echo ""
+
 # ── Apply Kubernetes manifests ────────────────────────────────────────────────
 log "Applying Kubernetes manifests..."
-kubectl apply -f k8s/namespace.yaml          >/dev/null
+kube apply -f k8s/namespace.yaml          >/dev/null
 
 # ── Shared secrets (persisted across cluster recreations) ─────────────────────
 # The cluster is destroyed on each deploy, but ~/.perfstack/data survives.
@@ -258,24 +280,24 @@ else
   chmod 600 "$SECRET_FILE"
   ok "Generated new INTERNAL_API_KEY → saved to ${SECRET_FILE}"
 fi
-kubectl create secret generic gsa-shared-secrets \
+kube create secret generic gsa-shared-secrets \
   --namespace "$NS" \
   --from-literal=INTERNAL_API_KEY="$INTERNAL_API_KEY" \
-  --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  --dry-run=client -o yaml | kube apply -f - >/dev/null
 ok "Secret 'gsa-shared-secrets' ready in namespace '${NS}'"
 echo ""
 
-kubectl apply -f k8s/rbac.yaml               >/dev/null
-kubectl apply -f k8s/backend-pvc.yaml        >/dev/null
-kubectl apply -f k8s/influxdb.yaml           >/dev/null
-kubectl apply -f k8s/grafana-config.yaml     >/dev/null
-kubectl apply -f k8s/grafana.yaml            >/dev/null
-kubectl apply -f k8s/backend.yaml            >/dev/null
-kubectl apply -f k8s/frontend.yaml           >/dev/null
-kubectl apply -f k8s/gitea-namespace.yaml    >/dev/null
-kubectl apply -f k8s/gitea-pvc.yaml          >/dev/null
-kubectl apply -f k8s/gitea.yaml              >/dev/null
-kubectl apply -f k8s/ingress.yaml            >/dev/null
+kube apply -f k8s/rbac.yaml               >/dev/null
+kube apply -f k8s/backend-pvc.yaml        >/dev/null
+kube apply -f k8s/influxdb.yaml           >/dev/null
+kube apply -f k8s/grafana-config.yaml     >/dev/null
+kube apply -f k8s/grafana.yaml            >/dev/null
+kube apply -f k8s/backend.yaml            >/dev/null
+kube apply -f k8s/frontend.yaml           >/dev/null
+kube apply -f k8s/gitea-namespace.yaml    >/dev/null
+kube apply -f k8s/gitea-pvc.yaml          >/dev/null
+kube apply -f k8s/gitea.yaml              >/dev/null
+kube apply -f k8s/ingress.yaml            >/dev/null
 ok "All manifests applied"
 echo ""
 
@@ -283,7 +305,7 @@ echo ""
 log "Restarting deployments to apply latest images and config..."
 # grafana restarts in case grafana-config.yaml changed (datasource/dashboards)
 for deploy in grafana grafana-renderer backend frontend; do
-  kubectl rollout restart deployment/$deploy -n $NS >/dev/null 2>&1 || true
+  kube rollout restart deployment/$deploy -n $NS >/dev/null 2>&1 || true
 done
 ok "Rollout restarts triggered"
 echo ""
@@ -292,17 +314,17 @@ echo ""
 log "Waiting for deployments to be ready (timeout: 3 min)..."
 for deploy in influxdb grafana grafana-renderer backend frontend; do
   echo -ne "  ${DIM}waiting for ${deploy}...${NC}"
-  kubectl rollout status deployment/$deploy -n $NS --timeout=3m >/dev/null 2>&1
+  kube rollout status deployment/$deploy -n $NS --timeout=3m >/dev/null 2>&1
   echo -e "\r  ${GREEN}✓${NC} ${deploy} is ready           "
 done
 echo -ne "  ${DIM}waiting for gitea...${NC}"
-kubectl rollout status deployment/gitea -n gitea --timeout=5m >/dev/null 2>&1
+kube rollout status deployment/gitea -n gitea --timeout=5m >/dev/null 2>&1
 echo -e "\r  ${GREEN}✓${NC} gitea is ready           "
 echo ""
 
 # ── Bootstrap Gitea admin user (idempotent) ───────────────────────────────────
 log "Bootstrapping Gitea admin user..."
-kubectl exec -n gitea deployment/gitea -- \
+kube exec -n gitea deployment/gitea -- \
   su-exec git gitea admin user create --admin \
   --username gsaadmin --password admin \
   --email admin@gsa.gov \
@@ -321,11 +343,11 @@ else
   for app_name in $APP_NAMES; do
     APP_NS="app-${app_name}"
     # Propagate shared secret into the app namespace before restarting
-    if kubectl get namespace "$APP_NS" >/dev/null 2>&1; then
-      kubectl create secret generic gsa-shared-secrets \
+    if kube get namespace "$APP_NS" >/dev/null 2>&1; then
+      kube create secret generic gsa-shared-secrets \
         --namespace "$APP_NS" \
         --from-literal=INTERNAL_API_KEY="$INTERNAL_API_KEY" \
-        --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1 || true
+        --dry-run=client -o yaml | kube apply -f - >/dev/null 2>&1 || true
     fi
     echo -ne "  ${DIM}restarting ${app_name}...${NC}"
     curl -sf -X POST "http://localhost/api/deploy/apps/${app_name}/restart" >/dev/null 2>&1 \

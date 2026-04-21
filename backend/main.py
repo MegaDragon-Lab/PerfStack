@@ -103,7 +103,9 @@ class TestConfig(BaseModel):
     client_secret: str = Field(default="", description="OAuth2 client secret")
     use_user_token: bool = Field(default=False, description="Use the logged-in user's DMS session token instead of client credentials")
     target_url: str = Field(..., description="URL to load test")
-    payload: dict[str, Any] = Field(default={}, description="JSON body for each request")
+    method: str = Field(default="POST", description="HTTP method (GET, POST, PUT, PATCH, DELETE, HEAD)")
+    custom_headers: dict[str, str] = Field(default={}, description="Additional request headers")
+    payload: Any = Field(default={}, description="JSON body for each request (object or array)")
     vus: int = Field(default=10, ge=1, le=2000, description="Virtual users")
     duration: int = Field(default=60, ge=10, le=3600, description="Test duration in seconds")
     scenario: str = Field(default="load", description="Test scenario type")
@@ -373,6 +375,8 @@ class ServiceEntry(BaseModel):
     client_id: str = ""
     client_secret: str = ""
     target_url: str = ""
+    method: str = "POST"
+    headers: dict = {}
     payload: str = '{}'
     vus: int = 10
     duration: int = 60
@@ -427,7 +431,9 @@ class PingConfig(BaseModel):
     client_secret: str = ""
     use_user_token: bool = False
     target_url: str
-    payload: dict[str, Any] = {}
+    method: str = "POST"
+    payload: Any = {}
+    custom_headers: dict[str, str] = {}
 
 
 @app.post("/ping-test", summary="Single dry-run request to validate config")
@@ -458,14 +464,18 @@ async def ping_test(config: PingConfig, ps_session: str = Cookie(default=None)):
 
     # Step 2 — single request
     headers = {
-        "Authorization": f"Bearer {bearer_token}",
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
+    # Merge user-defined headers (Authorization cannot be overridden)
+    headers.update({k: v for k, v in config.custom_headers.items() if k.lower() != "authorization"})
+    headers["Authorization"] = f"Bearer {bearer_token}"
     try:
         async with httpx.AsyncClient(verify=False, timeout=30) as client:
             t0 = time.monotonic()
-            resp = await client.post(config.target_url, json=config.payload, headers=headers)
+            method = config.method.upper()
+            body = None if method in ("GET", "HEAD") else config.payload
+            resp = await client.request(method, config.target_url, json=body, headers=headers)
             elapsed_ms = round((time.monotonic() - t0) * 1000, 2)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Request failed: {e}")
@@ -543,12 +553,14 @@ async def run_test(config: TestConfig, ps_session: str = Cookie(default=None)):
             job_name=job_name,
             bearer_token=bearer_token,
             target_url=config.target_url,
+            method=config.method,
             payload=config.payload,
             vus=config.vus,
             duration=config.duration,
             stages=[s.model_dump() for s in config.stages],
             sleep_interval=config.sleep_interval,
             parallelism=config.parallelism,
+            custom_headers=config.custom_headers,
         )
     except Exception as e:
         logger.error("Failed to create K6 job: %s", e)

@@ -19,19 +19,24 @@ export const options = {
 };
 
 const TARGET_URL = '{{ target_url }}';
+const METHOD     = '{{ method }}';
 const PAYLOAD    = JSON.stringify({{ payload }});
 const TOKEN      = '{{ bearer_token }}';
 
+const CUSTOM_HEADERS = {{ custom_headers }};
+
 const PARAMS = {
   headers: {
-    'Authorization': `Bearer ${TOKEN}`,
     'Content-Type':  'application/json',
     'Accept':        'application/json',
+    ...CUSTOM_HEADERS,
+    'Authorization': `Bearer ${TOKEN}`,
   },
 };
 
 export default function () {
-  const res = http.post(TARGET_URL, PAYLOAD, PARAMS);
+  const body = (METHOD === 'GET' || METHOD === 'HEAD') ? null : PAYLOAD;
+  const res = http.request(METHOD, TARGET_URL, body, PARAMS);
 
   const success = check(res, {
     'status is 2xx':       (r) => r.status >= 200 && r.status < 300,

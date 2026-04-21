@@ -45,17 +45,21 @@ def _render_k6_script(
     duration: int,
     stages: list[dict],
     sleep_interval: float = 0.1,
+    method: str = "POST",
+    custom_headers: dict[str, str] | None = None,
 ) -> str:
     """Render the Jinja2 K6 template with runtime values."""
     template = _jinja_env.get_template(TEMPLATE_PATH.name)
     return template.render(
         bearer_token=bearer_token,
         target_url=target_url,
+        method=method.upper(),
         payload=json.dumps(payload),
         vus=vus,
         duration=duration,
         stages=json.dumps(stages),
         sleep_interval=sleep_interval,
+        custom_headers=json.dumps(custom_headers or {}),
     )
 
 
@@ -90,6 +94,8 @@ async def create_k6_job(
     stages: list[dict],
     sleep_interval: float = 0.1,
     parallelism: int = DEFAULT_PARALLELISM,
+    method: str = "POST",
+    custom_headers: dict[str, str] | None = None,
 ) -> None:
     """Create a k6 Operator TestRun CR with configurable parallelism."""
     import asyncio, concurrent.futures
@@ -97,7 +103,7 @@ async def create_k6_job(
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _cleanup_completed_testruns)
 
-    k6_script = _render_k6_script(bearer_token, target_url, payload, vus, duration, stages, sleep_interval)
+    k6_script = _render_k6_script(bearer_token, target_url, payload, vus, duration, stages, sleep_interval, method, custom_headers)
 
     # Store script in a ConfigMap
     core_v1  = client.CoreV1Api()

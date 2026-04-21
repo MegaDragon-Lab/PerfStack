@@ -160,7 +160,7 @@ function SettingsMenu({ theme, onSelect, t }) {
               <div style={{ color: t.text, fontWeight: 700, fontSize: '0.92rem', letterSpacing: '0.02em', lineHeight: 1.2 }}>GSA Platform Suite</div>
             </div>
             <div style={{ background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: '0.63rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0 }}>
-              v3.1.0
+              v3.2.0
             </div>
           </div>
 
@@ -285,6 +285,28 @@ const DEFAULT_CUSTOM_STAGES = [
   { target: 0,  durValue: 5,  durUnit: "s" },
 ];
 
+const BLANK_FORM = {
+  iam_url: "", client_id: "", client_secret: "", use_user_token: false,
+  target_url: "", method: "POST", headers: [], payload: '{\n  "key": "value"\n}',
+  vus: 10, duration: 60, sleep_interval: 0.1, parallelism: 4,
+};
+
+const headersToDict = (arr) =>
+  Object.fromEntries((arr || []).filter(r => r.enabled && r.key.trim()).map(r => [r.key.trim(), r.value]));
+
+const fmtDetail = (detail) =>
+  Array.isArray(detail) ? detail.map(e => e.msg || JSON.stringify(e)).join("; ") : (detail || "Unknown error");
+
+const METHOD_COLORS = {
+  GET:     "#10b981",
+  POST:    "#f59e0b",
+  PUT:     "#3b82f6",
+  PATCH:   "#a78bfa",
+  DELETE:  "#ef4444",
+  HEAD:    "#8b5cf6",
+  OPTIONS: "#64748b",
+};
+
 // ── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -342,18 +364,7 @@ export default function App() {
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, []);
 
-  const [form, setForm] = useState({
-    iam_url:         "",
-    client_id:       "",
-    client_secret:   "",
-    use_user_token:  false,
-    target_url:      "",
-    payload:         '{\n  "key": "value"\n}',
-    vus:             10,
-    duration:        60,
-    sleep_interval:  0.1,
-    parallelism:     4,
-  });
+  const [form, setForm] = useState(BLANK_FORM);
 
   const [status,      setStatus]      = useState(() => { const s = localStorage.getItem("ps_status"); return (s === "running" || s === "pending") ? s : "idle"; });
   const [jobName,     setJobName]     = useState(() => localStorage.getItem("ps_job") || null);
@@ -433,12 +444,24 @@ export default function App() {
   const [closedFolders, setClosedFolders] = useState(new Set());
   const [activeIdx,     setActiveIdx]     = useState(null);
 
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        if (activeIdx !== null) updateService();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [activeIdx, form, saveFolder, services]);
+
   const toggleFolder = (key) => setClosedFolders(prev => {
     const next = new Set(prev);
     if (next.has(key)) next.delete(key); else next.add(key);
     return next;
   });
-  const importRef    = useRef(null);
+  const importRef        = useRef(null);
+  const monitorImportRef = useRef(null);
   const pollingRef    = useRef(null);
   const podPollingRef = useRef(null);
   const summaryHideRef = useRef(null);
@@ -456,11 +479,11 @@ export default function App() {
   const saveService = async () => {
     const name = saveName.trim();
     if (!name) return;
-    const { use_user_token: _uut, ...formToSave } = form;
+    const { use_user_token: _uut, headers: _h, ...formToSave } = form;
     await fetch(`${API_BASE}/api/services`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, folder: saveFolder.trim(), ...formToSave }),
+      body: JSON.stringify({ name, folder: saveFolder.trim(), ...formToSave, headers: headersToDict(form.headers) }),
     });
     const updated = await fetch(`${API_BASE}/api/services`).then(r => r.json());
     setServices(updated);
@@ -469,10 +492,12 @@ export default function App() {
   };
 
   const loadService = (idx) => {
-    const { name, folder, ...config } = services[idx];
-    setForm({ ...config, use_user_token: false });
+    const { name, folder, headers: headersDict, ...config } = services[idx];
+    const headersArr = Object.entries(headersDict || {}).map(([key, value]) => ({ key, value, enabled: true }));
+    setForm({ ...config, headers: headersArr, use_user_token: false });
     setActiveIdx(idx);
     setSaveFolder(folder || "");
+    setSaveName(name);
   };
 
   const deleteService = async (idx) => {
@@ -481,6 +506,32 @@ export default function App() {
     const updated = await fetch(`${API_BASE}/api/services`).then(r => r.json());
     setServices(updated);
     if (activeIdx === idx) setActiveIdx(null);
+  };
+
+  const updateService = async () => {
+    if (activeIdx === null) return;
+    const originalName = services[activeIdx].name;
+    const newName = saveName.trim();
+    if (!newName) return;
+    const { use_user_token: _uut, headers: _h, ...formToSave } = form;
+    await fetch(`${API_BASE}/api/services`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newName, folder: saveFolder.trim(), ...formToSave, headers: headersToDict(form.headers) }),
+    });
+    if (newName !== originalName) {
+      await fetch(`${API_BASE}/api/services/${encodeURIComponent(originalName)}`, { method: "DELETE" });
+    }
+    const updated = await fetch(`${API_BASE}/api/services`).then(r => r.json());
+    setServices(updated);
+    setActiveIdx(updated.findIndex(s => s.name === newName));
+  };
+
+  const newService = () => {
+    setActiveIdx(null);
+    setSaveName("");
+    setSaveFolder("");
+    setForm(BLANK_FORM);
   };
 
   const exportServices = () => {
@@ -513,6 +564,35 @@ export default function App() {
     e.target.value = "";
   };
 
+  const exportMonitors = () => {
+    const blob = new Blob([JSON.stringify(monitors, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "perfstack-monitors.json";
+    a.click();
+  };
+
+  const importMonitors = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (Array.isArray(data)) {
+          await Promise.all(data.map(m => fetch(`${API_BASE}/api/monitors`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(m),
+          })));
+          refreshMonitors();
+        }
+      } catch { /* invalid file */ }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
   const set = (key) => (val) => setForm((f) => ({ ...f, [key]: val }));
 
   // Validate JSON as user types
@@ -531,6 +611,8 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          headers: undefined,
+          custom_headers: headersToDict(form.headers),
           payload: JSON.parse(form.payload),
           scenario,
           service_name: activeIdx !== null ? (services[activeIdx]?.name || "") : "",
@@ -542,7 +624,7 @@ export default function App() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Unknown error");
+      if (!res.ok) throw new Error(fmtDetail(data.detail));
       setJobName(data.job_name);
       setStatus(data.status);
       setMessage(data.message);
@@ -618,6 +700,7 @@ export default function App() {
 
   const [pingResult, setPingResult] = useState(null);
   const [pinging,    setPinging]    = useState(false);
+  const [bodyTab,    setBodyTab]    = useState("body");
 
   const runPingTest = async () => {
     if (jsonError) return;
@@ -633,11 +716,13 @@ export default function App() {
           client_secret: form.client_secret,
           use_user_token: form.use_user_token,
           target_url: form.target_url,
+          method: form.method || "POST",
           payload: JSON.parse(form.payload),
+          custom_headers: headersToDict(form.headers),
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Unknown error");
+      if (!res.ok) throw new Error(fmtDetail(data.detail));
       setPingResult({ ok: true, ...data });
     } catch (e) {
       setPingResult({ ok: false, error: e.message });
@@ -653,7 +738,7 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/reset-influxdb`, { method: "POST" });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Unknown error");
+      if (!res.ok) throw new Error(fmtDetail(data.detail));
       alert("InfluxDB reset — all previous data cleared.");
     } catch (e) {
       alert(`Reset failed: ${e.message}`);
@@ -1045,7 +1130,7 @@ export default function App() {
           background: ${t.bgPanel}; border-left-color: #c73000;
         }
         .svc-item-body {
-          flex: 1; padding: 9px 12px 9px 10px; min-width: 0;
+          flex: 1; padding: 5px 12px 5px 10px; min-width: 0;
         }
         .svc-item-name {
           font-size: 11px; font-family: monospace; color: ${t.text};
@@ -1122,6 +1207,32 @@ export default function App() {
         }
         .save-btn:hover { background: rgba(46,160,67,.22); }
 
+        .update-btn {
+          background: rgba(199,48,0,.12); border: 1px solid ${t.accent}; color: ${t.accent};
+          padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 700;
+          font-family: monospace; cursor: pointer; white-space: nowrap; transition: background .15s;
+          flex-shrink: 0;
+        }
+        .update-btn:hover { background: rgba(199,48,0,.24); }
+        .edit-mode-hdr {
+          display: flex; align-items: center; gap: 6px;
+          padding: 6px 8px; background: ${t.accent}15;
+          border: 1px solid ${t.accent}35; border-radius: 5px;
+        }
+        .new-svc-btn {
+          background: none; border: 1px solid ${t.borderLight}; color: ${t.textDim};
+          padding: 3px 7px; border-radius: 4px; font-size: 10px; cursor: pointer;
+          transition: all .15s; white-space: nowrap; flex-shrink: 0;
+        }
+        .new-svc-btn:hover { border-color: ${t.textDim}; color: ${t.text}; }
+        .saveas-divider {
+          display: flex; align-items: center; gap: 6px; margin-top: 2px;
+          font-size: 9px; color: ${t.textDim}; text-transform: uppercase; letter-spacing: .06em;
+        }
+        .saveas-divider::before, .saveas-divider::after {
+          content: ''; flex: 1; height: 1px; background: ${t.borderLight};
+        }
+
         /* ── Main content ── */
         main {
           flex: 1; overflow-y: auto; padding: 24px 28px;
@@ -1158,6 +1269,51 @@ export default function App() {
           font-family: monospace; cursor: pointer; transition: border-color .15s, color .15s;
         }
         .payload-btn:hover { border-color: ${t.accent}; color: ${t.accent}; }
+
+        /* Body / Headers tabs */
+        .body-tabs { display: flex; border-bottom: 1px solid ${t.border}; margin-bottom: 8px; gap: 0; }
+        .body-tab {
+          background: none; border: none; border-bottom: 2px solid transparent;
+          padding: 5px 13px; font-size: 11px; cursor: pointer; color: ${t.textMuted};
+          margin-bottom: -1px; font-family: inherit; transition: color .15s;
+        }
+        .body-tab:hover { color: ${t.text}; }
+        .body-tab.active { color: ${t.accent}; border-bottom-color: ${t.accent}; font-weight: 600; }
+        .header-badge {
+          background: ${t.accent}; color: #fff; font-size: 9px;
+          padding: 1px 5px; border-radius: 10px; margin-left: 4px; font-weight: 700;
+        }
+        /* Headers table */
+        .headers-table { width: 100%; }
+        .headers-thead {
+          display: grid; grid-template-columns: 18px 1fr 1fr 22px; gap: 6px;
+          padding: 3px 2px 5px; border-bottom: 1px solid ${t.borderLight}; margin-bottom: 4px;
+        }
+        .headers-thead span {
+          font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: ${t.textDim};
+        }
+        .headers-row {
+          display: grid; grid-template-columns: 18px 1fr 1fr 22px; gap: 6px;
+          align-items: center; margin-bottom: 4px;
+        }
+        .headers-row input[type=text] {
+          background: ${t.bgInput}; border: 1px solid ${t.inputBorder}; border-radius: 4px;
+          padding: 5px 8px; color: ${t.text}; font-size: 11px;
+          font-family: 'IBM Plex Mono', monospace; outline: none; width: 100%; box-sizing: border-box;
+        }
+        .headers-row input[type=text]:focus { border-color: ${t.inputFocus}; }
+        .headers-row input[type=text]:disabled { opacity: 0.35; }
+        .del-header-btn {
+          background: none; border: none; color: ${t.textDim}; cursor: pointer;
+          font-size: 13px; padding: 0; text-align: center; line-height: 1;
+        }
+        .del-header-btn:hover { color: ${t.danger}; }
+        .add-header-btn {
+          background: none; border: 1px dashed ${t.borderLight}; color: ${t.textMuted};
+          padding: 5px; font-size: 11px; cursor: pointer; border-radius: 4px;
+          width: 100%; margin-top: 4px; text-align: center; font-family: inherit;
+        }
+        .add-header-btn:hover { border-color: ${t.accent}; color: ${t.accent}; }
 
         .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
         .field:last-child { margin-bottom: 0; }
@@ -1621,7 +1777,7 @@ export default function App() {
                     <div style={{ fontSize: 28, fontWeight: 800, color: t.text, letterSpacing: '.01em', lineHeight: 1.1 }}>GSA Platform Suite</div>
                     <div style={{ fontSize: 13, color: t.textDim, marginTop: 4, letterSpacing: '.04em' }}>Internal Tools &amp; Platform Suite</div>
                   </div>
-                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.1.0</span>
+                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.2.0</span>
                 </div>
                 <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.7, maxWidth: 620 }}>
                   An internal platform to build, deploy, and operate tools and applications — from load testing and API monitoring to any custom service your team needs.
@@ -1691,6 +1847,7 @@ export default function App() {
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textDim, marginBottom: 16 }}>Release History</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderLeft: `2px solid ${t.borderLight}`, paddingLeft: 20 }}>
                   {[
+                    { version: 'v3.2.0', date: '2026-04-21', notes: ['Custom request headers — Body / Headers tab in Test Configuration, Postman-style key/value table with per-row enable/disable, saved per service', 'HTTP method selector (GET / POST / PUT / PATCH / DELETE / HEAD) on the URL field with color-coded labels', 'Service rename — dedicated "00 Service" panel for editing name and folder without retyping; ⌘S / Ctrl+S saves', 'Sidebar improvements — alphabetical sorting within folders and flat list, reduced item spacing', 'MonitorStack import from file support (mirrors PerfStack)', 'JSON array payloads now accepted (APIs that receive a top-level array no longer return 422)', 'API error messages improved — Pydantic validation details are now human-readable'] },
                     { version: 'v3.1.0', date: '2026-04-14', notes: ['DeployStack: pod restart fix — force rolling update after build so new :latest image is always pulled', 'PUBLIC_HOST env var — all app/Gitea URLs now reflect the actual host (EC2 public hostname or localhost)', 'deploy_ec2 + deploy_mac: auto-detect public hostname via EC2 metadata service', 'deploy_ec2 + deploy_mac: auto-restart all registered DeployStack apps after a full redeploy (no rebuild needed — images survive in registry)', 'New POST /deploy/apps/{name}/restart endpoint — redeploy using existing image without triggering a Docker build'] },
                     { version: 'v3.0.0', date: '2026-04-13', notes: ['DeployStack — new module: push to integrated Gitea, auto-build Docker image, auto-deploy to dedicated k3d namespace', 'Gitea integrated into platform at /gitea (admin / admin)', 'Apps live at localhost/apps/{name} with their own Kubernetes namespace', 'Build pipeline via Docker socket + docker:27-cli Job', 'deploy_mac + deploy_ec2 updated: Gitea + docker:27-cli pre-pulled, docker socket mounted, Gitea admin bootstrapped'] },
                     { version: 'v2.5.0', date: '2026-04-10', notes: ['Report header redesigned — large logo, job ID, COMPLETED badge, Target Information section', 'Dark & light reports both cached in PVC with theme-matched Grafana panels', 'deploy_ec2 aligned with deploy_mac — pre-pull + mirror all images to local registry', 'Backend dependencies updated to latest stable versions'] },
@@ -1701,9 +1858,9 @@ export default function App() {
                     { version: 'v2.0.0', date: '2026-04-07', notes: ['Multi-service sidebar with folder grouping', 'Custom scenario builder', 'IAM OAuth2 token integration'] },
                   ].map(r => (
                     <div key={r.version} style={{ marginBottom: 24, position: 'relative' }}>
-                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v3.1.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
+                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v3.2.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v3.1.0' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v3.2.0' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
                         <span style={{ fontSize: 11, color: t.textDim, fontFamily: 'monospace' }}>{r.date}</span>
                       </div>
                       <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
@@ -1759,7 +1916,7 @@ export default function App() {
                       </div>
                       {isOpen && (
                         <div className="folder-children">
-                          {items.map(({ svc: s, realIdx }) => (
+                          {[...items].sort((a, b) => a.svc.name.localeCompare(b.svc.name)).map(({ svc: s, realIdx }) => (
                             <div
                               key={realIdx}
                               className={`svc-item${activeIdx === realIdx ? " active" : ""}`}
@@ -1782,7 +1939,7 @@ export default function App() {
                   );
                 })
               ) : (
-                filteredServices.map((s) => {
+                [...filteredServices].sort((a, b) => a.name.localeCompare(b.name)).map((s) => {
                   const realIdx = services.indexOf(s);
                   return (
                     <div
@@ -1805,31 +1962,18 @@ export default function App() {
               )}
             </div>
 
-            <div className="sidebar-footer">
-              <datalist id="ps-folders">
-                {existingFolders.map(f => <option key={f} value={f} />)}
-              </datalist>
-              <div className="save-row">
-                <input
-                  className="save-input"
-                  placeholder="📁 Folder (optional)…"
-                  value={saveFolder}
-                  onChange={e => setSaveFolder(e.target.value)}
-                  list="ps-folders"
-                  style={{ borderColor: saveFolder ? '#c73000' : undefined }}
-                />
+            {activeIdx === null && (
+              <div className="sidebar-footer">
+                <button
+                  onClick={newService}
+                  style={{ width: '100%', padding: '7px 0', borderRadius: 6, border: `1px dashed ${t.borderLight}`, background: 'none', color: t.textDim, fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'all .15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.color = t.accent; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = t.borderLight; e.currentTarget.style.color = t.textDim; }}
+                >
+                  + New service
+                </button>
               </div>
-              <div className="save-row">
-                <input
-                  className="save-input"
-                  placeholder="Save current as…"
-                  value={saveName}
-                  onChange={e => setSaveName(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && saveService()}
-                />
-                <button className="save-btn" onClick={saveService}>💾</button>
-              </div>
-            </div>
+            )}
           </aside>
 
           {/* ── Resize handle ── */}
@@ -1846,6 +1990,47 @@ export default function App() {
 
           {/* ── Main content ── */}
           <main>
+            {/* ── Service panel ── */}
+            <div className="panel" style={{ paddingTop: 16, paddingBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span className="section-num">00</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: t.text, marginRight: 6 }}>Service</span>
+                <input
+                  className="save-input"
+                  placeholder="Name…"
+                  value={saveName}
+                  onChange={e => setSaveName(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && (activeIdx !== null ? updateService() : saveService())}
+                  style={{ flex: '2 1 200px', fontSize: 12, fontWeight: 600 }}
+                />
+                <datalist id="ps-folders-main">
+                  {existingFolders.map(f => <option key={f} value={f} />)}
+                </datalist>
+                <input
+                  className="save-input"
+                  placeholder="📁 Folder (optional)…"
+                  value={saveFolder}
+                  onChange={e => setSaveFolder(e.target.value)}
+                  list="ps-folders-main"
+                  style={{ flex: '1 1 140px', borderColor: saveFolder ? '#c73000' : undefined }}
+                />
+                {activeIdx !== null ? (
+                  <button className="update-btn" onClick={updateService} title="⌘S / Ctrl+S" style={{ flexShrink: 0 }}>
+                    💾 Update
+                  </button>
+                ) : (
+                  <button className="save-btn" onClick={saveService} style={{ flexShrink: 0, padding: '6px 14px' }}>
+                    💾 Save
+                  </button>
+                )}
+                {activeIdx !== null && (
+                  <button className="new-svc-btn" onClick={newService} style={{ flexShrink: 0 }}>
+                    + New
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* IAM */}
             <div className="panel">
               <div className="panel-title collapsible" onClick={() => setIamOpen(o => !o)}>
@@ -1911,21 +2096,121 @@ export default function App() {
                 </div>
               </div>
 
-              <Field label="Target URL" value={form.target_url} onChange={set("target_url")}
-                placeholder="https://api.example.com/v1/endpoint" mono />
+              <div className="field">
+                <label>Target URL</label>
+                <div style={{ display: 'flex', alignItems: 'stretch', gap: 0 }}>
+                  <select
+                    value={form.method || "POST"}
+                    onChange={e => set("method")(e.target.value)}
+                    style={{
+                      background: t.bgInput, border: `1px solid ${t.inputBorder}`,
+                      borderRight: 'none', borderRadius: '4px 0 0 4px',
+                      padding: '0 10px', fontFamily: 'monospace', fontWeight: 700,
+                      fontSize: 11, cursor: 'pointer', outline: 'none', flexShrink: 0,
+                      color: METHOD_COLORS[form.method || "POST"] || t.text,
+                    }}
+                  >
+                    {Object.keys(METHOD_COLORS).map(m => (
+                      <option key={m} value={m} style={{ color: METHOD_COLORS[m] }}>{m}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={form.target_url}
+                    onChange={e => set("target_url")(e.target.value)}
+                    placeholder="https://api.example.com/v1/endpoint"
+                    autoComplete="off" spellCheck={false}
+                    style={{ flex: 1, fontFamily: 'monospace', borderRadius: '0 4px 4px 0',
+                      background: t.bgInput, border: `1px solid ${t.inputBorder}`,
+                      padding: '7px 10px', color: t.text, fontSize: 12, outline: 'none',
+                      minWidth: 0 }}
+                  />
+                </div>
+              </div>
 
               <div className="field">
-                <label>JSON Payload</label>
-                <div className="payload-toolbar">
-                  <button className="payload-btn" onClick={formatJson}>⌥ Format JSON</button>
-                  <button className="payload-btn" onClick={loadExamplePayload}>⊞ Load Example</button>
+                {/* Body / Headers tab bar */}
+                <div className="body-tabs">
+                  <button className={`body-tab${bodyTab === "body" ? " active" : ""}`} onClick={() => setBodyTab("body")}>Body</button>
+                  <button className={`body-tab${bodyTab === "headers" ? " active" : ""}`} onClick={() => setBodyTab("headers")}>
+                    Headers
+                    {form.headers.filter(h => h.enabled && h.key.trim()).length > 0 && (
+                      <span className="header-badge">{form.headers.filter(h => h.enabled && h.key.trim()).length}</span>
+                    )}
+                  </button>
                 </div>
-                <textarea
-                  value={form.payload}
-                  onChange={(e) => set("payload")(e.target.value)}
-                  style={{ fontFamily: "monospace", minHeight: 100, maxHeight: 180, overflowY: "auto", resize: "vertical" }}
-                />
-                {jsonError && <span className="json-err">⚠ {jsonError}</span>}
+
+                {/* Body tab */}
+                {bodyTab === "body" && (
+                  <>
+                    <div className="payload-toolbar">
+                      <button className="payload-btn" onClick={formatJson}>⌥ Format JSON</button>
+                      <button className="payload-btn" onClick={loadExamplePayload}>⊞ Load Example</button>
+                    </div>
+                    <textarea
+                      value={form.payload}
+                      onChange={(e) => set("payload")(e.target.value)}
+                      style={{ fontFamily: "monospace", minHeight: 100, maxHeight: 180, overflowY: "auto", resize: "vertical" }}
+                    />
+                    {jsonError && <span className="json-err">⚠ {jsonError}</span>}
+                  </>
+                )}
+
+                {/* Headers tab */}
+                {bodyTab === "headers" && (
+                  <div className="headers-table">
+                    <div className="headers-thead">
+                      <span></span>
+                      <span>Key</span>
+                      <span>Value</span>
+                      <span></span>
+                    </div>
+                    {form.headers.map((row, i) => (
+                      <div key={i} className="headers-row">
+                        <input
+                          type="checkbox"
+                          checked={row.enabled}
+                          onChange={e => {
+                            const next = [...form.headers];
+                            next[i] = { ...next[i], enabled: e.target.checked };
+                            set("headers")(next);
+                          }}
+                        />
+                        <input
+                          type="text"
+                          value={row.key}
+                          placeholder="Header name"
+                          disabled={!row.enabled}
+                          onChange={e => {
+                            const next = [...form.headers];
+                            next[i] = { ...next[i], key: e.target.value };
+                            set("headers")(next);
+                          }}
+                        />
+                        <input
+                          type="text"
+                          value={row.value}
+                          placeholder="Value"
+                          disabled={!row.enabled}
+                          onChange={e => {
+                            const next = [...form.headers];
+                            next[i] = { ...next[i], value: e.target.value };
+                            set("headers")(next);
+                          }}
+                        />
+                        <button
+                          className="del-header-btn"
+                          onClick={() => set("headers")(form.headers.filter((_, j) => j !== i))}
+                          title="Remove row"
+                        >✕</button>
+                      </div>
+                    ))}
+                    <button
+                      className="add-header-btn"
+                      onClick={() => set("headers")([...form.headers, { key: "", value: "", enabled: true }])}
+                    >+ Add Header</button>
+                  </div>
+                )}
               </div>
 
               {/* Dry Run result */}
@@ -2394,12 +2679,17 @@ export default function App() {
             <div className="mon-sidebar">
               <div className="mon-sidebar-header">
                 <span style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Monitors</span>
-                <button
-                  onClick={newMonitor}
-                  style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${t.accent}55`, background: `${t.accent}15`, color: t.accent, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-                >
-                  + New
-                </button>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <button className="sidebar-icon-btn" title="Export all monitors" onClick={exportMonitors}>⬇</button>
+                  <button className="sidebar-icon-btn" title="Import from file" onClick={() => monitorImportRef.current.click()}>⬆</button>
+                  <input ref={monitorImportRef} type="file" accept=".json" style={{ display: "none" }} onChange={importMonitors} />
+                  <button
+                    onClick={newMonitor}
+                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${t.accent}55`, background: `${t.accent}15`, color: t.accent, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    + New
+                  </button>
+                </div>
               </div>
 
               <div className="mon-list">
