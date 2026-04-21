@@ -160,7 +160,7 @@ function SettingsMenu({ theme, onSelect, t }) {
               <div style={{ color: t.text, fontWeight: 700, fontSize: '0.92rem', letterSpacing: '0.02em', lineHeight: 1.2 }}>GSA Platform Suite</div>
             </div>
             <div style={{ background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: '0.63rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0 }}>
-              v3.2.0
+              v3.3.0
             </div>
           </div>
 
@@ -193,8 +193,8 @@ function SettingsMenu({ theme, onSelect, t }) {
           <div style={{ padding: '14px 18px', borderBottom: `1px solid ${t.borderLight}` }}>
             <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', color: t.textDim, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Release Info</div>
             {[
-              { label: 'Version',  value: '3.1.0' },
-              { label: 'Released', value: 'Apr 13, 2026' },
+              { label: 'Version',  value: '3.3.0' },
+              { label: 'Released', value: 'Apr 21, 2026' },
               { label: 'Stack',    value: 'k6 · Grafana · k3d' },
             ].map(({ label, value }) => (
               <div key={label} style={metaRow}>
@@ -550,16 +550,23 @@ export default function App() {
     reader.onload = async (ev) => {
       try {
         const data = JSON.parse(ev.target.result);
-        if (Array.isArray(data)) {
-          await Promise.all(data.map(s => fetch(`${API_BASE}/api/services`, {
+        if (!Array.isArray(data)) { alert("Invalid file — expected a JSON array."); return; }
+        const results = await Promise.allSettled(data.map(s =>
+          fetch(`${API_BASE}/api/services`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(s),
-          })));
-          refreshServices();
-          setActiveIdx(null);
+          }).then(r => { if (!r.ok) throw new Error(`${s.name}: HTTP ${r.status}`); return r; })
+        ));
+        refreshServices();
+        setActiveIdx(null);
+        const failed = results.filter(r => r.status === "rejected");
+        if (failed.length === 0) {
+          alert(`Imported ${data.length} service${data.length !== 1 ? "s" : ""} successfully.`);
+        } else {
+          alert(`Imported ${data.length - failed.length}/${data.length} services.\nFailed:\n${failed.map(r => r.reason?.message || String(r.reason)).join("\n")}`);
         }
-      } catch { /* invalid file */ }
+      } catch (err) { alert(`Import failed: ${err.message}`); }
     };
     reader.readAsText(file);
     e.target.value = "";
@@ -788,6 +795,8 @@ export default function App() {
   const [emailConfigOpen,    setEmailConfigOpen]    = useState(false);
   const [monitorSaving,      setMonitorSaving]      = useState(false);
   const [monitorRunning,     setMonitorRunning]     = useState(false);
+  const [monitorFormOpen,    setMonitorFormOpen]    = useState(false);
+  const [monitorDashView,    setMonitorDashView]    = useState("dashboard"); // "dashboard" | "edit"
   const [emailSaving,        setEmailSaving]        = useState(false);
   const monitorPollRef = useRef(null);
 
@@ -900,6 +909,8 @@ export default function App() {
   const selectMonitor = (id) => {
     const m = monitors.find(x => x.id === id);
     if (!m) return;
+    setMonitorFormOpen(true);
+    setMonitorDashView("dashboard");
     setSelectedMonitorId(id);
     setMonitorForm({
       ...DEFAULT_MONITOR_FORM,
@@ -913,6 +924,7 @@ export default function App() {
   };
 
   const newMonitor = () => {
+    setMonitorFormOpen(true);
     setSelectedMonitorId(null);
     setMonitorForm({ ...DEFAULT_MONITOR_FORM, service_name: services[activeIdx]?.name || "", target_url: form.target_url || "" });
     setMonitorPayloadStr("{}");
@@ -954,6 +966,7 @@ export default function App() {
   const deleteMonitor = async () => {
     if (!selectedMonitorId) return;
     await fetch(`${API_BASE}/api/monitors/${selectedMonitorId}`, { method: "DELETE" });
+    setMonitorFormOpen(false);
     setSelectedMonitorId(null);
     setMonitorForm(DEFAULT_MONITOR_FORM);
     setMonitorRuns([]);
@@ -1781,7 +1794,7 @@ export default function App() {
                     <div style={{ fontSize: 28, fontWeight: 800, color: t.text, letterSpacing: '.01em', lineHeight: 1.1 }}>GSA Platform Suite</div>
                     <div style={{ fontSize: 13, color: t.textDim, marginTop: 4, letterSpacing: '.04em' }}>Internal Tools &amp; Platform Suite</div>
                   </div>
-                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.2.0</span>
+                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.3.0</span>
                 </div>
                 <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.7, maxWidth: 620 }}>
                   An internal platform to build, deploy, and operate tools and applications — from load testing and API monitoring to any custom service your team needs.
@@ -1851,6 +1864,7 @@ export default function App() {
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textDim, marginBottom: 16 }}>Release History</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderLeft: `2px solid ${t.borderLight}`, paddingLeft: 20 }}>
                   {[
+                    { version: 'v3.3.0', date: '2026-04-21', notes: ['MonitorStack dashboard — Checkly-style view per monitor: response time SVG line chart, results bar chart (green/red per run), success rate · avg · min · max stats, recent failures list', 'Fix: "+ New" button in MonitorStack now correctly opens the create form (was silently broken)', 'Web services import fix — uses Promise.allSettled so a single bad entry no longer aborts the full import; shows success/failure count alert', 'Service names prefixed with environment tag (DELIVERY -, DEV -, RELEASE -) to prevent name collisions on import', 'EPC RELEASE environment — 10 pre-configured services added to the services bundle'] },
                     { version: 'v3.2.0', date: '2026-04-21', notes: ['Custom request headers — Body / Headers tab in Test Configuration, Postman-style key/value table with per-row enable/disable, saved per service', 'HTTP method selector (GET / POST / PUT / PATCH / DELETE / HEAD) on the URL field with color-coded labels', 'Service rename — dedicated "00 Service" panel for editing name and folder without retyping; ⌘S / Ctrl+S saves', 'Sidebar improvements — alphabetical sorting within folders and flat list, reduced item spacing', 'MonitorStack import from file support (mirrors PerfStack)', 'JSON array payloads now accepted (APIs that receive a top-level array no longer return 422)', 'API error messages improved — Pydantic validation details are now human-readable'] },
                     { version: 'v3.1.0', date: '2026-04-14', notes: ['DeployStack: pod restart fix — force rolling update after build so new :latest image is always pulled', 'PUBLIC_HOST env var — all app/Gitea URLs now reflect the actual host (EC2 public hostname or localhost)', 'deploy_ec2 + deploy_mac: auto-detect public hostname via EC2 metadata service', 'deploy_ec2 + deploy_mac: auto-restart all registered DeployStack apps after a full redeploy (no rebuild needed — images survive in registry)', 'New POST /deploy/apps/{name}/restart endpoint — redeploy using existing image without triggering a Docker build'] },
                     { version: 'v3.0.0', date: '2026-04-13', notes: ['DeployStack — new module: push to integrated Gitea, auto-build Docker image, auto-deploy to dedicated k3d namespace', 'Gitea integrated into platform at /gitea (admin / admin)', 'Apps live at localhost/apps/{name} with their own Kubernetes namespace', 'Build pipeline via Docker socket + docker:27-cli Job', 'deploy_mac + deploy_ec2 updated: Gitea + docker:27-cli pre-pulled, docker socket mounted, Gitea admin bootstrapped'] },
@@ -1862,9 +1876,9 @@ export default function App() {
                     { version: 'v2.0.0', date: '2026-04-07', notes: ['Multi-service sidebar with folder grouping', 'Custom scenario builder', 'IAM OAuth2 token integration'] },
                   ].map(r => (
                     <div key={r.version} style={{ marginBottom: 24, position: 'relative' }}>
-                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v3.2.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
+                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v3.3.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v3.2.0' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v3.3.0' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
                         <span style={{ fontSize: 11, color: t.textDim, fontFamily: 'monospace' }}>{r.date}</span>
                       </div>
                       <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
@@ -2828,10 +2842,193 @@ export default function App() {
                 </div>
               )}
 
-              {(selectedMonitorId !== null || monitorForm.name !== '' || monitorForm.target_url !== '') && (() => {
+              {(monitorFormOpen || selectedMonitorId !== null) && (() => {
                 const isNew = !selectedMonitorId;
+                const selMon = monitors.find(x => x.id === selectedMonitorId);
+
+                // ── Dashboard view (existing monitors only) ──────────────────────────
+                if (!isNew && monitorDashView === "dashboard") {
+                  const sortedRuns = [...monitorRuns].sort((a, b) => new Date(a.started_at) - new Date(b.started_at));
+                  const runs = sortedRuns.slice(-60);
+                  const okCnt   = runs.filter(r => r.status === 'ok').length;
+                  const failCnt = runs.length - okCnt;
+                  const rate    = runs.length ? Math.round(okCnt / runs.length * 100) : null;
+                  const isHlthy = selMon?.last_status === 'ok';
+
+                  const respVals = runs.filter(r => r.response_ms != null).map(r => r.response_ms);
+                  const avgMs = respVals.length ? Math.round(respVals.reduce((a, b) => a + b, 0) / respVals.length) : null;
+                  const minMs = respVals.length ? Math.min(...respVals) : null;
+                  const maxMs = respVals.length ? Math.max(...respVals) : null;
+                  const fmtMs = v => v == null ? '—' : v >= 1000 ? `${(v / 1000).toFixed(2)}s` : `${v}ms`;
+
+                  // SVG shared dimensions
+                  const SW = 660, SH = 130, barSH = 58;
+                  const pL = 58, pR = 12, pT = 10, pB = 28;
+                  const cW = SW - pL - pR, cH = SH - pT - pB;
+
+                  // Line chart
+                  const runsWMs = runs.filter(r => r.response_ms != null);
+                  let lineSvg = null;
+                  if (runsWMs.length >= 2) {
+                    const ts  = runsWMs.map(r => new Date(r.started_at).getTime());
+                    const mn  = Math.min(...ts), mx = Math.max(...ts);
+                    const maxV = Math.max(...runsWMs.map(r => r.response_ms)) * 1.15 || 1;
+                    const cx  = tm => pL + ((tm - mn) / (mx - mn || 1)) * cW;
+                    const cy  = v  => pT + cH - (v / maxV) * cH;
+                    const pts = runsWMs.map(r => ({ x: cx(new Date(r.started_at).getTime()), y: cy(r.response_ms), ok: r.status === 'ok' }));
+                    const lp  = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+                    const ap  = `${lp} L${pts[pts.length - 1].x.toFixed(1)},${(pT + cH).toFixed(1)} L${pL},${(pT + cH).toFixed(1)} Z`;
+                    const nY  = 5;
+                    const yTks = Array.from({ length: nY }, (_, i) => ({ v: maxV * i / (nY - 1), y: cy(maxV * i / (nY - 1)) }));
+                    const nX  = Math.min(5, runsWMs.length);
+                    const xTks = Array.from({ length: nX }, (_, i) => {
+                      const r = runsWMs[Math.round(i * (runsWMs.length - 1) / (nX - 1 || 1))];
+                      const d = new Date(r.started_at);
+                      return { x: cx(d.getTime()), lbl: `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}` };
+                    });
+                    lineSvg = (
+                      <svg width={SW} height={SH} viewBox={`0 0 ${SW} ${SH}`} style={{ display: 'block', width: '100%' }}>
+                        <defs>
+                          <linearGradient id="mLGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.18" />
+                            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
+                          </linearGradient>
+                          <clipPath id="mClip"><rect x={pL} y={pT} width={cW} height={cH + 2} /></clipPath>
+                        </defs>
+                        {yTks.map((tk, i) => (
+                          <g key={i}>
+                            <line x1={pL} y1={tk.y.toFixed(1)} x2={SW - pR} y2={tk.y.toFixed(1)} stroke={t.borderLight} strokeWidth="1" strokeDasharray="3,4" />
+                            <text x={pL - 5} y={tk.y} dy="4" textAnchor="end" fontSize="9" fill={t.textDim}>{fmtMs(Math.round(tk.v))}</text>
+                          </g>
+                        ))}
+                        <line x1={pL} y1={pT} x2={pL} y2={pT + cH} stroke={t.borderLight} strokeWidth="1" />
+                        <path d={ap} fill="url(#mLGrad)" clipPath="url(#mClip)" />
+                        <path d={lp} fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#mClip)" />
+                        {pts.map((p, i) => <circle key={i} cx={p.x.toFixed(1)} cy={p.y.toFixed(1)} r="3" fill={p.ok ? '#3b82f6' : '#ef4444'} stroke={t.bg} strokeWidth="1.5" />)}
+                        {xTks.map((tk, i) => <text key={i} x={tk.x.toFixed(1)} y={SH - 4} textAnchor="middle" fontSize="9" fill={t.textDim}>{tk.lbl}</text>)}
+                      </svg>
+                    );
+                  }
+
+                  // Bar chart
+                  let barSvg = null;
+                  if (runs.length > 0) {
+                    const bTs  = runs.map(r => new Date(r.started_at).getTime());
+                    const bMn  = Math.min(...bTs), bMx = Math.max(...bTs);
+                    const bRng = bMx - bMn || 1;
+                    const bW   = Math.max(3, Math.min(14, cW / runs.length * 0.75));
+                    const bH   = barSH - 18;
+                    barSvg = (
+                      <svg width={SW} height={barSH} viewBox={`0 0 ${SW} ${barSH}`} style={{ display: 'block', width: '100%' }}>
+                        {runs.map((r, i) => {
+                          const bx  = pL + ((new Date(r.started_at).getTime() - bMn) / bRng) * cW;
+                          const clr = r.status === 'ok' ? '#10b981' : r.status === 'ko' ? '#ef4444' : '#f59e0b';
+                          return <rect key={i} x={(bx - bW / 2).toFixed(1)} y="2" width={bW.toFixed(1)} height={bH} rx="2" fill={clr} opacity="0.85" />;
+                        })}
+                        <line x1={pL} y1={bH + 2} x2={SW - pR} y2={bH + 2} stroke={t.borderLight} strokeWidth="1" />
+                      </svg>
+                    );
+                  }
+
+                  return (
+                    <div>
+                      {/* Header */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <h2 style={{ fontSize: 17, fontWeight: 700, color: t.text, margin: 0 }}>{selMon?.name}</h2>
+                            {selMon?.last_status && (
+                              <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: isHlthy ? '#10b98120' : '#ef444420', color: isHlthy ? '#10b981' : '#ef4444' }}>
+                                {isHlthy ? '● Healthy' : '● Unhealthy'}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 12, color: t.textDim, marginTop: 4 }}>{runs.length} run{runs.length !== 1 ? 's' : ''} · {selMon?.interval} interval</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={runMonitorNow} disabled={monitorRunning}
+                            style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid ${t.success}55`, background: `${t.success}15`, color: t.success, fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: monitorRunning ? 0.6 : 1 }}>
+                            {monitorRunning ? '⏳ Running…' : '▶ Run Now'}
+                          </button>
+                          <button onClick={() => setMonitorDashView("edit")}
+                            style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid ${t.borderLight}`, background: 'none', color: t.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                            ⚙ Configure
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Stats row */}
+                      {runs.length > 0 && (
+                        <div style={{ display: 'flex', marginBottom: 20, border: `1px solid ${t.borderLight}`, borderRadius: 8, overflow: 'hidden' }}>
+                          {[
+                            { lbl: 'Success Rate', val: rate != null ? `${rate}%` : '—', clr: rate == null ? t.text : rate >= 95 ? t.success : rate >= 80 ? '#f59e0b' : t.danger },
+                            { lbl: 'Avg Response', val: fmtMs(avgMs) },
+                            { lbl: 'Min Response', val: fmtMs(minMs) },
+                            { lbl: 'Max Response', val: fmtMs(maxMs) },
+                            { lbl: 'Total Runs',   val: runs.length },
+                          ].map(({ lbl, val, clr }, i, arr) => (
+                            <div key={lbl} style={{ flex: 1, padding: '12px 14px', borderRight: i < arr.length - 1 ? `1px solid ${t.borderLight}` : 'none' }}>
+                              <div style={{ fontSize: 10, fontWeight: 600, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>{lbl}</div>
+                              <div style={{ fontSize: 17, fontWeight: 700, color: clr || t.text, fontFamily: 'monospace' }}>{val}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {runs.length === 0 && (
+                        <div style={{ padding: '40px 0', textAlign: 'center', color: t.textDim, fontSize: 13 }}>No runs yet. Click ▶ Run Now to execute immediately.</div>
+                      )}
+
+                      {/* Response Time chart */}
+                      {runsWMs.length >= 2 && (
+                        <div style={{ marginBottom: 16 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Response Time</div>
+                          <div style={{ background: t.bgPanel, border: `1px solid ${t.borderLight}`, borderRadius: 8, padding: '10px 10px 4px', overflow: 'hidden' }}>{lineSvg}</div>
+                        </div>
+                      )}
+
+                      {/* Results bar chart */}
+                      {runs.length > 0 && (
+                        <div style={{ marginBottom: 16 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Results</div>
+                            <div style={{ display: 'flex', gap: 12, fontSize: 10, color: t.textDim }}>
+                              <span><span style={{ color: '#10b981', marginRight: 4 }}>●</span>Passed ({okCnt})</span>
+                              <span><span style={{ color: '#ef4444', marginRight: 4 }}>●</span>Failed ({failCnt})</span>
+                            </div>
+                          </div>
+                          <div style={{ background: t.bgPanel, border: `1px solid ${t.borderLight}`, borderRadius: 8, padding: '10px 10px 4px', overflow: 'hidden' }}>{barSvg}</div>
+                        </div>
+                      )}
+
+                      {/* Recent failures */}
+                      {runs.filter(r => r.status !== 'ok').length > 0 && (
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Recent Failures</div>
+                          <div style={{ border: `1px solid ${t.borderLight}`, borderRadius: 8, overflow: 'hidden' }}>
+                            {runs.filter(r => r.status !== 'ok').slice(-5).reverse().map(r => (
+                              <div key={r.id} style={{ display: 'flex', gap: 12, padding: '8px 14px', borderBottom: `1px solid ${t.borderLight}`, fontSize: 12, alignItems: 'center' }}>
+                                <span className={`mon-pill ${r.status}`}>{r.status}</span>
+                                <span style={{ color: t.textDim, fontFamily: 'monospace', fontSize: 11 }}>{r.started_at?.slice(0, 19).replace('T', ' ')}</span>
+                                <span style={{ color: t.textDim }}>{r.http_status ? `HTTP ${r.http_status}` : ''}</span>
+                                {r.error && <span style={{ color: t.danger, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{r.error}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                // ── Form view (new monitor or Configure tab) ─────────────────────────
                 return (
                   <div style={{ maxWidth: 720 }}>
+                    {!isNew && (
+                      <button onClick={() => setMonitorDashView("dashboard")}
+                        style={{ marginBottom: 16, padding: '5px 12px', borderRadius: 6, border: `1px solid ${t.borderLight}`, background: 'none', color: t.textMuted, fontSize: 12, cursor: 'pointer' }}>
+                        ← Dashboard
+                      </button>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                       <h2 style={{ fontSize: 16, fontWeight: 700, color: t.text }}>{isNew ? 'New Monitor' : 'Edit Monitor'}</h2>
                       <div style={{ display: 'flex', gap: 8 }}>
@@ -2851,6 +3048,14 @@ export default function App() {
                         >
                           {monitorSaving ? 'Saving…' : 'Save'}
                         </button>
+                        {isNew && (
+                          <button
+                            onClick={() => { setMonitorFormOpen(false); setMonitorForm(DEFAULT_MONITOR_FORM); }}
+                            style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid ${t.border}`, background: 'transparent', color: t.textDim, fontSize: 12, cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        )}
                         {!isNew && (
                           <button
                             onClick={deleteMonitor}
