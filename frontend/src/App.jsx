@@ -463,6 +463,8 @@ export default function App() {
   });
   const importRef        = useRef(null);
   const monitorImportRef = useRef(null);
+  const svcMenuRef       = useRef(null);
+  const monMenuRef       = useRef(null);
   const pollingRef    = useRef(null);
   const podPollingRef = useRef(null);
   const summaryHideRef = useRef(null);
@@ -476,6 +478,15 @@ export default function App() {
     fetch(`${API_BASE}/api/services`).then(r => r.json()).then(setServices).catch(() => {});
 
   useEffect(() => { refreshServices(); }, []);
+
+  useEffect(() => {
+    const close = (e) => {
+      if (svcMenuRef.current && !svcMenuRef.current.contains(e.target)) setSvcMenuOpen(false);
+      if (monMenuRef.current && !monMenuRef.current.contains(e.target)) setMonMenuOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
 
   const saveService = async () => {
     const name = saveName.trim();
@@ -1005,7 +1016,9 @@ export default function App() {
     } catch (e) { alert(`Error: ${e.message}`); }
   };
 
-  const [svcSearch, setSvcSearch] = useState("");
+  const [svcSearch,   setSvcSearch]   = useState("");
+  const [svcMenuOpen, setSvcMenuOpen] = useState(false);
+  const [monMenuOpen, setMonMenuOpen] = useState(false);
   const filteredServices = services.filter(s =>
     s.name.toLowerCase().includes(svcSearch.toLowerCase()) ||
     (s.folder || "").toLowerCase().includes(svcSearch.toLowerCase())
@@ -1905,8 +1918,22 @@ export default function App() {
               <div className="sidebar-title">
                 <span>Web Services</span>
                 <div className="sidebar-actions">
-                  <button className="sidebar-icon-btn" title="Export all" onClick={exportServices}>⬇</button>
-                  <button className="sidebar-icon-btn" title="Import from file" onClick={() => importRef.current.click()}>⬆</button>
+                  <div ref={svcMenuRef} style={{ position: "relative" }}>
+                    <button className="sidebar-icon-btn" title="More options" onClick={() => setSvcMenuOpen(v => !v)}
+                      style={{ fontWeight: 700, letterSpacing: 1 }}>···</button>
+                    {svcMenuOpen && (
+                      <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 7, zIndex: 200, minWidth: 140, boxShadow: "0 6px 18px rgba(0,0,0,.25)", overflow: "hidden" }}>
+                        <button onClick={() => { exportServices(); setSvcMenuOpen(false); }}
+                          style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 14px", background: "none", border: "none", color: t.text, fontSize: 12, textAlign: "left", cursor: "pointer" }}>
+                          <span style={{ fontSize: 13 }}>⬇</span> Export
+                        </button>
+                        <button onClick={() => { importRef.current.click(); setSvcMenuOpen(false); }}
+                          style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 14px", background: "none", border: "none", color: t.text, fontSize: 12, textAlign: "left", cursor: "pointer" }}>
+                          <span style={{ fontSize: 13 }}>⬆</span> Import
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <input ref={importRef} type="file" accept=".json" style={{ display: "none" }} onChange={importServices} />
                 </div>
               </div>
@@ -2048,8 +2075,8 @@ export default function App() {
                   </button>
                 )}
                 {activeIdx !== null && (
-                  <button className="new-svc-btn" onClick={newService} style={{ flexShrink: 0 }}>
-                    + New
+                  <button className="new-svc-btn" onClick={newService} style={{ flexShrink: 0, padding: '6px 10px', fontSize: 16, lineHeight: 1 }} title="New service">
+                    +
                   </button>
                 )}
               </div>
@@ -2823,14 +2850,29 @@ export default function App() {
               <div className="mon-sidebar-header">
                 <span style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Monitors</span>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                  <button className="sidebar-icon-btn" title="Export all monitors" onClick={exportMonitors}>⬇</button>
-                  <button className="sidebar-icon-btn" title="Import from file" onClick={() => monitorImportRef.current.click()}>⬆</button>
+                  <div ref={monMenuRef} style={{ position: "relative" }}>
+                    <button className="sidebar-icon-btn" title="More options" onClick={() => setMonMenuOpen(v => !v)}
+                      style={{ fontWeight: 700, letterSpacing: 1 }}>···</button>
+                    {monMenuOpen && (
+                      <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 7, zIndex: 200, minWidth: 140, boxShadow: "0 6px 18px rgba(0,0,0,.25)", overflow: "hidden" }}>
+                        <button onClick={() => { exportMonitors(); setMonMenuOpen(false); }}
+                          style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 14px", background: "none", border: "none", color: t.text, fontSize: 12, textAlign: "left", cursor: "pointer" }}>
+                          <span style={{ fontSize: 13 }}>⬇</span> Export
+                        </button>
+                        <button onClick={() => { monitorImportRef.current.click(); setMonMenuOpen(false); }}
+                          style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 14px", background: "none", border: "none", color: t.text, fontSize: 12, textAlign: "left", cursor: "pointer" }}>
+                          <span style={{ fontSize: 13 }}>⬆</span> Import
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <input ref={monitorImportRef} type="file" accept=".json" style={{ display: "none" }} onChange={importMonitors} />
                   <button
                     onClick={newMonitor}
-                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${t.accent}55`, background: `${t.accent}15`, color: t.accent, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${t.accent}55`, background: `${t.accent}15`, color: t.accent, fontSize: 16, lineHeight: 1, fontWeight: 600, cursor: 'pointer' }}
+                    title="New monitor"
                   >
-                    + New
+                    +
                   </button>
                 </div>
               </div>
