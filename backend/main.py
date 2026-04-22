@@ -441,10 +441,21 @@ class PingConfig(BaseModel):
 
 @app.post("/ping-test", summary="Single dry-run request to validate config")
 async def ping_test(config: PingConfig, ps_session: str = Cookie(default=None)):
-    """Authenticates with IAM (or uses DMS session token), fires one POST to the target URL and returns the result."""
+    """Authenticates with IAM (or uses DMS session token), fires one request to the target URL and returns full execution logs."""
     import httpx, time
 
-    # Step 1 — resolve bearer token
+    def _build_curl(method: str, url: str, hdrs: dict, payload=None, is_xml: bool = False) -> str:
+        lines = [f"curl -s -k -X {method} '{url}'"]
+        for k, v in hdrs.items():
+            lines.append(f"  -H '{k}: {v}'")
+        if method not in ("GET", "HEAD") and payload is not None:
+            body_str = payload if is_xml else json.dumps(payload)
+            lines.append(f"  -d '{body_str}'")
+        return " \\\n".join(lines)
+
+    # ── Step 1: resolve bearer token ──────────────────────────────────────────
+    iam_log: dict = {}
+    bearer_token = ""
     try:
         if config.use_user_token:
             _s = _read_sessions()
@@ -453,31 +464,48 @@ async def ping_test(config: PingConfig, ps_session: str = Cookie(default=None)):
             bearer_token = _s[ps_session].get("token", "")
             if not bearer_token:
                 raise HTTPException(status_code=401, detail="DMS session has no token — re-login with the bookmarklet")
+            iam_log = {"source": "DMS user session (bookmarklet login)", "token": bearer_token}
         else:
-            auth = IamAuthClient(
-                iam_url=config.iam_url,
-                client_id=config.client_id,
-                client_secret=config.client_secret,
-            )
-            bearer_token = await auth.get_bearer_token()
+            iam_hdrs = {"Content-Type": "application/json"}
+            iam_body = {"clientId": config.client_id, "secret": config.client_secret}
+            iam_body_masked = {"clientId": config.client_id, "secret": "***"}
+            iam_curl = _build_curl("POST", config.iam_url, iam_hdrs, iam_body_masked)
+            async with httpx.AsyncClient(verify=False, timeout=15) as iam_client:
+                t_iam = time.monotonic()
+                iam_resp = await iam_client.post(config.iam_url, json=iam_body)
+                iam_elapsed = round((time.monotonic() - t_iam) * 1000, 2)
+            if iam_resp.status_code != 200:
+                raise HTTPException(status_code=401, detail=f"IAM authentication failed ({iam_resp.status_code}): {iam_resp.text}")
+            bearer_token = iam_resp.text.strip()
+            iam_log = {
+                "url": config.iam_url,
+                "method": "POST",
+                "status_code": iam_resp.status_code,
+                "elapsed_ms": iam_elapsed,
+                "token": bearer_token,
+                "curl": iam_curl,
+            }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"IAM authentication failed: {e}")
 
-    # Step 2 — single request
+    # ── Step 2: fire the API request ──────────────────────────────────────────
     is_xml = config.payload_type == "xml"
     headers = {
         "Content-Type": "text/xml; charset=utf-8" if is_xml else "application/json",
         "Accept":       "text/xml"                if is_xml else "application/json",
     }
-    # Merge user-defined headers (Authorization cannot be overridden)
     headers.update({k: v for k, v in config.custom_headers.items() if k.lower() != "authorization"})
     headers["Authorization"] = f"Bearer {bearer_token}"
+    method = config.method.upper()
+
+    api_curl = _build_curl(method, config.target_url, headers,
+                           config.payload if method not in ("GET", "HEAD") else None,
+                           is_xml=is_xml)
     try:
         async with httpx.AsyncClient(verify=False, timeout=30) as client:
             t0 = time.monotonic()
-            method = config.method.upper()
             if is_xml:
                 xml_str = config.payload if isinstance(config.payload, str) else ""
                 resp = await client.request(method, config.target_url, content=xml_str.encode("utf-8"), headers=headers)
@@ -489,17 +517,29 @@ async def ping_test(config: PingConfig, ps_session: str = Cookie(default=None)):
         raise HTTPException(status_code=502, detail=f"Request failed: {e}")
 
     try:
-        body = resp.json()
+        resp_body = resp.json()
     except Exception:
-        body = resp.text
+        resp_body = resp.text
+
+    api_log = {
+        "url": config.target_url,
+        "method": method,
+        "headers": headers,
+        "status_code": resp.status_code,
+        "elapsed_ms": elapsed_ms,
+        "curl": api_curl,
+    }
 
     return {
         "status_code": resp.status_code,
         "elapsed_ms": elapsed_ms,
+        "target_url": config.target_url,
         "response_headers": dict(resp.headers),
-        "request_headers": {k: v if k.lower() != "authorization" else "Bearer ***" for k, v in headers.items()},
+        "request_headers": headers,
         "request_payload": config.payload,
-        "response_body": body,
+        "response_body": resp_body,
+        "iam_log": iam_log,
+        "api_log": api_log,
     }
 
 

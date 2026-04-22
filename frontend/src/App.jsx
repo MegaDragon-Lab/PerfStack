@@ -708,14 +708,20 @@ export default function App() {
   const canRun = !loading && status !== "running" && !jsonError && form.target_url &&
     (form.use_user_token ? currentUser?.has_token : (form.iam_url && form.client_id && form.client_secret));
 
-  const [pingResult, setPingResult] = useState(null);
-  const [pinging,    setPinging]    = useState(false);
-  const [bodyTab,    setBodyTab]    = useState("body");
+  const [pingResult,    setPingResult]    = useState(null);
+  const [pinging,       setPinging]       = useState(false);
+  const [bodyTab,       setBodyTab]       = useState("body");
+  const [logOpenIam,    setLogOpenIam]    = useState(false);
+  const [logOpenApi,    setLogOpenApi]    = useState(false);
+  const [copiedIam,     setCopiedIam]     = useState(false);
+  const [copiedApi,     setCopiedApi]     = useState(false);
 
   const runPingTest = async () => {
     if (jsonError) return;
     setPinging(true);
     setPingResult(null);
+    setLogOpenIam(false);
+    setLogOpenApi(false);
     try {
       const res = await fetch(`${API_BASE}/api/ping-test`, {
         method: "POST",
@@ -2279,24 +2285,118 @@ export default function App() {
                     <button onClick={() => setPingResult(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: t.textDim, cursor: "pointer", fontSize: 13 }}>✕</button>
                   </div>
                   {pingResult.ok && (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
-                      <div style={{ borderRight: `1px solid ${t.borderLight}` }}>
-                        <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Request Payload</div>
-                        <pre style={{ margin: 0, padding: "12px 14px", color: t.accent, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
-                          {typeof pingResult.request_payload === "string"
-                            ? pingResult.request_payload
-                            : JSON.stringify(pingResult.request_payload, null, 2)}
-                        </pre>
+                    <>
+                      {/* Request / Response */}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+                        <div style={{ borderRight: `1px solid ${t.borderLight}` }}>
+                          <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Request Payload</div>
+                          <pre style={{ margin: 0, padding: "12px 14px", color: t.accent, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
+                            {typeof pingResult.request_payload === "string"
+                              ? pingResult.request_payload
+                              : JSON.stringify(pingResult.request_payload, null, 2)}
+                          </pre>
+                        </div>
+                        <div>
+                          <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Response Body</div>
+                          <pre style={{ margin: 0, padding: "12px 14px", color: t.codeText, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
+                            {typeof pingResult.response_body === "string"
+                              ? pingResult.response_body
+                              : JSON.stringify(pingResult.response_body, null, 2)}
+                          </pre>
+                        </div>
                       </div>
-                      <div>
-                        <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}` }}>Response Body</div>
-                        <pre style={{ margin: 0, padding: "12px 14px", color: t.codeText, fontFamily: "monospace", fontSize: 11, overflowX: "auto", maxHeight: 200, overflowY: "auto" }}>
-                          {typeof pingResult.response_body === "string"
-                            ? pingResult.response_body
-                            : JSON.stringify(pingResult.response_body, null, 2)}
-                        </pre>
-                      </div>
-                    </div>
+
+                      {/* Execution Log */}
+                      {(pingResult.iam_log || pingResult.api_log) && (() => {
+                        const copyIam = () => { navigator.clipboard.writeText(pingResult.iam_log?.curl || ""); setCopiedIam(true); setTimeout(() => setCopiedIam(false), 1500); };
+                        const copyApi = () => { navigator.clipboard.writeText(pingResult.api_log?.curl || ""); setCopiedApi(true); setTimeout(() => setCopiedApi(false), 1500); };
+                        const logRow = (label, value) => (
+                          <div style={{ display: "flex", gap: 8, padding: "3px 0", borderBottom: `1px solid ${t.borderLight}22` }}>
+                            <span style={{ minWidth: 110, color: t.textDim, fontSize: 11 }}>{label}</span>
+                            <span style={{ color: t.codeText, fontFamily: "monospace", fontSize: 11, wordBreak: "break-all" }}>{value}</span>
+                          </div>
+                        );
+                        return (
+                          <div style={{ borderTop: `1px solid ${t.borderLight}` }}>
+                            {/* Section header */}
+                            <div style={{ padding: "6px 14px", fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: t.textDim, borderBottom: `1px solid ${t.borderLight}`, background: t.bgPanel }}>
+                              Execution Log
+                            </div>
+
+                            {/* Step 1 — IAM */}
+                            {pingResult.iam_log && (
+                              <div style={{ borderBottom: `1px solid ${t.borderLight}` }}>
+                                <button onClick={() => setLogOpenIam(v => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "7px 14px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+                                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: `${t.accent}22`, color: t.accent, fontFamily: "monospace" }}>POST</span>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: t.text }}>Step 1 — IAM Auth</span>
+                                  {pingResult.iam_log.status_code && (
+                                    <span style={{ fontSize: 11, color: t.success, fontFamily: "monospace" }}>HTTP {pingResult.iam_log.status_code}</span>
+                                  )}
+                                  {pingResult.iam_log.elapsed_ms && (
+                                    <span style={{ fontSize: 11, color: t.textMuted }}>{pingResult.iam_log.elapsed_ms} ms</span>
+                                  )}
+                                  {pingResult.iam_log.source && (
+                                    <span style={{ fontSize: 11, color: t.textMuted, fontStyle: "italic" }}>{pingResult.iam_log.source}</span>
+                                  )}
+                                  <span style={{ marginLeft: "auto", color: t.textDim, fontSize: 12 }}>{logOpenIam ? "▲" : "▼"}</span>
+                                </button>
+                                {logOpenIam && (
+                                  <div style={{ padding: "0 14px 12px" }}>
+                                    {pingResult.iam_log.url && logRow("URL", pingResult.iam_log.url)}
+                                    {pingResult.iam_log.token && logRow("Token", pingResult.iam_log.token)}
+                                    {pingResult.iam_log.curl && (
+                                      <div style={{ marginTop: 8 }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                                          <span style={{ fontSize: 10, color: t.textDim, textTransform: "uppercase", letterSpacing: ".05em" }}>curl</span>
+                                          <button onClick={copyIam} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, border: `1px solid ${t.border}`, background: "none", color: copiedIam ? t.success : t.textDim, cursor: "pointer" }}>
+                                            {copiedIam ? "✓ Copied" : "Copy"}
+                                          </button>
+                                        </div>
+                                        <pre style={{ margin: 0, padding: "10px 12px", background: t.bgInput, border: `1px solid ${t.borderLight}`, borderRadius: 5, fontFamily: "monospace", fontSize: 11, color: t.codeText, overflowX: "auto", whiteSpace: "pre" }}>
+                                          {pingResult.iam_log.curl}
+                                        </pre>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Step 2 — API */}
+                            {pingResult.api_log && (
+                              <div>
+                                <button onClick={() => setLogOpenApi(v => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "7px 14px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+                                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: `${t.accent}22`, color: t.accent, fontFamily: "monospace" }}>{pingResult.api_log.method}</span>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: t.text }}>Step 2 — API Call</span>
+                                  <span style={{ fontSize: 11, color: pingResult.api_log.status_code < 400 ? t.success : t.danger, fontFamily: "monospace" }}>HTTP {pingResult.api_log.status_code}</span>
+                                  <span style={{ fontSize: 11, color: t.textMuted }}>{pingResult.api_log.elapsed_ms} ms</span>
+                                  <span style={{ marginLeft: "auto", color: t.textDim, fontSize: 12 }}>{logOpenApi ? "▲" : "▼"}</span>
+                                </button>
+                                {logOpenApi && (
+                                  <div style={{ padding: "0 14px 12px" }}>
+                                    {pingResult.api_log.url && logRow("URL", pingResult.api_log.url)}
+                                    {pingResult.api_log.headers && Object.entries(pingResult.api_log.headers).map(([k, v]) => logRow(k, v))}
+                                    {pingResult.api_log.curl && (
+                                      <div style={{ marginTop: 8 }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                                          <span style={{ fontSize: 10, color: t.textDim, textTransform: "uppercase", letterSpacing: ".05em" }}>curl</span>
+                                          <button onClick={copyApi} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, border: `1px solid ${t.border}`, background: "none", color: copiedApi ? t.success : t.textDim, cursor: "pointer" }}>
+                                            {copiedApi ? "✓ Copied" : "Copy"}
+                                          </button>
+                                        </div>
+                                        <pre style={{ margin: 0, padding: "10px 12px", background: t.bgInput, border: `1px solid ${t.borderLight}`, borderRadius: 5, fontFamily: "monospace", fontSize: 11, color: t.codeText, overflowX: "auto", whiteSpace: "pre" }}>
+                                          {pingResult.api_log.curl}
+                                        </pre>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </>
                   )}
                 </div>
               )}
