@@ -1925,11 +1925,11 @@ export default function App() {
                       <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 7, zIndex: 200, minWidth: 140, boxShadow: "0 6px 18px rgba(0,0,0,.25)", overflow: "hidden" }}>
                         <button onClick={() => { exportServices(); setSvcMenuOpen(false); }}
                           style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 14px", background: "none", border: "none", color: t.text, fontSize: 12, textAlign: "left", cursor: "pointer" }}>
-                          <span style={{ fontSize: 13 }}>⬇</span> Export
+                          Export
                         </button>
                         <button onClick={() => { importRef.current.click(); setSvcMenuOpen(false); }}
                           style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 14px", background: "none", border: "none", color: t.text, fontSize: 12, textAlign: "left", cursor: "pointer" }}>
-                          <span style={{ fontSize: 13 }}>⬆</span> Import
+                          Import
                         </button>
                       </div>
                     )}
@@ -2857,11 +2857,11 @@ export default function App() {
                       <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 7, zIndex: 200, minWidth: 140, boxShadow: "0 6px 18px rgba(0,0,0,.25)", overflow: "hidden" }}>
                         <button onClick={() => { exportMonitors(); setMonMenuOpen(false); }}
                           style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 14px", background: "none", border: "none", color: t.text, fontSize: 12, textAlign: "left", cursor: "pointer" }}>
-                          <span style={{ fontSize: 13 }}>⬇</span> Export
+                          Export
                         </button>
                         <button onClick={() => { monitorImportRef.current.click(); setMonMenuOpen(false); }}
                           style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 14px", background: "none", border: "none", color: t.text, fontSize: 12, textAlign: "left", cursor: "pointer" }}>
-                          <span style={{ fontSize: 13 }}>⬆</span> Import
+                          Import
                         </button>
                       </div>
                     )}
