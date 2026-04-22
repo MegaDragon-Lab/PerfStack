@@ -1934,6 +1934,8 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                  <button className="sidebar-icon-btn" onClick={newService} title="New service"
+                    style={{ fontWeight: 700, fontSize: 16, lineHeight: 1 }}>+</button>
                   <input ref={importRef} type="file" accept=".json" style={{ display: "none" }} onChange={importServices} />
                 </div>
               </div>
@@ -2013,18 +2015,6 @@ export default function App() {
               )}
             </div>
 
-            {activeIdx === null && (
-              <div className="sidebar-footer">
-                <button
-                  onClick={newService}
-                  style={{ width: '100%', padding: '7px 0', borderRadius: 6, border: `1px dashed ${t.borderLight}`, background: 'none', color: t.textDim, fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'all .15s' }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.color = t.accent; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = t.borderLight; e.currentTarget.style.color = t.textDim; }}
-                >
-                  + New service
-                </button>
-              </div>
-            )}
           </aside>
 
           {/* ── Resize handle ── */}
@@ -2072,11 +2062,6 @@ export default function App() {
                 ) : (
                   <button className="save-btn" onClick={saveService} style={{ flexShrink: 0, padding: '6px 14px' }}>
                     💾 Save
-                  </button>
-                )}
-                {activeIdx !== null && (
-                  <button className="new-svc-btn" onClick={newService} style={{ flexShrink: 0, padding: '6px 10px', fontSize: 16, lineHeight: 1 }} title="New service">
-                    +
                   </button>
                 )}
               </div>
