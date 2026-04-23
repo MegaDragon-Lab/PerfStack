@@ -153,7 +153,7 @@ function SettingsMenu({ theme, onSelect, t }) {
             <img
               src={theme === 'dark' ? '/assets/private/GSA_Logo_Inverted.png' : '/assets/private/GSA_Logo.jpg'}
               alt="GSA"
-              style={{ height: 48, maxWidth: 90, objectFit: 'contain', flexShrink: 0 }}
+              style={{ height: 48, maxWidth: 90, objectFit: 'contain', flexShrink: 0, borderRadius: '50%', mixBlendMode: theme === 'dark' ? 'screen' : 'multiply' }}
               onError={e => { e.currentTarget.style.display = 'none'; }}
             />
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -365,6 +365,36 @@ export default function App() {
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, []);
 
+  const [monSidebarWidth, setMonSidebarWidth] = useState(280);
+  const isMonDragging = useRef(false);
+  const monDragStartX = useRef(0);
+  const monDragStartW = useRef(0);
+
+  const onMonDragStart = (e) => {
+    isMonDragging.current = true;
+    monDragStartX.current = e.clientX;
+    monDragStartW.current = monSidebarWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!isMonDragging.current) return;
+      const delta = e.clientX - monDragStartX.current;
+      setMonSidebarWidth(Math.min(480, Math.max(160, monDragStartW.current + delta)));
+    };
+    const onUp = () => {
+      if (!isMonDragging.current) return;
+      isMonDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
   const [form, setForm] = useState(BLANK_FORM);
 
   const [status,      setStatus]      = useState(() => { const s = localStorage.getItem("ps_status"); return (s === "running" || s === "pending") ? s : "idle"; });
@@ -442,8 +472,9 @@ export default function App() {
   const [services,      setServices]      = useState([]);
   const [saveName,      setSaveName]      = useState("");
   const [saveFolder,    setSaveFolder]    = useState("");
-  const [closedFolders, setClosedFolders] = useState(new Set());
+  const [openFolders,   setOpenFolders]   = useState(new Set());
   const [activeIdx,     setActiveIdx]     = useState(null);
+  const [newServiceMode, setNewServiceMode] = useState(false);
 
   useEffect(() => {
     const handler = (e) => {
@@ -456,7 +487,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [activeIdx, form, saveFolder, services]);
 
-  const toggleFolder = (key) => setClosedFolders(prev => {
+  const toggleFolder = (key) => setOpenFolders(prev => {
     const next = new Set(prev);
     if (next.has(key)) next.delete(key); else next.add(key);
     return next;
@@ -507,6 +538,7 @@ export default function App() {
     const { name, folder, headers: headersDict, ...config } = services[idx];
     const headersArr = Object.entries(headersDict || {}).map(([key, value]) => ({ key, value, enabled: true }));
     setForm({ ...config, headers: headersArr, use_user_token: false });
+    setNewServiceMode(false);
     setActiveIdx(idx);
     setSaveFolder(folder || "");
     setSaveName(name);
@@ -517,7 +549,7 @@ export default function App() {
     await fetch(`${API_BASE}/api/services/${encodeURIComponent(name)}`, { method: "DELETE" });
     const updated = await fetch(`${API_BASE}/api/services`).then(r => r.json());
     setServices(updated);
-    if (activeIdx === idx) setActiveIdx(null);
+    if (activeIdx === idx) { setActiveIdx(null); setNewServiceMode(false); }
   };
 
   const updateService = async () => {
@@ -541,6 +573,7 @@ export default function App() {
 
   const newService = () => {
     setActiveIdx(null);
+    setNewServiceMode(true);
     setSaveName("");
     setSaveFolder("");
     setForm(BLANK_FORM);
@@ -571,6 +604,7 @@ export default function App() {
         ));
         refreshServices();
         setActiveIdx(null);
+        setNewServiceMode(false);
         const failed = results.filter(r => r.status === "rejected");
         if (failed.length === 0) {
           alert(`Imported ${data.length} service${data.length !== 1 ? "s" : ""} successfully.`);
@@ -1046,7 +1080,7 @@ export default function App() {
     return (
       <div style={{ minHeight: '100vh', background: t.bg, color: t.text, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'IBM Plex Sans, sans-serif' }}>
         <div style={{ maxWidth: 480, width: '100%', padding: '0 24px', textAlign: 'center' }}>
-          <img src={theme === 'dark' ? '/assets/private/GSA_Logo_Inverted.png' : '/assets/private/GSA_Logo.jpg'} style={{ height: 192, objectFit: 'contain', marginBottom: 32 }} alt="GSA" />
+          <img src={theme === 'dark' ? '/assets/private/GSA_Logo_Inverted.png' : '/assets/private/GSA_Logo.jpg'} style={{ height: 192, objectFit: 'contain', marginBottom: 32, borderRadius: '50%', mixBlendMode: theme === 'dark' ? 'screen' : 'multiply' }} alt="GSA" />
           <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>GSA Platform Suite</h1>
           <p style={{ fontSize: 13, color: t.textMuted, marginBottom: 40 }}>Sign in with your FICO DMS account to continue</p>
           <div style={{ background: t.bgPanel, border: `1px solid ${t.borderLight}`, borderRadius: 12, padding: 28, textAlign: 'left' }}>
@@ -1631,7 +1665,7 @@ export default function App() {
         /* ── Monitoring layout ── */
         .mon-workspace { display: flex; height: calc(100vh - 90px); overflow: hidden; }
         .mon-sidebar {
-          width: 280px; flex-shrink: 0; border-right: 1px solid ${t.borderLight};
+          flex-shrink: 0; border-right: 1px solid ${t.borderLight};
           display: flex; flex-direction: column; overflow: hidden;
           background: ${t.bgPanel};
         }
@@ -1724,7 +1758,7 @@ export default function App() {
             <img
               src={theme === 'dark' ? '/assets/private/GSA_Logo_Inverted.png' : '/assets/private/GSA_Logo.jpg'}
               alt="GSA"
-              style={{ height: 22, objectFit: 'contain' }}
+              style={{ height: 22, objectFit: 'contain', borderRadius: '50%', mixBlendMode: theme === 'dark' ? 'screen' : 'multiply' }}
               onError={e => { e.currentTarget.style.display = 'none'; }}
             />
             <span className="logo">GSA PLATFORM SUITE</span>
@@ -1805,7 +1839,7 @@ export default function App() {
                   <img
                     src={theme === 'dark' ? '/assets/private/GSA_Logo_Inverted.png' : '/assets/private/GSA_Logo.jpg'}
                     alt="GSA Logo"
-                    style={{ height: 110, objectFit: 'contain', flexShrink: 0 }}
+                    style={{ height: 110, objectFit: 'contain', flexShrink: 0, borderRadius: '50%', mixBlendMode: theme === 'dark' ? 'screen' : 'multiply' }}
                     onError={e => { e.currentTarget.style.display = 'none'; }}
                   />
                   <div style={{ width: 1, height: 44, background: t.borderLight, flexShrink: 0 }} />
@@ -1958,7 +1992,7 @@ export default function App() {
                 folderKeys.map(fKey => {
                   const items = grouped[fKey];
                   if (!items?.length) return null;
-                  const isOpen = !closedFolders.has(fKey);
+                  const isOpen = openFolders.has(fKey);
                   return (
                     <div key={fKey}>
                       <div className="folder-hdr" onClick={() => toggleFolder(fKey)}>
@@ -2031,6 +2065,12 @@ export default function App() {
 
           {/* ── Main content ── */}
           <main>
+            {activeIdx === null && !newServiceMode ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: t.textDim, gap: 10 }}>
+                <span style={{ fontSize: 36 }}>⚡</span>
+                <span style={{ fontSize: 13 }}>Select a web service on the left</span>
+              </div>
+            ) : (<>
             {/* ── Service panel ── */}
             <div className="panel" style={{ paddingTop: 16, paddingBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -2064,6 +2104,12 @@ export default function App() {
                     💾 Save
                   </button>
                 )}
+                <button
+                  onClick={() => { setActiveIdx(null); setNewServiceMode(false); setSaveName(""); setSaveFolder(""); }}
+                  style={{ flexShrink: 0, padding: '6px 14px', background: 'transparent', border: `1px solid ${t.border}`, borderRadius: 6, color: t.textMuted, fontSize: 12, cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
               </div>
             </div>
 
@@ -2823,7 +2869,7 @@ export default function App() {
                 );
               })()}
             </div>
-
+            </>)}
           </main>
         </div>}
 
@@ -2831,7 +2877,7 @@ export default function App() {
         {activeTab === "monitoring" && (
           <div className="mon-workspace">
             {/* Left: monitor list + email config */}
-            <div className="mon-sidebar">
+            <div className="mon-sidebar" style={{ width: monSidebarWidth }}>
               <div className="mon-sidebar-header">
                 <span style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Monitors</span>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -2950,15 +2996,27 @@ export default function App() {
               </div>
             </div>
 
+            {/* ── Mon resize handle ── */}
+            <div
+              onMouseDown={onMonDragStart}
+              style={{
+                width: 5, flexShrink: 0, cursor: "col-resize",
+                background: "transparent", transition: "background .15s",
+                position: "relative", zIndex: 10,
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = "#c73000"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+            />
+
             {/* Right: detail pane */}
             <div className="mon-detail" style={{ background: t.bg }}>
-              {!selectedMonitorId && monitors.length > 0 && (
+              {!selectedMonitorId && !monitorFormOpen && monitors.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: t.textDim, gap: 10 }}>
                   <span style={{ fontSize: 36 }}>🔍</span>
                   <span style={{ fontSize: 13 }}>Select a monitor on the left</span>
                 </div>
               )}
-              {!selectedMonitorId && monitors.length === 0 && (
+              {!selectedMonitorId && !monitorFormOpen && monitors.length === 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: t.textDim }}>
                   <span style={{ fontSize: 40 }}>🔍</span>
                   <span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>No monitors yet</span>
