@@ -160,7 +160,7 @@ function SettingsMenu({ theme, onSelect, t }) {
               <div style={{ color: t.text, fontWeight: 700, fontSize: '0.92rem', letterSpacing: '0.02em', lineHeight: 1.2 }}>GSA Platform Suite</div>
             </div>
             <div style={{ background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: '0.63rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0 }}>
-              v3.3.0
+              v3.4.0
             </div>
           </div>
 
@@ -193,8 +193,8 @@ function SettingsMenu({ theme, onSelect, t }) {
           <div style={{ padding: '14px 18px', borderBottom: `1px solid ${t.borderLight}` }}>
             <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', color: t.textDim, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Release Info</div>
             {[
-              { label: 'Version',  value: '3.3.0' },
-              { label: 'Released', value: 'Apr 21, 2026' },
+              { label: 'Version',  value: '3.4.0' },
+              { label: 'Released', value: 'Apr 28, 2026' },
               { label: 'Stack',    value: 'k6 · Grafana · k3d' },
             ].map(({ label, value }) => (
               <div key={label} style={metaRow}>
@@ -839,6 +839,14 @@ export default function App() {
 
   // ── Monitoring state ─────────────────────────────────────────────────────────
   const [activeTab,          setActiveTab]          = useState("home");
+
+  useEffect(() => {
+    if (!currentUser?.modules) return;
+    const tabModule = { load: "perfstack", monitoring: "monitorstack", deploy: "deploystack" };
+    if (tabModule[activeTab] && !currentUser.modules.includes(tabModule[activeTab])) {
+      setActiveTab("home");
+    }
+  }, [currentUser, activeTab]);
   const [monitors,           setMonitors]           = useState([]);
   const [selectedMonitorId,  setSelectedMonitorId]  = useState(null);
   const [monitorRuns,        setMonitorRuns]        = useState([]);
@@ -1768,21 +1776,27 @@ export default function App() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <div className="tab-bar">
-              <button className={`tab-btn${activeTab === "load" ? " active" : ""}`} onClick={() => setActiveTab("load")}>
-                ⚡ PerfStack
-              </button>
-              <button className={`tab-btn${activeTab === "monitoring" ? " active" : ""}`} onClick={() => setActiveTab("monitoring")}>
-                🔍 MonitorStack
-                {monitors.filter(m => m.enabled).length > 0 && (
-                  <span className="tab-badge">{monitors.filter(m => m.enabled).length}</span>
-                )}
-              </button>
-              <button className={`tab-btn${activeTab === "deploy" ? " active" : ""}`} onClick={() => { setActiveTab("deploy"); refreshDeployApps(); }}>
-                🚀 DeployStack
-                {deployApps.filter(a => a.status === "running").length > 0 && (
-                  <span className="tab-badge" style={{ background: '#22c55e' }}>{deployApps.filter(a => a.status === "running").length}</span>
-                )}
-              </button>
+              {currentUser?.modules?.includes("perfstack") && (
+                <button className={`tab-btn${activeTab === "load" ? " active" : ""}`} onClick={() => setActiveTab("load")}>
+                  ⚡ PerfStack
+                </button>
+              )}
+              {currentUser?.modules?.includes("monitorstack") && (
+                <button className={`tab-btn${activeTab === "monitoring" ? " active" : ""}`} onClick={() => setActiveTab("monitoring")}>
+                  🔍 MonitorStack
+                  {monitors.filter(m => m.enabled).length > 0 && (
+                    <span className="tab-badge">{monitors.filter(m => m.enabled).length}</span>
+                  )}
+                </button>
+              )}
+              {currentUser?.modules?.includes("deploystack") && (
+                <button className={`tab-btn${activeTab === "deploy" ? " active" : ""}`} onClick={() => { setActiveTab("deploy"); refreshDeployApps(); }}>
+                  🚀 DeployStack
+                  {deployApps.filter(a => a.status === "running").length > 0 && (
+                    <span className="tab-badge" style={{ background: '#22c55e' }}>{deployApps.filter(a => a.status === "running").length}</span>
+                  )}
+                </button>
+              )}
               {deployApps.filter(a => a.show_in_home && a.status === 'running').map(a => (
                 <a key={a.name} href={a.url} target="_blank" rel="noreferrer"
                   className="tab-btn"
@@ -1794,6 +1808,11 @@ export default function App() {
             <SettingsMenu theme={theme} onSelect={toggleTheme} t={t} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderLeft: `1px solid ${t.borderLight}`, paddingLeft: 14 }}>
               <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 500 }}>{currentUser.cn}</span>
+              {currentUser.role && (
+                <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 3, background: theme === 'dark' ? '#c7300022' : '#fef2f2', color: '#c73000', border: '1px solid #c7300033', textTransform: 'uppercase' }}>
+                  {currentUser.role}
+                </span>
+              )}
               <a href="/api/auth/logout" style={{ fontSize: 11, color: t.textDim, textDecoration: 'none', padding: '3px 8px', borderRadius: 4, border: `1px solid ${t.borderLight}` }}
                 onMouseEnter={e => e.currentTarget.style.borderColor = t.accent}
                 onMouseLeave={e => e.currentTarget.style.borderColor = t.borderLight}
@@ -1847,7 +1866,7 @@ export default function App() {
                     <div style={{ fontSize: 28, fontWeight: 800, color: t.text, letterSpacing: '.01em', lineHeight: 1.1 }}>GSA Platform Suite</div>
                     <div style={{ fontSize: 13, color: t.textDim, marginTop: 4, letterSpacing: '.04em' }}>Internal Tools &amp; Platform Suite</div>
                   </div>
-                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.3.0</span>
+                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.4.0</span>
                 </div>
                 <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.7, maxWidth: 620 }}>
                   An internal platform to build, deploy, and operate tools and applications — from load testing and API monitoring to any custom service your team needs.
@@ -1917,6 +1936,7 @@ export default function App() {
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textDim, marginBottom: 16 }}>Release History</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderLeft: `2px solid ${t.borderLight}`, paddingLeft: 20 }}>
                   {[
+                    { version: 'v3.4.0', date: '2026-04-28', notes: ['Role-Based Access Control (RBAC) — roles admin / perf_team / readonly control which modules and deployed apps each user can access', 'RBAC driven by rbac.yaml (persistent volume) — update without redeploying; zero-downtime reload via reload_rbac.sh', 'nginx auth_request app check now enforced — was silently skipped due to wrong header (X-Original-URI → X-Original-URL)', '/auth/me returns role and modules fields; tabs rendered conditionally per user role', 'Role badge displayed in header; auto-redirect to home if active tab is not in user\'s allowed modules', 'GET /api/rbac and PUT /api/rbac endpoints (admin only) for live config management'] },
                     { version: 'v3.3.0', date: '2026-04-21', notes: ['MonitorStack dashboard — Checkly-style view per monitor: response time SVG line chart, results bar chart (green/red per run), success rate · avg · min · max stats, recent failures list', 'Fix: "+ New" button in MonitorStack now correctly opens the create form (was silently broken)', 'Web services import fix — uses Promise.allSettled so a single bad entry no longer aborts the full import; shows success/failure count alert', 'Service names prefixed with environment tag (DELIVERY -, DEV -, RELEASE -) to prevent name collisions on import', 'EPC RELEASE environment — 10 pre-configured services added to the services bundle'] },
                     { version: 'v3.2.0', date: '2026-04-21', notes: ['Custom request headers — Body / Headers tab in Test Configuration, Postman-style key/value table with per-row enable/disable, saved per service', 'HTTP method selector (GET / POST / PUT / PATCH / DELETE / HEAD) on the URL field with color-coded labels', 'Service rename — dedicated "00 Service" panel for editing name and folder without retyping; ⌘S / Ctrl+S saves', 'Sidebar improvements — alphabetical sorting within folders and flat list, reduced item spacing', 'MonitorStack import from file support (mirrors PerfStack)', 'JSON array payloads now accepted (APIs that receive a top-level array no longer return 422)', 'API error messages improved — Pydantic validation details are now human-readable'] },
                     { version: 'v3.1.0', date: '2026-04-14', notes: ['DeployStack: pod restart fix — force rolling update after build so new :latest image is always pulled', 'PUBLIC_HOST env var — all app/Gitea URLs now reflect the actual host (EC2 public hostname or localhost)', 'deploy_ec2 + deploy_mac: auto-detect public hostname via EC2 metadata service', 'deploy_ec2 + deploy_mac: auto-restart all registered DeployStack apps after a full redeploy (no rebuild needed — images survive in registry)', 'New POST /deploy/apps/{name}/restart endpoint — redeploy using existing image without triggering a Docker build'] },
@@ -1929,9 +1949,9 @@ export default function App() {
                     { version: 'v2.0.0', date: '2026-04-07', notes: ['Multi-service sidebar with folder grouping', 'Custom scenario builder', 'IAM OAuth2 token integration'] },
                   ].map(r => (
                     <div key={r.version} style={{ marginBottom: 24, position: 'relative' }}>
-                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v3.3.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
+                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v3.4.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v3.3.0' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v3.4.0' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
                         <span style={{ fontSize: 11, color: t.textDim, fontFamily: 'monospace' }}>{r.date}</span>
                       </div>
                       <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>

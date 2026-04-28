@@ -15,7 +15,9 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+import fnmatch
 import yaml
+from urllib.parse import urlparse
 from kubernetes import client as k8s_client
 
 import secrets
@@ -251,6 +253,46 @@ def _read_sessions() -> dict:        return _read_file_dict(SESSIONS_FILE)
 def _write_sessions(data: dict):     _write_file_dict(SESSIONS_FILE, data)
 
 
+# ── RBAC ─────────────────────────────────────────────────────────────────────
+
+RBAC_FILE = DATA_DIR / "rbac.yaml"
+_LOCAL_RBAC = pathlib.Path(__file__).parent / "rbac.yaml"
+
+
+def _load_rbac() -> dict:
+    for p in (RBAC_FILE, _LOCAL_RBAC):
+        if p.exists():
+            with open(p) as f:
+                return yaml.safe_load(f) or {}
+    return {}
+
+
+def resolve_role(uid: str) -> str:
+    assignments = _load_rbac().get("assignments", [])
+    uid_lower = uid.lower()
+    for a in assignments:
+        patterns = a.get("emails") or [a.get("email", "")]
+        for p in [x.lower() for x in patterns]:
+            if p == "*":
+                return a["role"]
+            if p.startswith("*@") and uid_lower.endswith(p[1:]):
+                return a["role"]
+            if uid_lower == p:
+                return a["role"]
+    return "readonly"
+
+
+def get_modules(uid: str) -> list:
+    role = resolve_role(uid)
+    return _load_rbac().get("roles", {}).get(role, {}).get("modules", [])
+
+
+def can_access_app(uid: str, app_name: str) -> bool:
+    role = resolve_role(uid)
+    patterns = _load_rbac().get("roles", {}).get(role, {}).get("deployed_apps", [])
+    return any(p == "*" or fnmatch.fnmatch(app_name, p) for p in patterns)
+
+
 class CustomScenario(BaseModel):
     name: str
     stages: list[dict]
@@ -281,8 +323,10 @@ async def auth_me(ps_session: str = Cookie(default=None)):
     if ps_session not in sessions:
         raise HTTPException(401, "Not authenticated")
     s = sessions[ps_session]
-    return {"uid": s["uid"], "cn": s["cn"], "org": s["org"],
-            "has_token": bool(s.get("token")), "token_exp": s.get("token_exp", "")}
+    uid = s["uid"]
+    return {"uid": uid, "cn": s["cn"], "org": s["org"],
+            "has_token": bool(s.get("token")), "token_exp": s.get("token_exp", ""),
+            "role": resolve_role(uid), "modules": get_modules(uid)}
 
 @app.get("/auth/internal-session", summary="Internal — return token for a ps_session (server-to-server only)")
 async def auth_internal_session(request: Request, ps_session: str = Cookie(default=None)):
@@ -327,16 +371,60 @@ async def deploy_check_auth(request: Request):
     if ps_session not in sessions:
         return JSONResponse(status_code=401, content={"detail": "Session expired"})
     s = sessions[ps_session]
+    uid = s.get("uid", "")
+    # nginx auth_request sends X-Original-URL (full URL), not X-Original-URI
+    original_url = request.headers.get("X-Original-URL", "")
+    path = urlparse(original_url).path if original_url else ""
+    parts = path.split("/apps/")
+    if len(parts) > 1:
+        app_name = parts[1].split("/")[0]
+        if app_name and not can_access_app(uid, app_name):
+            return JSONResponse(status_code=403, content={"detail": "App access denied"})
     return JSONResponse(
         status_code=200,
         content={"status": "ok"},
         headers={
-            "X-User-Id":    s.get("uid", ""),
+            "X-User-Id":    uid,
             "X-User-CN":    s.get("cn", ""),
             "X-User-Org":   s.get("org", ""),
             "X-User-Token": s.get("token", ""),
         },
     )
+
+
+# ── RBAC management endpoints ─────────────────────────────────────────────────
+
+@app.get("/rbac", summary="Get current RBAC config (admin only)")
+async def get_rbac(ps_session: str = Cookie(default=None)):
+    if not ps_session:
+        raise HTTPException(401, "Not authenticated")
+    sessions = _read_sessions()
+    if ps_session not in sessions:
+        raise HTTPException(401, "Not authenticated")
+    uid = sessions[ps_session]["uid"]
+    if resolve_role(uid) != "admin":
+        raise HTTPException(403, "Admin only")
+    return _load_rbac()
+
+
+@app.put("/rbac", summary="Replace RBAC config (admin only)")
+async def put_rbac(request: Request, ps_session: str = Cookie(default=None)):
+    if not ps_session:
+        raise HTTPException(401, "Not authenticated")
+    sessions = _read_sessions()
+    if ps_session not in sessions:
+        raise HTTPException(401, "Not authenticated")
+    uid = sessions[ps_session]["uid"]
+    if resolve_role(uid) != "admin":
+        raise HTTPException(403, "Admin only")
+    body = await request.body()
+    try:
+        parsed = yaml.safe_load(body)
+    except yaml.YAMLError as e:
+        raise HTTPException(400, f"Invalid YAML: {e}")
+    target = RBAC_FILE if DATA_DIR.exists() else _LOCAL_RBAC
+    target.write_text(body.decode())
+    return {"status": "ok", "saved_to": str(target)}
 
 
 # ── Custom scenarios (persisted to /data/custom_scenarios.json) ───────────────
@@ -1180,7 +1268,7 @@ def _build_report_html(
   <thead><tr><th>Name</th><th class="num">Passes</th><th class="num">Fails</th></tr></thead>
   <tbody>{checks_html}</tbody></table></div>'''}
 
-  <div class="footer">GSA Platform Suite v3.1.0 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
+  <div class="footer">GSA Platform Suite v3.4.0 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
 </div>
 {lazy_js}
 </body>
