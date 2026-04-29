@@ -496,6 +496,7 @@ export default function App() {
   const monitorImportRef = useRef(null);
   const svcMenuRef       = useRef(null);
   const monMenuRef       = useRef(null);
+  const deployMenuRef    = useRef(null);
   const pollingRef    = useRef(null);
   const podPollingRef = useRef(null);
   const summaryHideRef = useRef(null);
@@ -508,12 +509,13 @@ export default function App() {
   const refreshServices = () =>
     fetch(`${API_BASE}/api/services`).then(r => r.json()).then(setServices).catch(() => {});
 
-  useEffect(() => { refreshServices(); }, []);
+  useEffect(() => { refreshServices(); refreshDeployApps(); }, []);
 
   useEffect(() => {
     const close = (e) => {
-      if (svcMenuRef.current && !svcMenuRef.current.contains(e.target)) setSvcMenuOpen(false);
-      if (monMenuRef.current && !monMenuRef.current.contains(e.target)) setMonMenuOpen(false);
+      if (svcMenuRef.current    && !svcMenuRef.current.contains(e.target))    setSvcMenuOpen(false);
+      if (monMenuRef.current    && !monMenuRef.current.contains(e.target))    setMonMenuOpen(false);
+      if (deployMenuRef.current && !deployMenuRef.current.contains(e.target)) setDeployMenuOpen(false);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
@@ -1059,8 +1061,9 @@ export default function App() {
   };
 
   const [svcSearch,   setSvcSearch]   = useState("");
-  const [svcMenuOpen, setSvcMenuOpen] = useState(false);
-  const [monMenuOpen, setMonMenuOpen] = useState(false);
+  const [svcMenuOpen,    setSvcMenuOpen]    = useState(false);
+  const [monMenuOpen,    setMonMenuOpen]    = useState(false);
+  const [deployMenuOpen, setDeployMenuOpen] = useState(false);
   const filteredServices = services.filter(s =>
     s.name.toLowerCase().includes(svcSearch.toLowerCase()) ||
     (s.folder || "").toLowerCase().includes(svcSearch.toLowerCase())
@@ -1797,13 +1800,40 @@ export default function App() {
                   )}
                 </button>
               )}
-              {deployApps.filter(a => a.show_in_home && a.status === 'running').map(a => (
-                <a key={a.name} href={a.url} target="_blank" rel="noreferrer"
-                  className="tab-btn"
-                  style={{ textDecoration: 'none' }}>
-                  {a.name} ↗
-                </a>
-              ))}
+              {deployApps.filter(a => a.show_in_home && a.status === 'running').length > 0 && (
+                <div ref={deployMenuRef} style={{ position: "relative" }}>
+                  <button className="tab-btn" onClick={() => setDeployMenuOpen(v => !v)}>
+                    Apps
+                    <span style={{ fontSize: 9 }}>▾</span>
+                    <span className="tab-badge" style={{ background: '#22c55e20', color: '#22c55e' }}>
+                      {deployApps.filter(a => a.show_in_home && a.status === 'running').length}
+                    </span>
+                  </button>
+                  {deployMenuOpen && (
+                    <div style={{
+                      position: "absolute", top: "calc(100% + 6px)", right: 0,
+                      background: t.bgPanel, border: `1px solid ${t.borderLight}`,
+                      borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,.15)",
+                      minWidth: 180, zIndex: 200, overflow: "hidden",
+                    }}>
+                      {deployApps.filter(a => a.show_in_home && a.status === 'running').map((a, i, arr) => (
+                        <a key={a.name} href={a.url} target="_blank" rel="noreferrer"
+                          onClick={() => setDeployMenuOpen(false)}
+                          style={{
+                            display: "block", padding: "8px 14px",
+                            fontSize: 12, color: t.text, textDecoration: "none",
+                            borderBottom: i < arr.length - 1 ? `1px solid ${t.borderLight}` : "none",
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = t.bg}
+                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                        >
+                          {a.name} ↗
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <SettingsMenu theme={theme} onSelect={toggleTheme} t={t} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderLeft: `1px solid ${t.borderLight}`, paddingLeft: 14 }}>

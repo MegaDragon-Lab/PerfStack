@@ -2054,19 +2054,25 @@ def _update_build_status(build_id: str, status: str):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-def _fix_app_urls(app: dict) -> dict:
-    """Rewrite stored localhost URLs to use the current PUBLIC_HOST."""
+def _fix_app_urls(app: dict, host: str | None = None) -> dict:
+    """Rewrite stored URLs using the request host (ALB/EC2) or PUBLIC_HOST fallback."""
+    h = host or PUBLIC_HOST
     name = app.get("name", "")
     repo = app.get("repo", name)
-    app["url"]        = f"http://{PUBLIC_HOST}/apps/{name}"
-    app["gitea_url"]  = f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{repo}"
-    app["clone_url"]  = f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{repo}.git"
+    app["url"]        = f"http://{h}/apps/{name}"
+    app["gitea_url"]  = f"http://{h}/gitea/{GITEA_ADMIN_USER}/{repo}"
+    app["clone_url"]  = f"http://{h}/gitea/{GITEA_ADMIN_USER}/{repo}.git"
     return app
 
 
+def _request_host(request: Request) -> str:
+    return request.headers.get("x-forwarded-host") or request.headers.get("host") or PUBLIC_HOST
+
+
 @app.get("/deploy/apps", summary="List all DeployStack apps")
-async def list_deploy_apps():
-    return [_fix_app_urls(a) for a in _read_apps()]
+async def list_deploy_apps(request: Request):
+    host = _request_host(request)
+    return [_fix_app_urls(a, host) for a in _read_apps()]
 
 
 @app.post("/deploy/apps", summary="Create a new app and its Gitea repo")
@@ -2130,12 +2136,13 @@ async def create_deploy_app(req: NewAppRequest):
 
 
 @app.get("/deploy/apps/{name}", summary="Get app status")
-async def get_deploy_app(name: str):
+async def get_deploy_app(name: str, request: Request):
+    host = _request_host(request)
     apps = _read_apps()
     app_entry = next((a for a in apps if a.get("name") == name), None)
     if not app_entry:
         raise HTTPException(status_code=404, detail=f"App '{name}' not found")
-    return _fix_app_urls(app_entry)
+    return _fix_app_urls(app_entry, host)
 
 
 @app.post("/deploy/apps/{name}/toggle-auth", summary="Toggle auth_required for a DeployStack app")
