@@ -23,6 +23,9 @@ zscaler.pem
 *.pem
 *.crt
 
+# RBAC config contains real email addresses — never commit
+backend/rbac.yaml
+
 # Kubernetes secrets with real values — never commit
 # Use k8s/secrets.example.yaml as reference and k8s/create-secrets.sh to apply
 k8s/secrets.yaml
