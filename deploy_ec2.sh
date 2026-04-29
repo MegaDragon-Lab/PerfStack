@@ -217,21 +217,30 @@ docker push localhost:${REG_PORT}/library/perfstack-k6:latest
 ok "k6 image pushed to registry"
 echo ""
 
-# ── Detect EC2 public hostname (IMDSv2) ──────────────────────────────────────
+# ── Public hostname (ALB takes priority over EC2 auto-detect) ────────────────
+# Set ALB_HOST to your ALB DNS name to override EC2 metadata detection.
+# Example: ALB_HOST="my-alb-123456.us-east-2.elb.amazonaws.com"
+ALB_HOST="${ALB_HOST:-}"
+
 log "Detecting public hostname..."
-IMDS_TOKEN=$(curl -sf --max-time 3 -X PUT "http://169.254.169.254/latest/api/token" \
-  -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)
-if [ -n "$IMDS_TOKEN" ]; then
-  PUBLIC_HOST=$(curl -sf --max-time 3 -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
-    http://169.254.169.254/latest/meta-data/public-hostname 2>/dev/null \
-    || curl -sf --max-time 3 -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
-    http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null \
-    || echo "localhost")
+if [ -n "$ALB_HOST" ]; then
+  PUBLIC_HOST="$ALB_HOST"
+  ok "Public host (ALB): ${PUBLIC_HOST}"
 else
-  PUBLIC_HOST=$(curl -sf --max-time 5 https://checkip.amazonaws.com 2>/dev/null \
-    || echo "localhost")
+  IMDS_TOKEN=$(curl -sf --max-time 3 -X PUT "http://169.254.169.254/latest/api/token" \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)
+  if [ -n "$IMDS_TOKEN" ]; then
+    PUBLIC_HOST=$(curl -sf --max-time 3 -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+      http://169.254.169.254/latest/meta-data/public-hostname 2>/dev/null \
+      || curl -sf --max-time 3 -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+      http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null \
+      || echo "localhost")
+  else
+    PUBLIC_HOST=$(curl -sf --max-time 5 https://checkip.amazonaws.com 2>/dev/null \
+      || echo "localhost")
+  fi
+  ok "Public host (EC2): ${PUBLIC_HOST}"
 fi
-ok "Public host: ${PUBLIC_HOST}"
 echo ""
 
 # ── Safety gate: confirm k3d cluster is reachable before any apply ────────────

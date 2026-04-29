@@ -15,7 +15,7 @@ deployed apps they can access. Everything is driven by a single YAML file
 | Role        | Modules                              | Deployed Apps      |
 |-------------|--------------------------------------|--------------------|
 | `admin`     | PerfStack, MonitorStack, DeployStack | all (`*`)          |
-| `perf_team` | PerfStack, MonitorStack              | `epc-*`, `fraud-*` |
+| `gsa_team` | PerfStack, MonitorStack              | `epc-*`, `fraud-*` |
 | `readonly`  | MonitorStack only                    | none               |
 
 Resolution order for email matching: exact match → domain wildcard (`*@fico.com`) → catch-all (`*`).
@@ -32,7 +32,7 @@ assignments:
       - "bob@fico.com"
     role: admin
   - email: "*@fico.com"
-    role: perf_team
+    role: gsa_team
   - email: "*"
     role: readonly
 ```

@@ -1,9 +1,9 @@
 roles:
   admin:
     modules: ["perfstack", "monitorstack", "deploystack"]
-    deployed_apps: []
+    deployed_apps: ["*"]
 
-  perf_team:
+  gsa_team:
     modules: ["perfstack", "monitorstack"]
     deployed_apps: ["epc-*", "fraud-*"]
 
@@ -14,9 +14,10 @@ roles:
 assignments:
   - emails:
       - "micheldragonetti_gps@fico.com"
-      - "haoli_gps@fico.com"
     role: admin
-  - email: "*@fico.com"
-    role: perf_team
+  - emails: 
+      - "epc_release@fico.com"
+      - "haoli_gps@fico.com"
+    role: gsa_team
   - email: "*"
     role: readonly
