@@ -188,6 +188,16 @@ kube wait --namespace k6-operator-system \
 ok "k6 Operator ready"
 echo ""
 
+# ── Docker cleanup (free disk before builds) ──────────────────────────────────
+log "Pruning Docker to free disk space before builds..."
+DISK_BEFORE=$(df -h / | awk 'NR==2{print $4}')
+docker container prune -f >/dev/null 2>&1
+docker image prune -f     >/dev/null 2>&1
+docker builder prune -f   >/dev/null 2>&1
+DISK_AFTER=$(df -h / | awk 'NR==2{print $4}')
+ok "Docker pruned — free disk: ${DISK_BEFORE} → ${DISK_AFTER}"
+echo ""
+
 # ── Build app images ──────────────────────────────────────────────────────────
 log "Building perfstack-backend:latest..."
 docker build --no-cache --platform linux/amd64 -t perfstack-backend:latest ./backend
