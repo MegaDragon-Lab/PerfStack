@@ -241,8 +241,21 @@ def _read_history() -> list:         return _read_file(HISTORY_FILE)
 def _write_history(data):            _write_file(HISTORY_FILE, data)
 def _read_monitors() -> list:        return _read_file(MONITORS_FILE)
 def _write_monitors(data):           _write_file(MONITORS_FILE, data)
-def _read_monitor_runs() -> list:    return _read_file(MONITOR_RUNS_FILE)
-def _write_monitor_runs(data):       _write_file(MONITOR_RUNS_FILE, data)
+def _read_monitor_runs() -> dict:
+    if not MONITOR_RUNS_FILE.exists():
+        return {}
+    raw = json.loads(MONITOR_RUNS_FILE.read_text())
+    if isinstance(raw, list):
+        # migrate flat list → dict keyed by monitor_id
+        result: dict = {}
+        for r in raw:
+            mid = r.get("monitor_id", "unknown")
+            result.setdefault(mid, []).append(r)
+        return result
+    return raw
+def _write_monitor_runs(data: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    MONITOR_RUNS_FILE.write_text(json.dumps(data, indent=2))
 def _read_email_config() -> dict:    return _read_file_dict(EMAIL_CONFIG_FILE)
 def _write_email_config(data: dict): _write_file_dict(EMAIL_CONFIG_FILE, data)
 def _read_apps() -> list:            return _read_file(APPS_FILE)
@@ -1418,10 +1431,12 @@ async def _run_monitor(monitor_id: str) -> None:
         run.status = "error"
         run.error = str(e)
 
-    # Persist run (keep last 1000)
+    # Persist run (keep last 1000 per monitor)
     runs = _read_monitor_runs()
-    runs.insert(0, run.model_dump())
-    _write_monitor_runs(runs[:1000])
+    per_monitor = runs.get(monitor_id, [])
+    per_monitor.insert(0, run.model_dump())
+    runs[monitor_id] = per_monitor[:1000]
+    _write_monitor_runs(runs)
 
     # Update last_status on the monitor
     for mx in monitors:
@@ -1553,10 +1568,10 @@ async def run_monitor_now(monitor_id: str):
     return {"status": "triggered", "id": monitor_id}
 
 
-@app.get("/monitors/{monitor_id}/runs", summary="Get run history for a monitor (last 100)")
+@app.get("/monitors/{monitor_id}/runs", summary="Get run history for a monitor (last 1000)")
 async def get_monitor_runs(monitor_id: str):
     runs = _read_monitor_runs()
-    return [r for r in runs if r.get("monitor_id") == monitor_id][:100]
+    return runs.get(monitor_id, [])
 
 
 # ── Email config endpoints ────────────────────────────────────────────────────
