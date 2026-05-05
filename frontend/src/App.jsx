@@ -313,6 +313,7 @@ const METHOD_COLORS = {
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('ps_theme') || 'light');
   const t = theme === 'dark' ? DARK : LIGHT;
+  const [releaseOpen, setReleaseOpen] = useState(false);
 
   // ── Auth ────────────────────────────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState(null);   // null = not yet checked
@@ -539,7 +540,7 @@ export default function App() {
   const loadService = (idx) => {
     const { name, folder, headers: headersDict, ...config } = services[idx];
     const headersArr = Object.entries(headersDict || {}).map(([key, value]) => ({ key, value, enabled: true }));
-    setForm({ ...config, headers: headersArr, use_user_token: false });
+    setForm({ sleep_interval: 0.1, parallelism: 4, ...config, headers: headersArr, use_user_token: false });
     setNewServiceMode(false);
     setActiveIdx(idx);
     setSaveFolder(folder || "");
@@ -1126,7 +1127,7 @@ export default function App() {
               <span style={{ fontSize: 13 }}>While on DMS Console, <strong>click the bookmarklet</strong> — you'll be redirected here automatically</span>
             </div>
           </div>
-          <p style={{ fontSize: 11, color: t.textDim, marginTop: 20 }}>Access restricted to FICO-GPS-TENANT members</p>
+          <p style={{ fontSize: 11, color: t.textDim, marginTop: 20 }}>Access restricted to FICO GSA Team members</p>
         </div>
       </div>
     );
@@ -1880,7 +1881,7 @@ export default function App() {
 
         {/* ── Home / Landing ── */}
         {activeTab === "home" && (
-          <div style={{ flex: 1, overflowY: 'auto', background: t.bg, padding: '48px 40px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', background: theme === 'dark' ? 'linear-gradient(180deg, #0f1114, #131720)' : 'linear-gradient(180deg, #ffffff, #f7f9fc)', padding: '48px 40px' }}>
             <div style={{ maxWidth: 820, margin: '0 auto' }}>
               {/* Hero */}
               <div style={{ marginBottom: 48 }}>
@@ -1893,13 +1894,12 @@ export default function App() {
                   />
                   <div style={{ width: 1, height: 44, background: t.borderLight, flexShrink: 0 }} />
                   <div>
-                    <div style={{ fontSize: 28, fontWeight: 800, color: t.text, letterSpacing: '.01em', lineHeight: 1.1 }}>GSA Platform Suite</div>
-                    <div style={{ fontSize: 13, color: t.textDim, marginTop: 4, letterSpacing: '.04em' }}>Internal Tools &amp; Platform Suite</div>
+                    <div style={{ fontSize: 40, fontWeight: 800, color: t.text, letterSpacing: '.01em', lineHeight: 1.1 }}>GSA Platform Suite</div>
                   </div>
                   <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.4.0</span>
                 </div>
                 <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.7, maxWidth: 620 }}>
-                  An internal platform to build, deploy, and operate tools and applications — from load testing and API monitoring to any custom service your team needs.
+                  A unified platform giving FICO GSA Team full autonomy to deploy ideas, tools, and applications over shared infrastructure.
                 </p>
               </div>
 
@@ -1907,36 +1907,48 @@ export default function App() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20, marginBottom: 48 }}>
                 <div
                   onClick={() => setActiveTab("load")}
-                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s' }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = '#c73000'}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = t.border}
+                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#c73000'; e.currentTarget.style.transform = 'translateY(-6px)'; e.currentTarget.style.boxShadow = '0 15px 40px rgba(0,0,0,0.12)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
                 >
                   <div style={{ fontSize: 28, marginBottom: 12 }}>⚡</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 6 }}>PerfStack</div>
-                  <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.6 }}>Run load tests against your APIs using k6 with parallel pods. Supports multiple scenarios (Load, Spike, Stress, Soak, Custom), IAM auth, and saves rendered HTML reports per run.</div>
-                  <div style={{ marginTop: 16, fontSize: 11, color: '#c73000', fontWeight: 600 }}>Open PerfStack →</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 10 }}>PerfStack</div>
+                  <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
+                    {['k6-based load testing', 'Parallel execution (pods)', 'Multiple scenarios (Load, Spike, Stress, Soak)', 'IAM auth + HTML reports'].map(b => (
+                      <li key={b} style={{ fontSize: 12, color: t.textDim, lineHeight: 1.7 }}>{b}</li>
+                    ))}
+                  </ul>
+                  <div style={{ marginTop: 16, fontSize: 12, color: '#c73000', fontWeight: 700 }}>Launch PerfStack →</div>
                 </div>
                 <div
                   onClick={() => setActiveTab("monitoring")}
-                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s' }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = t.accent}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = t.border}
+                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.transform = 'translateY(-6px)'; e.currentTarget.style.boxShadow = '0 15px 40px rgba(0,0,0,0.12)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
                 >
                   <div style={{ fontSize: 28, marginBottom: 12 }}>🔍</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 6 }}>MonitorStack</div>
-                  <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.6 }}>Schedule recurring health checks on your web services. Verifies HTTP status, response time, and payload fields. Sends email alerts when a check fails.</div>
-                  <div style={{ marginTop: 16, fontSize: 11, color: t.accent, fontWeight: 600 }}>Open MonitorStack →</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 10 }}>MonitorStack</div>
+                  <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
+                    {['Scheduled health checks', 'HTTP status & response time', 'Payload field verification', 'Email alerts on failure'].map(b => (
+                      <li key={b} style={{ fontSize: 12, color: t.textDim, lineHeight: 1.7 }}>{b}</li>
+                    ))}
+                  </ul>
+                  <div style={{ marginTop: 16, fontSize: 12, color: t.accent, fontWeight: 700 }}>Launch MonitorStack →</div>
                 </div>
                 <div
                   onClick={() => { setActiveTab("deploy"); refreshDeployApps(); }}
-                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s' }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = '#22c55e'}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = t.border}
+                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#22c55e'; e.currentTarget.style.transform = 'translateY(-6px)'; e.currentTarget.style.boxShadow = '0 15px 40px rgba(0,0,0,0.12)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
                 >
                   <div style={{ fontSize: 28, marginBottom: 12 }}>🚀</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 6 }}>DeployStack</div>
-                  <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.6 }}>Push projects to integrated Gitea. DeployStack auto-builds your Docker image and deploys it to its own Kubernetes namespace — live at <code style={{ fontSize: 11 }}>localhost/apps/&#123;name&#125;</code>.</div>
-                  <div style={{ marginTop: 16, fontSize: 11, color: '#22c55e', fontWeight: 600 }}>Open DeployStack →</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 10 }}>DeployStack</div>
+                  <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
+                    {['Push to integrated Gitea', 'Auto-build Docker image', 'Kubernetes namespace per app', 'Live at /apps/{name}'].map(b => (
+                      <li key={b} style={{ fontSize: 12, color: t.textDim, lineHeight: 1.7 }}>{b}</li>
+                    ))}
+                  </ul>
+                  <div style={{ marginTop: 16, fontSize: 12, color: '#22c55e', fontWeight: 700 }}>Launch DeployStack →</div>
                 </div>
               </div>
 
@@ -1947,14 +1959,15 @@ export default function App() {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
                     {deployApps.filter(a => a.show_in_home).map(a => (
                       <a key={a.name} href={a.url} target="_blank" rel="noreferrer"
-                        style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '20px 22px', textDecoration: 'none', display: 'block', transition: 'border-color .15s' }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = '#22c55e'}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = t.border}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.status === 'running' ? '#22c55e' : '#f59e0b', flexShrink: 0 }} />
-                          <span style={{ fontSize: 14, fontWeight: 700, color: t.text }}>{a.name}</span>
+                        style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '20px 22px', textDecoration: 'none', display: 'block', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#22c55e'; e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 10px 28px rgba(0,0,0,0.10)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: t.text, marginBottom: 8 }}>{a.name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: a.status === 'running' ? '#22c55e' : '#f59e0b', flexShrink: 0 }} />
+                          <span style={{ fontSize: 10, fontWeight: 700, color: a.status === 'running' ? '#22c55e' : '#f59e0b', letterSpacing: '.06em', textTransform: 'uppercase' }}>{a.status === 'running' ? 'Running' : 'Stopped'}</span>
                         </div>
-                        <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 600 }}>Open App ↗</div>
+                        <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>Open App ↗</div>
                       </a>
                     ))}
                   </div>
@@ -1963,8 +1976,14 @@ export default function App() {
 
               {/* Release history */}
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textDim, marginBottom: 16 }}>Release History</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderLeft: `2px solid ${t.borderLight}`, paddingLeft: 20 }}>
+                <button
+                  onClick={() => setReleaseOpen(v => !v)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer', marginBottom: releaseOpen ? 16 : 0 }}
+                >
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textDim }}>Release History</span>
+                  <span style={{ fontSize: 10, color: t.textDim, transition: 'transform .2s', display: 'inline-block', transform: releaseOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                </button>
+                {releaseOpen && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderLeft: `2px solid ${t.borderLight}`, paddingLeft: 20 }}>
                   {[
                     { version: 'v3.4.0', date: '2026-04-28', notes: ['Role-Based Access Control (RBAC) — roles admin / perf_team / readonly control which modules and deployed apps each user can access', 'RBAC driven by rbac.yaml (persistent volume) — update without redeploying; zero-downtime reload via reload_rbac.sh', 'nginx auth_request app check now enforced — was silently skipped due to wrong header (X-Original-URI → X-Original-URL)', '/auth/me returns role and modules fields; tabs rendered conditionally per user role', 'Role badge displayed in header; auto-redirect to home if active tab is not in user\'s allowed modules', 'GET /api/rbac and PUT /api/rbac endpoints (admin only) for live config management'] },
                     { version: 'v3.3.0', date: '2026-04-21', notes: ['MonitorStack dashboard — Checkly-style view per monitor: response time SVG line chart, results bar chart (green/red per run), success rate · avg · min · max stats, recent failures list', 'Fix: "+ New" button in MonitorStack now correctly opens the create form (was silently broken)', 'Web services import fix — uses Promise.allSettled so a single bad entry no longer aborts the full import; shows success/failure count alert', 'Service names prefixed with environment tag (DELIVERY -, DEV -, RELEASE -) to prevent name collisions on import', 'EPC RELEASE environment — 10 pre-configured services added to the services bundle'] },
@@ -1989,7 +2008,7 @@ export default function App() {
                       </ul>
                     </div>
                   ))}
-                </div>
+                </div>}
               </div>
             </div>
           </div>
