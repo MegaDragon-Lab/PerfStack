@@ -21,9 +21,9 @@ INFLUXDB_BUCKET = "k6"
 TEMPLATE_PATH  = pathlib.Path(__file__).parent / "k6_template.js"
 DEFAULT_PARALLELISM = 4
 
-# Resources per runner pod — give k6 a full core so VU init is fast
-RUNNER_REQUESTS = {"cpu": "1000m", "memory": "512Mi"}
-RUNNER_LIMITS   = {"cpu": "2000m", "memory": "1024Mi"}
+# Resources per runner pod — sized for actual observed usage (~14m CPU, ~30Mi RAM)
+RUNNER_REQUESTS = {"cpu": "100m",  "memory": "64Mi"}
+RUNNER_LIMITS   = {"cpu": "500m",  "memory": "256Mi"}
 
 # Cache Jinja2 environment — avoids filesystem reload on every test run
 _jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATE_PATH.parent)))
