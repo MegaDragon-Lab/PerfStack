@@ -1913,42 +1913,24 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
     for i, vol in enumerate(volumes or []):
         mount_path = vol.get("mountPath") or vol.get("mount_path", "")
         size = vol.get("size", "1Gi")
-        pv_name = f"{app_name}-vol-{i}"
-        try:
-            core.create_persistent_volume(k8s_client.V1PersistentVolume(
-                metadata=k8s_client.V1ObjectMeta(name=pv_name),
-                spec=k8s_client.V1PersistentVolumeSpec(
-                    capacity={"storage": size},
-                    access_modes=["ReadWriteOnce"],
-                    persistent_volume_reclaim_policy="Retain",
-                    storage_class_name="",
-                    host_path=k8s_client.V1HostPathVolumeSource(
-                        path=f"/host-data/perfstack/apps/{app_name}/vol-{i}",
-                        type="DirectoryOrCreate"
-                    )
-                )
-            ))
-        except Exception:
-            pass  # already exists
+        pvc_name = f"{app_name}-vol-{i}"
         try:
             core.create_namespaced_persistent_volume_claim(
                 namespace=ns,
                 body=k8s_client.V1PersistentVolumeClaim(
-                    metadata=k8s_client.V1ObjectMeta(name=pv_name, namespace=ns),
+                    metadata=k8s_client.V1ObjectMeta(name=pvc_name, namespace=ns),
                     spec=k8s_client.V1PersistentVolumeClaimSpec(
                         access_modes=["ReadWriteOnce"],
-                        storage_class_name="",
-                        volume_name=pv_name,
                         resources=k8s_client.V1ResourceRequirements(requests={"storage": size})
                     )
                 )
             )
         except Exception:
             pass  # already exists
-        volume_mounts.append(k8s_client.V1VolumeMount(name=pv_name, mount_path=mount_path))
+        volume_mounts.append(k8s_client.V1VolumeMount(name=pvc_name, mount_path=mount_path))
         pod_volumes.append(k8s_client.V1Volume(
-            name=pv_name,
-            persistent_volume_claim=k8s_client.V1PersistentVolumeClaimVolumeSource(claim_name=pv_name)
+            name=pvc_name,
+            persistent_volume_claim=k8s_client.V1PersistentVolumeClaimVolumeSource(claim_name=pvc_name)
         ))
 
     # Deployment
