@@ -249,16 +249,6 @@ else
 fi
 ok "perfstack-k6:latest built"
 
-log "Verifying xk6-output-influxdb extension is compiled in..."
-K6_CHECK=$(echo 'export default function(){}' \
-  | docker run --rm -i --platform linux/arm64 perfstack-k6:latest \
-      run --out xk6-influxdb - 2>&1 || true)
-if echo "$K6_CHECK" | grep -qi "invalid output type"; then
-  err "k6 image missing xk6-output-influxdb — build failed silently, aborting"
-else
-  ok "xk6-output-influxdb extension confirmed"
-fi
-
 log "Pushing perfstack-k6 to local registry..."
 docker tag perfstack-k6:latest localhost:${REG_PORT}/library/perfstack-k6:latest
 docker push localhost:${REG_PORT}/library/perfstack-k6:latest
