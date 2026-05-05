@@ -289,7 +289,7 @@ const BLANK_FORM = {
   iam_url: "", client_id: "", client_secret: "", use_user_token: false,
   target_url: "", method: "POST", headers: [], payload_type: "json",
   payload: '{\n  "key": "value"\n}',
-  vus: 10, duration: 60, sleep_interval: 0.1, parallelism: 4,
+  vus: 10, duration: 60, sleep_interval: 0.1, parallelism: 2,
 };
 
 const headersToDict = (arr) =>
@@ -540,7 +540,7 @@ export default function App() {
   const loadService = (idx) => {
     const { name, folder, headers: headersDict, ...config } = services[idx];
     const headersArr = Object.entries(headersDict || {}).map(([key, value]) => ({ key, value, enabled: true }));
-    setForm({ sleep_interval: 0.1, parallelism: 4, ...config, headers: headersArr, use_user_token: false });
+    setForm({ sleep_interval: 0.1, parallelism: 2, ...config, headers: headersArr, use_user_token: false });
     setNewServiceMode(false);
     setActiveIdx(idx);
     setSaveFolder(folder || "");
