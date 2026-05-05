@@ -824,8 +824,21 @@ export default function App() {
   const loadExamplePayload = () =>
     setForm(f => ({ ...f, payload: JSON.stringify({ key: "value", userId: "123", amount: 99.99 }, null, 2) }));
 
-  const vuLabel = (v) => v <= 20 ? "Low" : v <= 200 ? "Medium" : "High";
-  const durLabel = (d) => d < 60 ? "Short" : d <= 300 ? "Medium" : "Long";
+  const vuLabel  = (v) => v <= 50 ? "Low" : v <= 200 ? "Moderate" : v <= 500 ? "Heavy" : "Extreme";
+  const durLabel = (d) => d < 60 ? "Short" : d <= 300 ? "Moderate" : "Long";
+  const vuColor  = (v) => v <= 50 ? t.success : v <= 200 ? t.warning : t.danger;
+  const vuImpact = (v, si) => {
+    const rps = si > 0 ? (v / (si + 0.001)).toFixed(0) : v * 10;
+    if (v <= 50)  return `Low concurrency — ${rps} req/s estimated`;
+    if (v <= 200) return `Moderate load — ${rps} req/s, watch latency`;
+    if (v <= 500) return `Heavy load — ${rps} req/s, monitor errors`;
+    return `Extreme stress — ${rps} req/s, expect saturation`;
+  };
+  const parseDurStr = (s) => {
+    const m = s.match(/^(\d+)m(\d+)s?$/); if (m) return +m[1]*60 + +m[2];
+    const onlyM = s.match(/^(\d+)m$/);    if (onlyM) return +onlyM[1]*60;
+    return parseInt(s) || 0;
+  };
 
   const [history,        setHistory]        = useState([]);
   const [historyOpen,    setHistoryOpen]    = useState(false);
@@ -1431,17 +1444,48 @@ export default function App() {
         .summary-label { color: ${t.textDim}; }
         .summary-url { color: ${t.accent}; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-        /* ── VU display ── */
-        .vu-display {
-          text-align: center; padding: 10px 0 8px;
-          font-family: monospace;
+        /* ── KPI display ── */
+        .kpi-row {
+          display: flex; justify-content: center; align-items: flex-end;
+          gap: 0; padding: 16px 0 12px; font-family: monospace;
         }
-        .vu-display-val { font-size: 26px; font-weight: 800; color: #c73000; }
-        .vu-display-sep { font-size: 18px; color: ${t.borderLight}; margin: 0 10px; }
-        .vu-ctx-label {
-          font-size: 10px; color: ${t.textDim}; text-align: center;
-          margin-top: -4px; margin-bottom: 8px; letter-spacing: .05em;
+        .kpi-block { text-align: center; min-width: 90px; }
+        .kpi-val { font-size: 48px; font-weight: 900; line-height: 1; letter-spacing: -.02em; }
+        .kpi-unit { font-size: 14px; font-weight: 700; color: ${t.textDim}; margin-left: 2px; }
+        .kpi-lbl { font-size: 10px; color: ${t.textMuted}; text-transform: uppercase; letter-spacing: .08em; margin-top: 4px; }
+        .kpi-sep { font-size: 32px; color: ${t.borderLight}; margin: 0 20px; padding-bottom: 8px; }
+
+        /* ── Execution 2-col layout ── */
+        .exec-cols { display: grid; grid-template-columns: 1fr 280px; gap: 16px; margin-top: 4px; }
+        @media (max-width: 700px) { .exec-cols { grid-template-columns: 1fr; } }
+
+        /* ── Slider redesign ── */
+        .slider-wrap { margin-bottom: 20px; }
+        .slider-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+        .slider-title { font-size: 10px; font-weight: 700; color: ${t.textMuted}; text-transform: uppercase; letter-spacing: .07em; }
+        .slider-val { font-size: 22px; font-weight: 800; font-family: monospace; line-height: 1; }
+        .slider-limits { display: flex; justify-content: space-between; margin-top: 3px; font-size: 9px; color: ${t.textDim}; font-family: monospace; }
+
+        /* ── Insights card ── */
+        .insights-card {
+          background: ${t.bgInput}; border: 1px solid ${t.borderLight};
+          border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 14px;
         }
+        .insight-row { display: flex; flex-direction: column; gap: 3px; }
+        .insight-label { font-size: 9px; font-weight: 700; color: ${t.textMuted}; text-transform: uppercase; letter-spacing: .08em; }
+        .insight-value { font-size: 13px; font-weight: 700; font-family: monospace; }
+        .insight-sub { font-size: 10px; color: ${t.textDim}; line-height: 1.5; }
+
+        /* ── Horizontal timeline ── */
+        .timeline-wrap { margin-top: 16px; }
+        .timeline-bar { display: flex; height: 32px; border-radius: 6px; overflow: hidden; }
+        .timeline-seg {
+          display: flex; align-items: center; justify-content: center;
+          font-size: 9px; font-weight: 700; font-family: monospace; letter-spacing: .04em;
+          color: white; transition: flex .3s; min-width: 40px; flex-shrink: 0;
+        }
+        .timeline-labels { display: flex; margin-top: 4px; }
+        .timeline-lbl { font-size: 9px; color: ${t.textDim}; text-align: center; font-family: monospace; }
 
         .run-panel { border-color: ${t.accent}44; }
         .run-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -1497,16 +1541,16 @@ export default function App() {
         }
         .grafana-link a { color: ${t.accent}; }
 
-        .scenario-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+        .scenario-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
         .scenario-chip {
           background: transparent; border: 1px solid ${t.scenarioBorder}; color: ${t.textMuted};
-          padding: 5px 11px; border-radius: 20px; font-size: 10px;
+          padding: 7px 16px; border-radius: 20px; font-size: 11px;
           font-family: monospace; cursor: pointer; letter-spacing: .04em;
-          transition: all .15s; white-space: nowrap;
+          transition: all .15s; white-space: nowrap; display: flex; align-items: center; gap: 5px;
         }
-        .scenario-chip:hover  { border-color: ${t.accent}; color: ${t.accent}; }
-        .scenario-chip.active { border-color: #c73000; color: #c73000; background: rgba(199,48,0,.08); font-weight: 700; }
-        .scenario-desc { font-size: 10px; color: ${t.textDim}; margin-top: 2px; }
+        .scenario-chip:hover  { border-color: ${t.accent}; color: ${t.accent}; background: ${t.accent}0d; }
+        .scenario-chip.active { border-color: #c73000; color: #fff; background: #c73000; font-weight: 700; }
+        .scenario-desc { font-size: 10px; color: ${t.textDim}; margin-bottom: 8px; }
         .stages-preview {
           margin-top: 8px; padding: 8px 10px; background: ${t.bgInput};
           border: 1px solid ${t.borderLight}; border-radius: 5px;
@@ -2530,34 +2574,45 @@ export default function App() {
               )}
             </div>
 
-            {/* Run */}
+            {/* ── 03 Execution ─────────────────────────────────────── */}
             <div className="panel run-panel">
-              <div className="panel-title" style={{ display: 'flex', alignItems: 'center' }}>
+
+              {/* Header row */}
+              <div className="panel-title" style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
                 <span className="section-num">03</span>
                 Execution
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
                   <button
                     onClick={runTest}
                     disabled={!canRun}
-                    title="Run Load Test"
-                    style={{ padding: '5px 10px', fontSize: 13, borderRadius: 6, border: `1px solid ${t.success}aa`, background: `${t.success}20`, color: t.success, cursor: 'pointer', opacity: !canRun ? .35 : 1 }}
+                    style={{
+                      padding: '7px 20px', fontSize: 12, borderRadius: 6, fontWeight: 700,
+                      fontFamily: 'monospace', letterSpacing: '.05em', cursor: 'pointer',
+                      border: `1px solid ${t.success}`, background: canRun ? t.success : `${t.success}22`,
+                      color: canRun ? '#fff' : t.success, opacity: !canRun ? .45 : 1,
+                      display: 'flex', alignItems: 'center', gap: 6,
+                    }}
                   >
-                    {loading ? '⏳' : '▶'}
+                    {loading ? '⏳' : '▶'} Run Test
                   </button>
                   <button
                     onClick={resetInfluxDB}
                     disabled={resetting}
-                    title="Reset InfluxDB"
-                    style={{ padding: '5px 10px', fontSize: 13, borderRadius: 6, border: `1px solid ${t.danger}aa`, background: `${t.danger}20`, color: t.danger, cursor: 'pointer', opacity: resetting ? .35 : 1 }}
+                    title="Reset InfluxDB metrics"
+                    style={{
+                      padding: '7px 12px', fontSize: 12, borderRadius: 6,
+                      border: `1px solid ${t.danger}66`, background: `${t.danger}14`,
+                      color: t.danger, cursor: 'pointer', opacity: resetting ? .35 : 1,
+                    }}
                   >
                     {resetting ? '…' : '🗑'}
                   </button>
                 </div>
               </div>
 
-              {/* Scenario */}
-              <div className="field" style={{ marginBottom: 12, marginTop: 0 }}>
-                <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, letterSpacing: '.06em', textTransform: 'uppercase' }}>Scenario</label>
+              {/* Scenario selector */}
+              <div style={{ marginBottom: 4 }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>Scenario</div>
                 <div className="scenario-chips">
                   {Object.entries(SCENARIOS).map(([key, s]) => (
                     <button key={key} className={`scenario-chip${scenario === key ? " active" : ""}`}
@@ -2567,111 +2622,162 @@ export default function App() {
                   ))}
                 </div>
                 <span className="scenario-desc">{SCENARIOS[scenario].desc}</span>
+              </div>
 
-                {scenario !== "custom" && (
+              {scenario !== "custom" && (() => {
+                const stages = computeStages(scenario, form.vus, form.duration);
+                const totalSec = stages.reduce((sum, s) => sum + parseDurStr(s.duration), 0) || 1;
+                const segColors = ['#3b82f6', '#c73000', '#10b981'];
+                const phaseNames = scenario === 'spike'
+                  ? ['Baseline', 'Ramp Up', 'Hold', 'Ramp Down', 'Recovery']
+                  : scenario === 'stress'
+                  ? stages.map((_, i) => i < stages.length - 1 ? `Phase ${i+1}` : 'Hold')
+                  : ['Ramp Up', 'Hold', 'Ramp Down'];
+                return (
                   <>
-                    <div className="vu-display">
-                      <span className="vu-display-val">{form.vus}</span>
-                      <span style={{ fontSize: 14, color: t.textDim, margin: '0 4px', fontFamily: 'monospace' }}>VUs</span>
-                      <span className="vu-display-sep">|</span>
-                      <span className="vu-display-val">{form.duration}</span>
-                      <span style={{ fontSize: 14, color: t.textDim, margin: '0 4px', fontFamily: 'monospace' }}>s</span>
-                    </div>
-                    <div className="row2" style={{ marginTop: 4 }}>
-                      <div className="field" style={{ marginBottom: 0 }}>
-                        <input type="range" min={1} max={2000} value={form.vus}
-                          onChange={(e) => set("vus")(+e.target.value)} />
-                        <div className="vu-ctx-label">
-                          <label style={{ color: t.textMuted, fontSize: 10 }}>Virtual Users — </label>
-                          <span style={{ color: form.vus <= 20 ? t.success : form.vus <= 200 ? t.warning : t.danger, fontWeight: 700 }}>
-                            {vuLabel(form.vus)}
-                          </span>
+                    {/* KPI display */}
+                    <div className="kpi-row">
+                      <div className="kpi-block">
+                        <div className="kpi-val" style={{ color: vuColor(form.vus) }}>
+                          {form.vus}<span className="kpi-unit">VUs</span>
                         </div>
+                        <div className="kpi-lbl">Virtual Users</div>
                       </div>
-                      <div className="field" style={{ marginBottom: 0 }}>
-                        <input type="range" min={10} max={3600} step={10} value={form.duration}
-                          onChange={(e) => set("duration")(+e.target.value)} />
-                        <div className="vu-ctx-label">
-                          <label style={{ color: t.textMuted, fontSize: 10 }}>Duration — </label>
-                          <span style={{ color: form.duration < 60 ? t.success : form.duration <= 300 ? t.warning : t.danger, fontWeight: 700 }}>
-                            {durLabel(form.duration)}
-                          </span>
+                      <div className="kpi-sep">|</div>
+                      <div className="kpi-block">
+                        <div className="kpi-val" style={{ color: form.duration < 60 ? t.success : form.duration <= 300 ? t.warning : t.danger }}>
+                          {form.duration < 60 ? form.duration : form.duration < 3600 ? `${Math.floor(form.duration/60)}m${form.duration%60 > 0 ? (form.duration%60)+'s' : ''}` : `${Math.floor(form.duration/3600)}h`}
+                          <span className="kpi-unit">{form.duration < 60 ? 's' : ''}</span>
                         </div>
+                        <div className="kpi-lbl">Duration</div>
                       </div>
                     </div>
-                    {(() => {
-                      const stages = computeStages(scenario, form.vus, form.duration);
-                      const maxVus = Math.max(...stages.map(s => s.target), 1);
-                      return (
-                        <div className="stages-preview">
-                          {stages.map((s, i) => (
-                            <div key={i} className="stage-block">
-                              <span style={{ color: t.textMuted, fontSize: 9 }}>{s.target}vu</span>
-                              <div className="stage-bar" style={{ height: Math.max(4, Math.round((s.target / maxVus) * 40)) }} />
-                              <span className="stage-dur">{s.duration}</span>
+
+                    {/* 2-column: sliders + insights */}
+                    <div className="exec-cols">
+                      {/* Left: sliders */}
+                      <div>
+                        <div className="slider-wrap">
+                          <div className="slider-header">
+                            <span className="slider-title">Virtual Users</span>
+                            <span className="slider-val" style={{ color: vuColor(form.vus) }}>{form.vus} <span style={{ fontSize: 11, fontWeight: 600 }}>{vuLabel(form.vus)}</span></span>
+                          </div>
+                          <input type="range" min={1} max={2000} value={form.vus}
+                            onChange={e => set("vus")(+e.target.value)}
+                            style={{ width: '100%' }} />
+                          <div className="slider-limits"><span>1</span><span>500</span><span>1000</span><span>2000</span></div>
+                        </div>
+                        <div className="slider-wrap">
+                          <div className="slider-header">
+                            <span className="slider-title">Duration</span>
+                            <span className="slider-val" style={{ color: form.duration < 60 ? t.success : form.duration <= 300 ? t.warning : t.danger }}>
+                              {form.duration}s <span style={{ fontSize: 11, fontWeight: 600 }}>{durLabel(form.duration)}</span>
+                            </span>
+                          </div>
+                          <input type="range" min={10} max={3600} step={10} value={form.duration}
+                            onChange={e => set("duration")(+e.target.value)}
+                            style={{ width: '100%' }} />
+                          <div className="slider-limits"><span>10s</span><span>1m</span><span>5m</span><span>60m</span></div>
+                        </div>
+                      </div>
+
+                      {/* Right: insights */}
+                      <div className="insights-card">
+                        <div className="insight-row">
+                          <div className="insight-label">Load Level</div>
+                          <div className="insight-value" style={{ color: vuColor(form.vus) }}>{vuLabel(form.vus)}</div>
+                        </div>
+                        <div className="insight-row">
+                          <div className="insight-label">Estimated Impact</div>
+                          <div className="insight-sub">{vuImpact(form.vus, form.sleep_interval)}</div>
+                        </div>
+                        <div className="insight-row">
+                          <div className="insight-label">Pods</div>
+                          <div className="insight-sub">{form.parallelism} runner pod{form.parallelism > 1 ? 's' : ''} · {Math.ceil(form.vus / form.parallelism)} VUs each</div>
+                        </div>
+                        <div className="insight-row">
+                          <div className="insight-label">RT Check</div>
+                          <div className="insight-sub">p(95) &lt; {(form.rt_threshold_ms/1000).toFixed(1)}s</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Horizontal timeline */}
+                    <div className="timeline-wrap">
+                      <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>Timeline</div>
+                      <div className="timeline-bar">
+                        {stages.map((s, i) => {
+                          const dur = parseDurStr(s.duration);
+                          const pct = (dur / totalSec * 100).toFixed(1);
+                          const bg = segColors[i % segColors.length];
+                          const name = phaseNames[i] || `Phase ${i+1}`;
+                          return (
+                            <div key={i} className="timeline-seg"
+                              style={{ flex: `${pct} 0 0`, background: bg, opacity: s.target === 0 ? 0.5 : 1 }}>
+                              {parseFloat(pct) > 10 ? name : ''}
                             </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
+                          );
+                        })}
+                      </div>
+                      <div className="timeline-labels" style={{ display: 'flex' }}>
+                        {stages.map((s, i) => {
+                          const dur = parseDurStr(s.duration);
+                          const pct = (dur / totalSec * 100).toFixed(1);
+                          const name = phaseNames[i] || `Phase ${i+1}`;
+                          return (
+                            <div key={i} className="timeline-lbl" style={{ flex: `${pct} 0 0` }}>
+                              {s.duration}{parseFloat(pct) > 12 ? ` · ${name}` : ''}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </>
-                )}
+                );
+              })()}
 
+              {/* Params row */}
+              <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                 {/* Request Interval */}
-                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <label style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', whiteSpace: 'nowrap' }}>
-                    Request Interval
-                  </label>
-                  <input
-                    type="number"
-                    min={0} max={60} step={0.1}
-                    value={form.sleep_interval}
-                    onChange={e => set("sleep_interval")(Math.max(0, parseFloat(e.target.value) || 0))}
-                    style={{ width: 70, padding: '4px 8px', borderRadius: 5, border: `1px solid ${t.inputBorder}`, background: t.bgInput, color: t.text, fontSize: 12, fontFamily: 'monospace', outline: 'none', textAlign: 'right' }}
-                  />
-                  <span style={{ fontSize: 10, color: t.textDim }}>s — sleep between requests</span>
-                  <span style={{ fontSize: 10, color: t.textDim, marginLeft: 'auto' }}>
-                    {form.sleep_interval > 0
-                      ? `≈ ${(1 / (form.sleep_interval + 0.001)).toFixed(1)} req/s per VU`
-                      : 'no sleep — max throughput'}
-                  </span>
+                <div style={{ background: t.bgInput, border: `1px solid ${t.borderLight}`, borderRadius: 6, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 6 }}>Request Interval</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input type="number" min={0} max={60} step={0.1} value={form.sleep_interval}
+                      onChange={e => set("sleep_interval")(Math.max(0, parseFloat(e.target.value) || 0))}
+                      style={{ width: 60, padding: '3px 6px', borderRadius: 4, border: `1px solid ${t.inputBorder}`, background: t.bg, color: t.text, fontSize: 13, fontFamily: 'monospace', outline: 'none', textAlign: 'right' }} />
+                    <span style={{ fontSize: 10, color: t.textDim }}>s</span>
+                  </div>
+                  <div style={{ fontSize: 9, color: t.textDim, marginTop: 4 }}>
+                    {form.sleep_interval > 0 ? `≈ ${(1/(form.sleep_interval+0.001)).toFixed(1)} req/s per VU` : 'max throughput'}
+                  </div>
                 </div>
-
                 {/* Runner Pods */}
-                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <label style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', whiteSpace: 'nowrap' }}>
-                    Runner Pods
-                  </label>
-                  <input
-                    type="number"
-                    min={1} max={20} step={1}
-                    value={form.parallelism}
-                    onChange={e => set("parallelism")(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
-                    style={{ width: 70, padding: '4px 8px', borderRadius: 5, border: `1px solid ${t.inputBorder}`, background: t.bgInput, color: t.text, fontSize: 12, fontFamily: 'monospace', outline: 'none', textAlign: 'right' }}
-                  />
-                  <span style={{ fontSize: 10, color: t.textDim }}>parallel k6 pods (1–20)</span>
-                  <span style={{ fontSize: 10, color: t.textDim, marginLeft: 'auto' }}>
-                    {`≈ ${form.vus} VUs across ${form.parallelism} pod${form.parallelism > 1 ? 's' : ''}`}
-                  </span>
+                <div style={{ background: t.bgInput, border: `1px solid ${t.borderLight}`, borderRadius: 6, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 6 }}>Runner Pods</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input type="number" min={1} max={20} step={1} value={form.parallelism}
+                      onChange={e => set("parallelism")(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
+                      style={{ width: 60, padding: '3px 6px', borderRadius: 4, border: `1px solid ${t.inputBorder}`, background: t.bg, color: t.text, fontSize: 13, fontFamily: 'monospace', outline: 'none', textAlign: 'right' }} />
+                    <span style={{ fontSize: 10, color: t.textDim }}>pods</span>
+                  </div>
+                  <div style={{ fontSize: 9, color: t.textDim, marginTop: 4 }}>
+                    {`≈ ${Math.ceil(form.vus / form.parallelism)} VUs each`}
+                  </div>
                 </div>
-
-                {/* Response Time Threshold */}
-                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <label style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', whiteSpace: 'nowrap' }}>
-                    RT Threshold
-                  </label>
-                  <input
-                    type="number"
-                    min={100} max={60000} step={100}
-                    value={form.rt_threshold_ms}
-                    onChange={e => set("rt_threshold_ms")(Math.max(100, Math.min(60000, parseInt(e.target.value) || 2000)))}
-                    style={{ width: 70, padding: '4px 8px', borderRadius: 5, border: `1px solid ${t.inputBorder}`, background: t.bgInput, color: t.text, fontSize: 12, fontFamily: 'monospace', outline: 'none', textAlign: 'right' }}
-                  />
-                  <span style={{ fontSize: 10, color: t.textDim }}>ms — response time check</span>
-                  <span style={{ fontSize: 10, color: t.textDim, marginLeft: 'auto' }}>
-                    {`p(95) < ${(form.rt_threshold_ms / 1000).toFixed(1)}s · check: response time < ${(form.rt_threshold_ms / 1000).toFixed(1)}s`}
-                  </span>
+                {/* RT Threshold */}
+                <div style={{ background: t.bgInput, border: `1px solid ${t.borderLight}`, borderRadius: 6, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 6 }}>RT Threshold</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input type="number" min={100} max={60000} step={100} value={form.rt_threshold_ms}
+                      onChange={e => set("rt_threshold_ms")(Math.max(100, Math.min(60000, parseInt(e.target.value) || 2000)))}
+                      style={{ width: 60, padding: '3px 6px', borderRadius: 4, border: `1px solid ${t.inputBorder}`, background: t.bg, color: t.text, fontSize: 13, fontFamily: 'monospace', outline: 'none', textAlign: 'right' }} />
+                    <span style={{ fontSize: 10, color: t.textDim }}>ms</span>
+                  </div>
+                  <div style={{ fontSize: 9, color: t.textDim, marginTop: 4 }}>
+                    {`p(95) < ${(form.rt_threshold_ms/1000).toFixed(1)}s`}
+                  </div>
                 </div>
+              </div>
 
                 {scenario === "custom" && (
                   <div className="custom-stages" style={{ marginTop: 10 }}>
@@ -2768,7 +2874,6 @@ export default function App() {
                     </div>
                   </div>
                 )}
-              </div>
 
               {/* Status */}
               {status !== "idle" && (
