@@ -1679,6 +1679,7 @@ class AppConfig(BaseModel):
     port: int = 8080
     replicas: int = 1
     env: list[dict] = []
+    max_body_size: str = "10m"   # nginx proxy-body-size (e.g. "10m", "50m", "100m")
 
 class DeployedApp(BaseModel):
     name: str
@@ -1888,7 +1889,7 @@ def _resolve_env_vars(env_vars: list, target_ns: str) -> list:
     return resolved
 
 # ── Deploy app to its own namespace ──────────────────────────────────────────
-def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list, auth_required: bool = False):
+def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list, auth_required: bool = False, max_body_size: str = "10m"):
     """Create (or replace) Namespace + Deployment + Service + Ingress for an app."""
     ns = f"app-{app_name}"
     core = _core_v1()
@@ -1961,6 +1962,7 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
     ingress_annotations = {
         "nginx.ingress.kubernetes.io/rewrite-target": "/$2",
         "nginx.ingress.kubernetes.io/proxy-read-timeout": "60",
+        "nginx.ingress.kubernetes.io/proxy-body-size": max_body_size,
     }
     if auth_required:
         ingress_annotations["nginx.ingress.kubernetes.io/auth-url"] = \
@@ -2036,7 +2038,8 @@ async def _watch_build_and_deploy(app_name: str, build_id: str, image_tag: str,
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: _deploy_app_k8s(
             app_name, image_tag, cfg.get("port", 8080),
-            cfg.get("replicas", 1), cfg.get("env", []), auth_required
+            cfg.get("replicas", 1), cfg.get("env", []), auth_required,
+            cfg.get("max_body_size", "10m"),
         ))
         now = _now_iso()
         _update_app_status(app_name, "running",
@@ -2182,6 +2185,7 @@ async def toggle_deploy_app_auth(name: str):
             app_entry.get("replicas", 1),
             app_entry.get("env", []),
             app_entry["auth_required"],
+            app_entry.get("max_body_size", "10m"),
         ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -2238,7 +2242,7 @@ async def restart_deploy_app(name: str):
 
     try:
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars, auth_required))
+        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars, auth_required, app_entry.get("max_body_size", "10m")))
         _update_app_status(name, "running",
                            last_deployed=_now_iso(),
                            url=f"http://{PUBLIC_HOST}/apps/{name}")
