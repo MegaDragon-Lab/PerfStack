@@ -1889,7 +1889,7 @@ def _resolve_env_vars(env_vars: list, target_ns: str) -> list:
     return resolved
 
 # ── Deploy app to its own namespace ──────────────────────────────────────────
-def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list, auth_required: bool = False, max_body_size: str = "50m"):
+def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list, auth_required: bool = False, max_body_size: str = "50m", volumes: list = None):
     """Create (or replace) Namespace + Deployment + Service + Ingress for an app."""
     ns = f"app-{app_name}"
     core = _core_v1()
@@ -1907,6 +1907,50 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
     except Exception:
         pass  # already exists
 
+    # Persistent volumes declared in GSA-Platform-Suite.yaml
+    volume_mounts = []
+    pod_volumes = []
+    for i, vol in enumerate(volumes or []):
+        mount_path = vol.get("mountPath") or vol.get("mount_path", "")
+        size = vol.get("size", "1Gi")
+        pv_name = f"{app_name}-vol-{i}"
+        try:
+            core.create_persistent_volume(k8s_client.V1PersistentVolume(
+                metadata=k8s_client.V1ObjectMeta(name=pv_name),
+                spec=k8s_client.V1PersistentVolumeSpec(
+                    capacity={"storage": size},
+                    access_modes=["ReadWriteOnce"],
+                    persistent_volume_reclaim_policy="Retain",
+                    storage_class_name="",
+                    host_path=k8s_client.V1HostPathVolumeSource(
+                        path=f"/host-data/perfstack/apps/{app_name}/vol-{i}",
+                        type="DirectoryOrCreate"
+                    )
+                )
+            ))
+        except Exception:
+            pass  # already exists
+        try:
+            core.create_namespaced_persistent_volume_claim(
+                namespace=ns,
+                body=k8s_client.V1PersistentVolumeClaim(
+                    metadata=k8s_client.V1ObjectMeta(name=pv_name, namespace=ns),
+                    spec=k8s_client.V1PersistentVolumeClaimSpec(
+                        access_modes=["ReadWriteOnce"],
+                        storage_class_name="",
+                        volume_name=pv_name,
+                        resources=k8s_client.V1ResourceRequirements(requests={"storage": size})
+                    )
+                )
+            )
+        except Exception:
+            pass  # already exists
+        volume_mounts.append(k8s_client.V1VolumeMount(name=pv_name, mount_path=mount_path))
+        pod_volumes.append(k8s_client.V1Volume(
+            name=pv_name,
+            persistent_volume_claim=k8s_client.V1PersistentVolumeClaimVolumeSource(claim_name=pv_name)
+        ))
+
     # Deployment
     env = _resolve_env_vars(env_vars, ns)
     deploy_body = k8s_client.V1Deployment(
@@ -1916,19 +1960,23 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
             selector=k8s_client.V1LabelSelector(match_labels={"app": app_name}),
             template=k8s_client.V1PodTemplateSpec(
                 metadata=k8s_client.V1ObjectMeta(labels={"app": app_name}),
-                spec=k8s_client.V1PodSpec(containers=[
-                    k8s_client.V1Container(
-                        name=app_name,
-                        image=image_tag,
-                        image_pull_policy="Always",
-                        ports=[k8s_client.V1ContainerPort(container_port=port)],
-                        env=env,
-                        resources=k8s_client.V1ResourceRequirements(
-                            requests={"cpu": "100m", "memory": "128Mi"},
-                            limits={"cpu": "500m", "memory": "256Mi"}
+                spec=k8s_client.V1PodSpec(
+                    containers=[
+                        k8s_client.V1Container(
+                            name=app_name,
+                            image=image_tag,
+                            image_pull_policy="Always",
+                            ports=[k8s_client.V1ContainerPort(container_port=port)],
+                            env=env,
+                            resources=k8s_client.V1ResourceRequirements(
+                                requests={"cpu": "100m", "memory": "128Mi"},
+                                limits={"cpu": "500m", "memory": "256Mi"}
+                            ),
+                            volume_mounts=volume_mounts or None
                         )
-                    )
-                ])
+                    ],
+                    volumes=pod_volumes or None
+                )
             )
         )
     )
@@ -2039,7 +2087,7 @@ async def _watch_build_and_deploy(app_name: str, build_id: str, image_tag: str,
         await loop.run_in_executor(None, lambda: _deploy_app_k8s(
             app_name, image_tag, cfg.get("port", 8080),
             cfg.get("replicas", 1), cfg.get("env", []), auth_required,
-            cfg.get("max_body_size", "50m"),
+            cfg.get("max_body_size", "50m"), cfg.get("volumes", []),
         ))
         now = _now_iso()
         _update_app_status(app_name, "running",
@@ -2186,6 +2234,7 @@ async def toggle_deploy_app_auth(name: str):
             app_entry.get("env", []),
             app_entry["auth_required"],
             app_entry.get("max_body_size", "50m"),
+            app_entry.get("volumes", []),
         ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -2229,6 +2278,7 @@ async def restart_deploy_app(name: str):
                     if "port"     in raw: app_entry["port"]     = int(raw["port"])
                     if "replicas" in raw: app_entry["replicas"] = int(raw["replicas"])
                     app_entry["env"] = raw.get("env", [])
+                    app_entry["volumes"] = raw.get("volumes", [])
                     _write_apps(apps)
                     logger.info("Refreshed config from GSA-Platform-Suite.yaml for %s", name)
     except Exception as exc:
@@ -2242,7 +2292,7 @@ async def restart_deploy_app(name: str):
 
     try:
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars, auth_required, app_entry.get("max_body_size", "50m")))
+        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars, auth_required, app_entry.get("max_body_size", "50m"), app_entry.get("volumes", [])))
         _update_app_status(name, "running",
                            last_deployed=_now_iso(),
                            url=f"http://{PUBLIC_HOST}/apps/{name}")
@@ -2360,7 +2410,7 @@ async def deploy_webhook(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
     # Read GSA-Platform-Suite.yaml from archive to get port/replicas/env
-    cfg: dict = {"port": 8080, "replicas": 1, "env": []}
+    cfg: dict = {"port": 8080, "replicas": 1, "env": [], "volumes": [], "max_body_size": "50m"}
     try:
         async with __import__("httpx").AsyncClient(timeout=10) as hx:
             r = await hx.get(
@@ -2378,6 +2428,8 @@ async def deploy_webhook(request: Request):
                                     cfg["port"] = int(raw.get("port", 8080))
                                     cfg["replicas"] = int(raw.get("replicas", 1))
                                     cfg["env"] = raw.get("env", [])
+                                    cfg["volumes"] = raw.get("volumes", [])
+                                    cfg["max_body_size"] = raw.get("max_body_size", "50m")
                             break
     except Exception as e:
         logger.warning("Could not read GSA-Platform-Suite.yaml: %s", e)
@@ -2388,6 +2440,8 @@ async def deploy_webhook(request: Request):
             a["port"] = cfg["port"]
             a["replicas"] = cfg["replicas"]
             a["env"] = cfg["env"]
+            a["volumes"] = cfg.get("volumes", [])
+            a["max_body_size"] = cfg.get("max_body_size", "50m")
             break
     _write_apps(apps)
 
