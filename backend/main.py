@@ -1908,29 +1908,49 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
         pass  # already exists
 
     # Persistent volumes declared in GSA-Platform-Suite.yaml
+    # PVs use hostPath /host-data/perfstack/... which k3d maps to ~/.perfstack/data on the host
     volume_mounts = []
     pod_volumes = []
     for i, vol in enumerate(volumes or []):
         mount_path = vol.get("mountPath") or vol.get("mount_path", "")
         size = vol.get("size", "1Gi")
-        pvc_name = f"{app_name}-vol-{i}"
+        pv_name = f"{app_name}-vol-{i}"
+        host_path = f"/host-data/perfstack/apps/{app_name}/vol-{i}"
+        try:
+            core.create_persistent_volume(k8s_client.V1PersistentVolume(
+                metadata=k8s_client.V1ObjectMeta(name=pv_name),
+                spec=k8s_client.V1PersistentVolumeSpec(
+                    capacity={"storage": size},
+                    access_modes=["ReadWriteOnce"],
+                    persistent_volume_reclaim_policy="Retain",
+                    storage_class_name="perfstack-static",
+                    host_path=k8s_client.V1HostPathVolumeSource(
+                        path=host_path,
+                        type="DirectoryOrCreate"
+                    )
+                )
+            ))
+        except Exception:
+            pass  # already exists
         try:
             core.create_namespaced_persistent_volume_claim(
                 namespace=ns,
                 body=k8s_client.V1PersistentVolumeClaim(
-                    metadata=k8s_client.V1ObjectMeta(name=pvc_name, namespace=ns),
+                    metadata=k8s_client.V1ObjectMeta(name=pv_name, namespace=ns),
                     spec=k8s_client.V1PersistentVolumeClaimSpec(
                         access_modes=["ReadWriteOnce"],
+                        storage_class_name="perfstack-static",
+                        volume_name=pv_name,
                         resources=k8s_client.V1ResourceRequirements(requests={"storage": size})
                     )
                 )
             )
         except Exception:
             pass  # already exists
-        volume_mounts.append(k8s_client.V1VolumeMount(name=pvc_name, mount_path=mount_path))
+        volume_mounts.append(k8s_client.V1VolumeMount(name=pv_name, mount_path=mount_path))
         pod_volumes.append(k8s_client.V1Volume(
-            name=pvc_name,
-            persistent_volume_claim=k8s_client.V1PersistentVolumeClaimVolumeSource(claim_name=pvc_name)
+            name=pv_name,
+            persistent_volume_claim=k8s_client.V1PersistentVolumeClaimVolumeSource(claim_name=pv_name)
         ))
 
     # Deployment
