@@ -12,9 +12,9 @@ RUN if [ -n "${CERT_FILE}" ] && [ -f "${CERT_FILE}" ]; then \
 
 RUN apk add --no-cache git
 
-# Pin k6 core to last stable v0.x — xk6-output-influxdb not yet compatible with k6 v2.0
+# Pin to last known-stable versions — avoids pulling k6 v2.0-rc1 via @latest
 RUN go install go.k6.io/xk6/cmd/xk6@latest
-RUN xk6 build v0.55.0 --with github.com/grafana/xk6-output-influxdb@latest --output /k6
+RUN xk6 build v1.7.1 --with github.com/grafana/xk6-output-influxdb@v0.7.0 --output /k6
 
 # Minimal runtime image — copy certs from builder (avoids apk SSL issues)
 FROM alpine:3.19
