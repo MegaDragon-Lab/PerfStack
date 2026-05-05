@@ -289,7 +289,7 @@ const BLANK_FORM = {
   iam_url: "", client_id: "", client_secret: "", use_user_token: false,
   target_url: "", method: "POST", headers: [], payload_type: "json",
   payload: '{\n  "key": "value"\n}',
-  vus: 10, duration: 60, sleep_interval: 0.1, parallelism: 2,
+  vus: 10, duration: 60, sleep_interval: 0.1, parallelism: 2, rt_threshold_ms: 2000,
 };
 
 const headersToDict = (arr) =>
@@ -540,7 +540,7 @@ export default function App() {
   const loadService = (idx) => {
     const { name, folder, headers: headersDict, ...config } = services[idx];
     const headersArr = Object.entries(headersDict || {}).map(([key, value]) => ({ key, value, enabled: true }));
-    setForm({ sleep_interval: 0.1, parallelism: 2, ...config, headers: headersArr, use_user_token: false });
+    setForm({ sleep_interval: 0.1, parallelism: 2, rt_threshold_ms: 2000, ...config, headers: headersArr, use_user_token: false });
     setNewServiceMode(false);
     setActiveIdx(idx);
     setSaveFolder(folder || "");
@@ -675,7 +675,8 @@ export default function App() {
           scenario,
           service_name: activeIdx !== null ? (services[activeIdx]?.name || "") : "",
           sleep_interval: form.sleep_interval ?? 0.1,
-          parallelism: form.parallelism ?? 4,
+          parallelism: form.parallelism ?? 2,
+          rt_threshold_ms: form.rt_threshold_ms ?? 2000,
           stages: scenario === "custom"
             ? customStages.map(s => ({ duration: stageDurToStr(s), target: s.target }))
             : computeStages(scenario, form.vus, form.duration),
@@ -2651,6 +2652,24 @@ export default function App() {
                   <span style={{ fontSize: 10, color: t.textDim }}>parallel k6 pods (1–20)</span>
                   <span style={{ fontSize: 10, color: t.textDim, marginLeft: 'auto' }}>
                     {`≈ ${form.vus} VUs across ${form.parallelism} pod${form.parallelism > 1 ? 's' : ''}`}
+                  </span>
+                </div>
+
+                {/* Response Time Threshold */}
+                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', whiteSpace: 'nowrap' }}>
+                    RT Threshold
+                  </label>
+                  <input
+                    type="number"
+                    min={100} max={60000} step={100}
+                    value={form.rt_threshold_ms}
+                    onChange={e => set("rt_threshold_ms")(Math.max(100, Math.min(60000, parseInt(e.target.value) || 2000)))}
+                    style={{ width: 70, padding: '4px 8px', borderRadius: 5, border: `1px solid ${t.inputBorder}`, background: t.bgInput, color: t.text, fontSize: 12, fontFamily: 'monospace', outline: 'none', textAlign: 'right' }}
+                  />
+                  <span style={{ fontSize: 10, color: t.textDim }}>ms — response time check</span>
+                  <span style={{ fontSize: 10, color: t.textDim, marginLeft: 'auto' }}>
+                    {`p(95) < ${(form.rt_threshold_ms / 1000).toFixed(1)}s · check: response time < ${(form.rt_threshold_ms / 1000).toFixed(1)}s`}
                   </span>
                 </div>
 

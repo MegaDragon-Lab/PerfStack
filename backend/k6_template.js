@@ -12,11 +12,13 @@ export const options = {
   stages: {{ stages }},
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   thresholds: {
-    'http_req_duration': ['p(95)<2000'],
+    'http_req_duration': ['p(95)<{{ rt_threshold_ms }}'],
     'http_req_failed':   ['rate<0.05'],
     'custom_errors':     ['rate<0.05'],
   },
 };
+
+const RT_THRESHOLD_MS = {{ rt_threshold_ms }};
 
 const TARGET_URL = '{{ target_url }}';
 const METHOD     = '{{ method }}';
@@ -49,7 +51,7 @@ export default function () {
 
   const success = check(res, {
     'status is 2xx':       (r) => r.status >= 200 && r.status < 300,
-    'response time < 2s':  (r) => r.timings.duration < 2000,
+    [`response time < ${RT_THRESHOLD_MS / 1000}s`]: (r) => r.timings.duration < RT_THRESHOLD_MS,
   });
 
   errorRate.add(!success);

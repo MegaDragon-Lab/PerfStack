@@ -116,6 +116,7 @@ class TestConfig(BaseModel):
     service_name: str = Field(default="", description="Name of the web service being tested")
     sleep_interval: float = Field(default=0.1, ge=0, le=60, description="Sleep between requests in seconds (e.g. 0.1 = 100ms)")
     parallelism: int = Field(default=4, ge=1, le=20, description="Number of parallel k6 runner pods")
+    rt_threshold_ms: int = Field(default=2000, ge=100, le=60000, description="Response time threshold in ms (check: response time < Xs)")
 
 class TestHistoryEntry(BaseModel):
     job_name: str
@@ -711,6 +712,7 @@ async def run_test(config: TestConfig, ps_session: str = Cookie(default=None)):
             sleep_interval=config.sleep_interval,
             parallelism=config.parallelism,
             custom_headers=config.custom_headers,
+            rt_threshold_ms=config.rt_threshold_ms,
         )
     except Exception as e:
         logger.error("Failed to create K6 job: %s", e)
