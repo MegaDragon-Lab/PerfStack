@@ -221,6 +221,11 @@ log "Building perfstack-k6:latest (custom k6 + xk6-output-influxdb)..."
 docker build --no-cache --platform linux/amd64 -t perfstack-k6:latest ./k6
 ok "perfstack-k6:latest built"
 
+log "Verifying xk6-output-influxdb extension is compiled in..."
+docker run --rm --platform linux/amd64 perfstack-k6:latest version 2>&1 | grep -q "xk6-output-influxdb" \
+  && ok "xk6-output-influxdb extension confirmed" \
+  || err "k6 image missing xk6-output-influxdb — build failed silently, aborting"
+
 log "Pushing perfstack-k6 to local registry..."
 docker tag perfstack-k6:latest localhost:${REG_PORT}/library/perfstack-k6:latest
 docker push localhost:${REG_PORT}/library/perfstack-k6:latest
