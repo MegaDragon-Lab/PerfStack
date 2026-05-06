@@ -1283,7 +1283,7 @@ def _build_report_html(
   <thead><tr><th>Name</th><th class="num">Passes</th><th class="num">Fails</th></tr></thead>
   <tbody>{checks_html}</tbody></table></div>'''}
 
-  <div class="footer">GSA Platform Suite v3.4.0 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
+  <div class="footer">GSA Platform Suite v3.4.1 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
 </div>
 {lazy_js}
 </body>

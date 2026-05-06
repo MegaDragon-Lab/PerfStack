@@ -160,7 +160,7 @@ function SettingsMenu({ theme, onSelect, t }) {
               <div style={{ color: t.text, fontWeight: 700, fontSize: '0.92rem', letterSpacing: '0.02em', lineHeight: 1.2 }}>GSA Platform Suite</div>
             </div>
             <div style={{ background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: '0.63rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0 }}>
-              v3.4.0
+              v3.4.1
             </div>
           </div>
 
@@ -787,7 +787,9 @@ export default function App() {
           custom_headers: headersToDict(form.headers),
         }),
       });
-      const data = await res.json();
+      let data;
+      try { data = await res.json(); }
+      catch { throw new Error(`Backend returned HTTP ${res.status} with non-JSON body — check backend logs`); }
       if (!res.ok) throw new Error(fmtDetail(data.detail));
       setPingResult({ ok: true, ...data });
     } catch (e) {
@@ -1941,7 +1943,7 @@ export default function App() {
                   <div>
                     <div style={{ fontSize: 40, fontWeight: 800, color: t.text, letterSpacing: '.01em', lineHeight: 1.1 }}>GSA Platform Suite</div>
                   </div>
-                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.4.0</span>
+                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.4.1</span>
                 </div>
                 <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.7, maxWidth: 620 }}>
                   A unified platform giving FICO GSA Team full autonomy to deploy ideas, tools, and applications over shared infrastructure.
@@ -2030,6 +2032,7 @@ export default function App() {
                 </button>
                 {releaseOpen && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderLeft: `2px solid ${t.borderLight}`, paddingLeft: 20 }}>
                   {[
+                    { version: 'v3.4.1', date: '2026-05-06', notes: ['Execution panel redesign — large VU / Duration KPI display, 2-column sliders + insights card, horizontal timeline with VU count per phase', 'Configurable RT Threshold from PerfStack UI — set p(95) response time check per test (default 2 000 ms)', 'Configurable upload size limit per DeployStack app via GSA-Platform-Suite.yaml (max_body_size, default 50 MB) — fixes 413 Request Entity Too Large', 'Dry Run: improved error handling — non-JSON backend responses now show a clear message instead of raw SyntaxError', 'k6 runner pod resources right-sized — requests reduced 10× to match real observed usage (~14 m CPU, ~30 Mi RAM)', 'Default runner pods reduced from 4 to 2 to lower scheduling overhead on small clusters'] },
                     { version: 'v3.4.0', date: '2026-04-28', notes: ['Role-Based Access Control (RBAC) — roles admin / perf_team / readonly control which modules and deployed apps each user can access', 'RBAC driven by rbac.yaml (persistent volume) — update without redeploying; zero-downtime reload via reload_rbac.sh', 'nginx auth_request app check now enforced — was silently skipped due to wrong header (X-Original-URI → X-Original-URL)', '/auth/me returns role and modules fields; tabs rendered conditionally per user role', 'Role badge displayed in header; auto-redirect to home if active tab is not in user\'s allowed modules', 'GET /api/rbac and PUT /api/rbac endpoints (admin only) for live config management'] },
                     { version: 'v3.3.0', date: '2026-04-21', notes: ['MonitorStack dashboard — Checkly-style view per monitor: response time SVG line chart, results bar chart (green/red per run), success rate · avg · min · max stats, recent failures list', 'Fix: "+ New" button in MonitorStack now correctly opens the create form (was silently broken)', 'Web services import fix — uses Promise.allSettled so a single bad entry no longer aborts the full import; shows success/failure count alert', 'Service names prefixed with environment tag (DELIVERY -, DEV -, RELEASE -) to prevent name collisions on import', 'EPC RELEASE environment — 10 pre-configured services added to the services bundle'] },
                     { version: 'v3.2.0', date: '2026-04-21', notes: ['Custom request headers — Body / Headers tab in Test Configuration, Postman-style key/value table with per-row enable/disable, saved per service', 'HTTP method selector (GET / POST / PUT / PATCH / DELETE / HEAD) on the URL field with color-coded labels', 'Service rename — dedicated "00 Service" panel for editing name and folder without retyping; ⌘S / Ctrl+S saves', 'Sidebar improvements — alphabetical sorting within folders and flat list, reduced item spacing', 'MonitorStack import from file support (mirrors PerfStack)', 'JSON array payloads now accepted (APIs that receive a top-level array no longer return 422)', 'API error messages improved — Pydantic validation details are now human-readable'] },
@@ -2043,9 +2046,9 @@ export default function App() {
                     { version: 'v2.0.0', date: '2026-04-07', notes: ['Multi-service sidebar with folder grouping', 'Custom scenario builder', 'IAM OAuth2 token integration'] },
                   ].map(r => (
                     <div key={r.version} style={{ marginBottom: 24, position: 'relative' }}>
-                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v3.4.0' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
+                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v3.4.1' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v3.4.0' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v3.4.1' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
                         <span style={{ fontSize: 11, color: t.textDim, fontFamily: 'monospace' }}>{r.date}</span>
                       </div>
                       <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
@@ -2711,10 +2714,12 @@ export default function App() {
                           const pct = (dur / totalSec * 100).toFixed(1);
                           const bg = segColors[i % segColors.length];
                           const name = phaseNames[i] || `Phase ${i+1}`;
+                          const wide = parseFloat(pct) > 10;
                           return (
                             <div key={i} className="timeline-seg"
-                              style={{ flex: `${pct} 0 0`, background: bg, opacity: s.target === 0 ? 0.5 : 1 }}>
-                              {parseFloat(pct) > 10 ? name : ''}
+                              style={{ flex: `${pct} 0 0`, background: bg, opacity: s.target === 0 ? 0.5 : 1, flexDirection: 'column', gap: 1 }}>
+                              {wide && <span style={{ fontWeight: 700 }}>{name}</span>}
+                              {wide && <span style={{ fontSize: 9, opacity: 0.85 }}>{s.target} VUs</span>}
                             </div>
                           );
                         })}
@@ -2723,10 +2728,9 @@ export default function App() {
                         {stages.map((s, i) => {
                           const dur = parseDurStr(s.duration);
                           const pct = (dur / totalSec * 100).toFixed(1);
-                          const name = phaseNames[i] || `Phase ${i+1}`;
                           return (
                             <div key={i} className="timeline-lbl" style={{ flex: `${pct} 0 0` }}>
-                              {s.duration}{parseFloat(pct) > 12 ? ` · ${name}` : ''}
+                              {s.duration}{parseFloat(pct) > 8 ? ` · ${s.target}vu` : ''}
                             </div>
                           );
                         })}
