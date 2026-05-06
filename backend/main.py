@@ -1889,7 +1889,7 @@ def _resolve_env_vars(env_vars: list, target_ns: str) -> list:
     return resolved
 
 # ── Deploy app to its own namespace ──────────────────────────────────────────
-def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list, auth_required: bool = False, max_body_size: str = "50m", volumes: list = None):
+def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list, auth_required: bool = False, max_body_size: str = "50m", volumes: list = None, memory: str = "256Mi"):
     """Create (or replace) Namespace + Deployment + Service + Ingress for an app."""
     ns = f"app-{app_name}"
     core = _core_v1()
@@ -1972,7 +1972,7 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
                             env=env,
                             resources=k8s_client.V1ResourceRequirements(
                                 requests={"cpu": "100m", "memory": "128Mi"},
-                                limits={"cpu": "500m", "memory": "256Mi"}
+                                limits={"cpu": "500m", "memory": memory}
                             ),
                             volume_mounts=volume_mounts or None
                         )
@@ -2090,6 +2090,7 @@ async def _watch_build_and_deploy(app_name: str, build_id: str, image_tag: str,
             app_name, image_tag, cfg.get("port", 8080),
             cfg.get("replicas", 1), cfg.get("env", []), auth_required,
             cfg.get("max_body_size", "50m"), cfg.get("volumes", []),
+            cfg.get("memory", "256Mi"),
         ))
         now = _now_iso()
         _update_app_status(app_name, "running",
@@ -2237,6 +2238,7 @@ async def toggle_deploy_app_auth(name: str):
             app_entry["auth_required"],
             app_entry.get("max_body_size", "50m"),
             app_entry.get("volumes", []),
+            app_entry.get("memory", "256Mi"),
         ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -2281,6 +2283,7 @@ async def restart_deploy_app(name: str):
                     if "replicas" in raw: app_entry["replicas"] = int(raw["replicas"])
                     app_entry["env"] = raw.get("env", [])
                     app_entry["volumes"] = raw.get("volumes", [])
+                    app_entry["memory"] = raw.get("memory", "256Mi")
                     _write_apps(apps)
                     logger.info("Refreshed config from GSA-Platform-Suite.yaml for %s", name)
     except Exception as exc:
@@ -2294,7 +2297,7 @@ async def restart_deploy_app(name: str):
 
     try:
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars, auth_required, app_entry.get("max_body_size", "50m"), app_entry.get("volumes", [])))
+        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars, auth_required, app_entry.get("max_body_size", "50m"), app_entry.get("volumes", []), app_entry.get("memory", "256Mi")))
         _update_app_status(name, "running",
                            last_deployed=_now_iso(),
                            url=f"http://{PUBLIC_HOST}/apps/{name}")
@@ -2412,7 +2415,7 @@ async def deploy_webhook(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
     # Read GSA-Platform-Suite.yaml from archive to get port/replicas/env
-    cfg: dict = {"port": 8080, "replicas": 1, "env": [], "volumes": [], "max_body_size": "50m"}
+    cfg: dict = {"port": 8080, "replicas": 1, "env": [], "volumes": [], "max_body_size": "50m", "memory": "256Mi"}
     try:
         async with __import__("httpx").AsyncClient(timeout=10) as hx:
             r = await hx.get(
@@ -2432,6 +2435,7 @@ async def deploy_webhook(request: Request):
                                     cfg["env"] = raw.get("env", [])
                                     cfg["volumes"] = raw.get("volumes", [])
                                     cfg["max_body_size"] = raw.get("max_body_size", "50m")
+                                    cfg["memory"] = raw.get("memory", "256Mi")
                             break
     except Exception as e:
         logger.warning("Could not read GSA-Platform-Suite.yaml: %s", e)
@@ -2444,6 +2448,7 @@ async def deploy_webhook(request: Request):
             a["env"] = cfg["env"]
             a["volumes"] = cfg.get("volumes", [])
             a["max_body_size"] = cfg.get("max_body_size", "50m")
+            a["memory"] = cfg.get("memory", "256Mi")
             break
     _write_apps(apps)
 
