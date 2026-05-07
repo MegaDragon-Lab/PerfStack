@@ -1750,6 +1750,14 @@ def _networking_v1():
         k8s_config.load_kube_config()
     return k8s_client.NetworkingV1Api()
 
+def _rbac_authz_v1():
+    from kubernetes import config as k8s_config
+    try:
+        k8s_config.load_incluster_config()
+    except Exception:
+        k8s_config.load_kube_config()
+    return k8s_client.RbacAuthorizationV1Api()
+
 # ── Create a Docker build Job ─────────────────────────────────────────────────
 def _create_build_job(app_name: str, repo: str, commit: str, image_tag: str) -> str:
     """
@@ -1889,7 +1897,7 @@ def _resolve_env_vars(env_vars: list, target_ns: str) -> list:
     return resolved
 
 # ── Deploy app to its own namespace ──────────────────────────────────────────
-def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list, auth_required: bool = False, max_body_size: str = "50m", volumes: list = None, memory: str = "256Mi"):
+def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list, auth_required: bool = False, max_body_size: str = "50m", volumes: list = None, memory: str = "256Mi", rbac_manifests: list = None):
     """Create (or replace) Namespace + Deployment + Service + Ingress for an app."""
     ns = f"app-{app_name}"
     core = _core_v1()
@@ -1906,6 +1914,53 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
         ))
     except Exception:
         pass  # already exists
+
+    # ClusterRole / ClusterRoleBinding from rbac.yaml in the app repo
+    if rbac_manifests:
+        rbac = _rbac_authz_v1()
+        for manifest in rbac_manifests:
+            kind = manifest.get("kind", "")
+            name = manifest.get("metadata", {}).get("name", "")
+            if not name:
+                continue
+            if kind == "ClusterRole":
+                body = k8s_client.V1ClusterRole(
+                    metadata=k8s_client.V1ObjectMeta(name=name),
+                    rules=[
+                        k8s_client.V1PolicyRule(
+                            api_groups=r.get("apiGroups", []),
+                            resources=r.get("resources", []),
+                            verbs=r.get("verbs", []),
+                        )
+                        for r in manifest.get("rules", [])
+                    ]
+                )
+                try:
+                    rbac.create_cluster_role(body=body)
+                except Exception:
+                    rbac.replace_cluster_role(name=name, body=body)
+            elif kind == "ClusterRoleBinding":
+                role_ref = manifest.get("roleRef", {})
+                body = k8s_client.V1ClusterRoleBinding(
+                    metadata=k8s_client.V1ObjectMeta(name=name),
+                    role_ref=k8s_client.V1RoleRef(
+                        api_group=role_ref.get("apiGroup", "rbac.authorization.k8s.io"),
+                        kind=role_ref.get("kind", "ClusterRole"),
+                        name=role_ref.get("name", ""),
+                    ),
+                    subjects=[
+                        k8s_client.V1Subject(
+                            kind=s.get("kind", "ServiceAccount"),
+                            name=s.get("name", ""),
+                            namespace=s.get("namespace"),
+                        )
+                        for s in manifest.get("subjects", [])
+                    ]
+                )
+                try:
+                    rbac.create_cluster_role_binding(body=body)
+                except Exception:
+                    rbac.replace_cluster_role_binding(name=name, body=body)
 
     # Persistent volumes declared in GSA-Platform-Suite.yaml
     # PVs use hostPath /host-data/perfstack/... which k3d maps to ~/.perfstack/data on the host
@@ -2090,7 +2145,7 @@ async def _watch_build_and_deploy(app_name: str, build_id: str, image_tag: str,
             app_name, image_tag, cfg.get("port", 8080),
             cfg.get("replicas", 1), cfg.get("env", []), auth_required,
             cfg.get("max_body_size", "50m"), cfg.get("volumes", []),
-            cfg.get("memory", "256Mi"),
+            cfg.get("memory", "256Mi"), cfg.get("rbac_manifests", []),
         ))
         now = _now_iso()
         _update_app_status(app_name, "running",
@@ -2414,8 +2469,8 @@ async def deploy_webhook(request: Request):
         _update_build_status(build_id, "failed")
         raise HTTPException(status_code=500, detail=str(e))
 
-    # Read GSA-Platform-Suite.yaml from archive to get port/replicas/env
-    cfg: dict = {"port": 8080, "replicas": 1, "env": [], "volumes": [], "max_body_size": "50m", "memory": "256Mi"}
+    # Read GSA-Platform-Suite.yaml and rbac.yaml from archive
+    cfg: dict = {"port": 8080, "replicas": 1, "env": [], "volumes": [], "max_body_size": "50m", "memory": "256Mi", "rbac_manifests": []}
     try:
         async with __import__("httpx").AsyncClient(timeout=10) as hx:
             r = await hx.get(
@@ -2424,8 +2479,9 @@ async def deploy_webhook(request: Request):
             )
             if r.status_code == 200:
                 with tarfile.open(fileobj=io.BytesIO(r.content), mode="r:gz") as tf:
+                    found = {"suite": False, "rbac": False}
                     for member in tf.getmembers():
-                        if member.name.endswith("GSA-Platform-Suite.yaml"):
+                        if member.name.endswith("GSA-Platform-Suite.yaml") and not found["suite"]:
                             f = tf.extractfile(member)
                             if f:
                                 raw = yaml.safe_load(f.read())
@@ -2436,9 +2492,17 @@ async def deploy_webhook(request: Request):
                                     cfg["volumes"] = raw.get("volumes", [])
                                     cfg["max_body_size"] = raw.get("max_body_size", "50m")
                                     cfg["memory"] = raw.get("memory", "256Mi")
+                            found["suite"] = True
+                        elif member.name.endswith("rbac.yaml") and not found["rbac"]:
+                            f = tf.extractfile(member)
+                            if f:
+                                docs = list(yaml.safe_load_all(f.read()))
+                                cfg["rbac_manifests"] = [d for d in docs if isinstance(d, dict)]
+                            found["rbac"] = True
+                        if found["suite"] and found["rbac"]:
                             break
     except Exception as e:
-        logger.warning("Could not read GSA-Platform-Suite.yaml: %s", e)
+        logger.warning("Could not read config from archive: %s", e)
 
     # Update port/replicas/env in app entry (persisted so restarts use correct config)
     for a in apps:
