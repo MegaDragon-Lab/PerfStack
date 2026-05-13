@@ -1283,7 +1283,7 @@ def _build_report_html(
   <thead><tr><th>Name</th><th class="num">Passes</th><th class="num">Fails</th></tr></thead>
   <tbody>{checks_html}</tbody></table></div>'''}
 
-  <div class="footer">GSA Platform Suite v3.4.1 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
+  <div class="footer">GSA Platform Suite v3.4.2 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
 </div>
 {lazy_js}
 </body>
@@ -1949,7 +1949,7 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
                         name=role_ref.get("name", ""),
                     ),
                     subjects=[
-                        k8s_client.V1Subject(
+                        k8s_client.RbacV1Subject(
                             kind=s.get("kind", "ServiceAccount"),
                             name=s.get("name", ""),
                             namespace=s.get("namespace"),
@@ -2350,9 +2350,25 @@ async def restart_deploy_app(name: str):
     env_vars      = app_entry.get("env", [])
     auth_required = app_entry.get("auth_required", False)
 
+    # Fetch rbac.yaml from Gitea so RBAC is re-applied on restart
+    rbac_manifests = []
+    try:
+        async with __import__("httpx").AsyncClient(timeout=10) as hx:
+            r = await hx.get(
+                f"{GITEA_INTERNAL_URL}/api/v1/repos/{GITEA_ADMIN_USER}/{repo_name}"
+                f"/raw/rbac.yaml",
+                auth=(GITEA_ADMIN_USER, GITEA_ADMIN_PASS),
+                params={"ref": "main"},
+            )
+            if r.status_code == 200:
+                docs = list(yaml.safe_load_all(r.text))
+                rbac_manifests = [d for d in docs if isinstance(d, dict)]
+    except Exception as exc:
+        logger.warning("Could not fetch rbac.yaml for %s: %s", name, exc)
+
     try:
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars, auth_required, app_entry.get("max_body_size", "50m"), app_entry.get("volumes", []), app_entry.get("memory", "256Mi")))
+        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars, auth_required, app_entry.get("max_body_size", "50m"), app_entry.get("volumes", []), app_entry.get("memory", "256Mi"), rbac_manifests))
         _update_app_status(name, "running",
                            last_deployed=_now_iso(),
                            url=f"http://{PUBLIC_HOST}/apps/{name}")

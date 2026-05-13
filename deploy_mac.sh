@@ -357,6 +357,22 @@ else
 fi
 echo ""
 
+# ── Apply RBAC for DeployStack apps (Gitea may not be ready during restart) ──
+log "Applying RBAC for DeployStack apps..."
+if [ -n "$APP_NAMES" ]; then
+  for app_name in $APP_NAMES; do
+    RBAC_CONTENT=$(curl -sf -u "gsaadmin:admin" \
+      "http://localhost/gitea/api/v1/repos/gsaadmin/${app_name}/raw/rbac.yaml?ref=main" 2>/dev/null || true)
+    if [ -n "$RBAC_CONTENT" ]; then
+      echo "$RBAC_CONTENT" | kube apply -f - >/dev/null 2>&1 \
+        && echo -e "  ${GREEN}✓${NC} ${app_name} RBAC applied" \
+        || echo -e "  ${AMBER}!${NC} ${app_name} RBAC failed"
+    fi
+  done
+fi
+ok "RBAC step complete"
+echo ""
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo "  ══════════════════════════════════════════════════════"
 echo -e "  ${GREEN}🚀 PerfStack is up!${NC}"
