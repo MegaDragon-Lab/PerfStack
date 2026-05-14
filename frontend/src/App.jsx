@@ -901,6 +901,7 @@ export default function App() {
   const [newAppDesc,       setNewAppDesc]        = useState("");
   const [newAppAuth,       setNewAppAuth]        = useState(false);
   const [newAppShowHome,   setNewAppShowHome]    = useState(false);
+  const [newAppEmbed,      setNewAppEmbed]       = useState(false);
   const [deployCreating,   setDeployCreating]    = useState(false);
   const [deployShowNew,    setDeployShowNew]     = useState(false);
   const deployPollRef = useRef(null);
@@ -933,7 +934,7 @@ export default function App() {
       const r = await fetch(`${API_BASE}/api/deploy/apps`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newAppName.trim(), description: newAppDesc.trim(), auth_required: newAppAuth, show_in_home: newAppShowHome }),
+        body: JSON.stringify({ name: newAppName.trim(), description: newAppDesc.trim(), auth_required: newAppAuth, show_in_home: newAppShowHome, embed_in_frame: newAppEmbed }),
       });
       if (!r.ok) { const e = await r.json(); alert(e.detail || "Error"); return; }
       const app = await r.json();
@@ -1081,6 +1082,7 @@ export default function App() {
   const [svcMenuOpen,    setSvcMenuOpen]    = useState(false);
   const [monMenuOpen,    setMonMenuOpen]    = useState(false);
   const [deployMenuOpen, setDeployMenuOpen] = useState(false);
+  const [embedUrl, setEmbedUrl] = useState(null);
   const filteredServices = services.filter(s =>
     s.name.toLowerCase().includes(svcSearch.toLowerCase()) ||
     (s.folder || "").toLowerCase().includes(svcSearch.toLowerCase())
@@ -1865,18 +1867,33 @@ export default function App() {
                       minWidth: 180, zIndex: 200, overflow: "hidden",
                     }}>
                       {deployApps.filter(a => a.show_in_home && a.status === 'running').map((a, i, arr) => (
-                        <a key={a.name} href={a.url} target="_blank" rel="noreferrer"
-                          onClick={() => setDeployMenuOpen(false)}
-                          style={{
-                            display: "block", padding: "8px 14px",
-                            fontSize: 12, color: t.text, textDecoration: "none",
-                            borderBottom: i < arr.length - 1 ? `1px solid ${t.borderLight}` : "none",
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.background = t.bg}
-                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                        >
-                          {a.name} ↗
-                        </a>
+                        a.embed_in_frame ? (
+                          <button key={a.name}
+                            onClick={() => { setEmbedUrl(a.url); setActiveTab("embed"); setDeployMenuOpen(false); }}
+                            style={{
+                              display: "block", width: "100%", textAlign: "left", padding: "8px 14px",
+                              fontSize: 12, color: t.text, background: "transparent", border: "none", cursor: "pointer",
+                              borderBottom: i < arr.length - 1 ? `1px solid ${t.borderLight}` : "none",
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = t.bg}
+                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                          >
+                            {a.name}
+                          </button>
+                        ) : (
+                          <a key={a.name} href={a.url} target="_blank" rel="noreferrer"
+                            onClick={() => setDeployMenuOpen(false)}
+                            style={{
+                              display: "block", padding: "8px 14px",
+                              fontSize: 12, color: t.text, textDecoration: "none",
+                              borderBottom: i < arr.length - 1 ? `1px solid ${t.borderLight}` : "none",
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = t.bg}
+                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                          >
+                            {a.name} ↗
+                          </a>
+                        )
                       ))}
                     </div>
                   )}
@@ -2005,17 +2022,32 @@ export default function App() {
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textDim, marginBottom: 16 }}>Deployed Applications</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
                     {deployApps.filter(a => a.show_in_home).map(a => (
-                      <a key={a.name} href={a.url} target="_blank" rel="noreferrer"
-                        style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '20px 22px', textDecoration: 'none', display: 'block', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
-                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#22c55e'; e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 10px 28px rgba(0,0,0,0.10)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: t.text, marginBottom: 8 }}>{a.name}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: a.status === 'running' ? '#22c55e' : '#f59e0b', flexShrink: 0 }} />
-                          <span style={{ fontSize: 10, fontWeight: 700, color: a.status === 'running' ? '#22c55e' : '#f59e0b', letterSpacing: '.06em', textTransform: 'uppercase' }}>{a.status === 'running' ? 'Running' : 'Stopped'}</span>
+                      a.embed_in_frame ? (
+                        <div key={a.name} role="button" tabIndex={0}
+                          onClick={() => { setEmbedUrl(a.url); setActiveTab("embed"); }}
+                          style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '20px 22px', textDecoration: 'none', display: 'block', cursor: 'pointer', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 10px 28px rgba(0,0,0,0.10)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: t.text, marginBottom: 8 }}>{a.name}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: a.status === 'running' ? '#22c55e' : '#f59e0b', flexShrink: 0 }} />
+                            <span style={{ fontSize: 10, fontWeight: 700, color: a.status === 'running' ? '#22c55e' : '#f59e0b', letterSpacing: '.06em', textTransform: 'uppercase' }}>{a.status === 'running' ? 'Running' : 'Stopped'}</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: '#3b82f6', fontWeight: 700 }}>Open in Frame</div>
                         </div>
-                        <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>Open App ↗</div>
-                      </a>
+                      ) : (
+                        <a key={a.name} href={a.url} target="_blank" rel="noreferrer"
+                          style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '20px 22px', textDecoration: 'none', display: 'block', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = '#22c55e'; e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 10px 28px rgba(0,0,0,0.10)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: t.text, marginBottom: 8 }}>{a.name}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: a.status === 'running' ? '#22c55e' : '#f59e0b', flexShrink: 0 }} />
+                            <span style={{ fontSize: 10, fontWeight: 700, color: a.status === 'running' ? '#22c55e' : '#f59e0b', letterSpacing: '.06em', textTransform: 'uppercase' }}>{a.status === 'running' ? 'Running' : 'Stopped'}</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>Open App ↗</div>
+                        </a>
+                      )
                     ))}
                   </div>
                 </div>
@@ -3720,6 +3752,26 @@ export default function App() {
           </div>
         )}
 
+        {/* ── Embed Tab (app in iframe) ── */}
+        {activeTab === "embed" && embedUrl && (
+          <div style={{ position: 'fixed', top: 46, left: 0, right: 0, bottom: 0, zIndex: 50 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px', background: t.bgPanel, borderBottom: `1px solid ${t.borderLight}` }}>
+              <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 500 }}>{embedUrl}</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <a href={embedUrl} target="_blank" rel="noreferrer"
+                  style={{ fontSize: 11, color: t.accent, textDecoration: 'none', padding: '3px 10px', borderRadius: 4, border: `1px solid ${t.borderLight}` }}>
+                  Open in new tab ↗
+                </a>
+                <button onClick={() => { setEmbedUrl(null); setActiveTab("home"); }}
+                  style={{ fontSize: 11, color: t.textDim, padding: '3px 10px', borderRadius: 4, border: `1px solid ${t.borderLight}`, background: 'transparent', cursor: 'pointer' }}>
+                  ✕ Close
+                </button>
+              </div>
+            </div>
+            <iframe src={embedUrl} style={{ width: '100%', height: 'calc(100% - 36px)', border: 'none' }} title="Embedded App" />
+          </div>
+        )}
+
         {/* ── DeployStack Tab ── */}
         {activeTab === "deploy" && (
           <div className="ds-workspace">
@@ -3797,12 +3849,17 @@ export default function App() {
                           style={{ width: 15, height: 15, accentColor: '#c73000', cursor: 'pointer' }} />
                         <span style={{ fontSize: 13, color: t.text }}>Show this app on the home page and navigation bar</span>
                       </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                        <input type="checkbox" checked={newAppEmbed} onChange={e => setNewAppEmbed(e.target.checked)}
+                          style={{ width: 15, height: 15, accentColor: '#3b82f6', cursor: 'pointer' }} />
+                        <span style={{ fontSize: 13, color: t.text }}>Embed in platform frame (show with navigation bar)</span>
+                      </label>
                       <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
                         <button onClick={createDeployApp} disabled={deployCreating || !newAppName.trim()}
                           style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: deployCreating ? .6 : 1 }}>
                           {deployCreating ? 'Creating…' : 'Create Repo & Register'}
                         </button>
-                        <button onClick={() => { setDeployShowNew(false); setNewAppAuth(false); setNewAppShowHome(false); }}
+                        <button onClick={() => { setDeployShowNew(false); setNewAppAuth(false); setNewAppShowHome(false); setNewAppEmbed(false); }}
                           style={{ padding: '8px 16px', background: 'transparent', color: t.textDim, border: `1px solid ${t.border}`, borderRadius: 6, fontSize: 13, cursor: 'pointer' }}>
                           Cancel
                         </button>
@@ -3835,10 +3892,17 @@ export default function App() {
                           <span style={{ fontSize: 20, fontWeight: 800, color: t.text }}>{app.name}</span>
                           <span style={{ fontSize: 11, fontWeight: 700, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}55`, borderRadius: 20, padding: '3px 10px', textTransform: 'uppercase', letterSpacing: '.06em' }}>{app.status}</span>
                           {app.status === 'running' && (
-                            <a href={app.url} target="_blank" rel="noreferrer"
-                              style={{ fontSize: 11, color: '#22c55e', textDecoration: 'none', fontWeight: 600 }}>
-                              Open App ↗
-                            </a>
+                            app.embed_in_frame ? (
+                              <button onClick={() => { setEmbedUrl(app.url); setActiveTab("embed"); }}
+                                style={{ fontSize: 11, color: '#3b82f6', textDecoration: 'none', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                                Open in Frame
+                              </button>
+                            ) : (
+                              <a href={app.url} target="_blank" rel="noreferrer"
+                                style={{ fontSize: 11, color: '#22c55e', textDecoration: 'none', fontWeight: 600 }}>
+                                Open App ↗
+                              </a>
+                            )
                           )}
                         </div>
                         <div style={{ marginTop: 5, fontSize: 12, color: t.textDim }}>
@@ -3913,6 +3977,26 @@ export default function App() {
                           style={{ width: 15, height: 15, accentColor: '#c73000', cursor: 'pointer' }} />
                         <span style={{ fontSize: 12, color: app.show_in_home ? '#c73000' : t.textDim, fontWeight: 600 }}>
                           {app.show_in_home ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </label>
+                    </div>
+
+                    {/* Embed in frame toggle */}
+                    <div className="ds-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Embed in Platform Frame</div>
+                        <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>Open this app inside GSA Platform Suite with the navigation bar visible</div>
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+                        <input type="checkbox" checked={!!app.embed_in_frame}
+                          onChange={async () => {
+                            await fetch(`${API_BASE}/api/deploy/apps/${app.name}/toggle-embed`, { method: 'POST' });
+                            refreshDeployApps();
+                            loadDeployDetail(app.name);
+                          }}
+                          style={{ width: 15, height: 15, accentColor: '#3b82f6', cursor: 'pointer' }} />
+                        <span style={{ fontSize: 12, color: app.embed_in_frame ? '#3b82f6' : t.textDim, fontWeight: 600 }}>
+                          {app.embed_in_frame ? 'Enabled' : 'Disabled'}
                         </span>
                       </label>
                     </div>

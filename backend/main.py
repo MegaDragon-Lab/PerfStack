@@ -1707,6 +1707,7 @@ class NewAppRequest(BaseModel):
     description: str = ""
     auth_required: bool = False
     show_in_home: bool = False
+    embed_in_frame: bool = False
 
 def _slugify(name: str) -> str:
     """Convert an app name to a DNS-safe slug."""
@@ -2253,6 +2254,7 @@ async def create_deploy_app(req: NewAppRequest):
         "error": "",
         "auth_required": req.auth_required,
         "show_in_home": req.show_in_home,
+        "embed_in_frame": req.embed_in_frame,
         "gitea_url": f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}",
         "clone_url": f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}.git",
     }
@@ -2310,6 +2312,17 @@ async def toggle_deploy_app_home(name: str):
     app_entry["show_in_home"] = not app_entry.get("show_in_home", False)
     _write_apps(apps)
     return {"app": name, "show_in_home": app_entry["show_in_home"]}
+
+
+@app.post("/deploy/apps/{name}/toggle-embed", summary="Toggle embed_in_frame for a DeployStack app")
+async def toggle_deploy_app_embed(name: str):
+    apps = _read_apps()
+    app_entry = next((a for a in apps if a.get("name") == name), None)
+    if not app_entry:
+        raise HTTPException(status_code=404, detail=f"App '{name}' not found")
+    app_entry["embed_in_frame"] = not app_entry.get("embed_in_frame", False)
+    _write_apps(apps)
+    return {"app": name, "embed_in_frame": app_entry["embed_in_frame"]}
 
 
 @app.post("/deploy/apps/{name}/restart", summary="Redeploy app using existing image (no rebuild)")
