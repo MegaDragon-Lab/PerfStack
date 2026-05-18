@@ -2503,7 +2503,7 @@ async def deploy_webhook(request: Request):
     # Read GSA-Platform-Suite.yaml and rbac.yaml from archive
     cfg: dict = {"port": 8080, "replicas": 1, "env": [], "volumes": [], "max_body_size": "50m", "memory": "256Mi", "rbac_manifests": []}
     try:
-        async with __import__("httpx").AsyncClient(timeout=10) as hx:
+        async with __import__("httpx").AsyncClient(timeout=120) as hx:
             r = await hx.get(
                 f"{GITEA_INTERNAL_URL}/api/v1/repos/{GITEA_ADMIN_USER}/{repo_name}/archive/{commit}.tar.gz",
                 auth=(GITEA_ADMIN_USER, GITEA_ADMIN_PASS)
