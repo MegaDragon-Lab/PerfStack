@@ -2532,8 +2532,33 @@ async def deploy_webhook(request: Request):
                             found["rbac"] = True
                         if found["suite"] and found["rbac"]:
                             break
+            else:
+                logger.warning("Archive download failed for %s (status %s), trying raw endpoint", repo_name, r.status_code)
     except Exception as e:
         logger.warning("Could not read config from archive: %s", e)
+
+    # Fallback: if archive didn't yield port config, read raw YAML from Gitea
+    if cfg["port"] == 8080:
+        try:
+            async with __import__("httpx").AsyncClient(timeout=10) as hx:
+                r = await hx.get(
+                    f"{GITEA_INTERNAL_URL}/api/v1/repos/{GITEA_ADMIN_USER}/{repo_name}"
+                    f"/raw/GSA-Platform-Suite.yaml",
+                    auth=(GITEA_ADMIN_USER, GITEA_ADMIN_PASS),
+                    params={"ref": commit},
+                )
+                if r.status_code == 200:
+                    raw = yaml.safe_load(r.text)
+                    if isinstance(raw, dict):
+                        cfg["port"] = int(raw.get("port", 8080))
+                        cfg["replicas"] = int(raw.get("replicas", 1))
+                        cfg["env"] = raw.get("env", [])
+                        cfg["volumes"] = raw.get("volumes", [])
+                        cfg["max_body_size"] = raw.get("max_body_size", "50m")
+                        cfg["memory"] = raw.get("memory", "256Mi")
+                        logger.info("Read config from raw endpoint for %s: port=%s", repo_name, cfg["port"])
+        except Exception as e:
+            logger.warning("Fallback raw config read failed for %s: %s", repo_name, e)
 
     # Update port/replicas/env in app entry (persisted so restarts use correct config)
     for a in apps:
