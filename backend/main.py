@@ -2061,6 +2061,8 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
     try:
         core.create_namespaced_service(namespace=ns, body=svc_body)
     except Exception:
+        existing = core.read_namespaced_service(name=app_name, namespace=ns)
+        svc_body.metadata.resource_version = existing.metadata.resource_version
         core.replace_namespaced_service(name=app_name, namespace=ns, body=svc_body)
 
     # Ingress
