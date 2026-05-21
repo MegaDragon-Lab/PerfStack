@@ -323,7 +323,9 @@ async def dms_login(uid: str, cn: str, o: str, token: str = "", token_exp: str =
         raise HTTPException(403, f"Access denied — organisation '{o}' is not allowed")
     session_id = secrets.token_urlsafe(32)
     sessions = _read_sessions()
-    sessions[session_id] = {"uid": uid, "cn": cn, "org": o, "token": token, "token_exp": token_exp}
+    now = datetime.now(timezone.utc).isoformat()
+    sessions[session_id] = {"uid": uid, "cn": cn, "org": o, "token": token, "token_exp": token_exp,
+                            "created_at": now, "last_seen": now}
     _write_sessions(sessions)
     response = RedirectResponse(url="/", status_code=302)
     response.set_cookie("ps_session", session_id, httponly=True, samesite="lax", max_age=SESSION_MAX_AGE)
@@ -338,6 +340,8 @@ async def auth_me(ps_session: str = Cookie(default=None)):
         raise HTTPException(401, "Not authenticated")
     s = sessions[ps_session]
     uid = s["uid"]
+    sessions[ps_session]["last_seen"] = datetime.now(timezone.utc).isoformat()
+    _write_sessions(sessions)
     return {"uid": uid, "cn": s["cn"], "org": s["org"],
             "has_token": bool(s.get("token")), "token_exp": s.get("token_exp", ""),
             "role": resolve_role(uid), "modules": get_modules(uid)}
@@ -369,6 +373,15 @@ async def auth_logout(ps_session: str = Cookie(default=None)):
     response = RedirectResponse(url="/", status_code=302)
     response.delete_cookie("ps_session")
     return response
+
+@app.get("/admin/sessions", summary="List all active sessions — internal cluster use only")
+async def admin_sessions():
+    sessions = _read_sessions()
+    return [
+        {"uid": s.get("uid",""), "cn": s.get("cn",""), "org": s.get("org",""),
+         "created_at": s.get("created_at"), "last_seen": s.get("last_seen")}
+        for s in sessions.values()
+    ]
 
 @app.get("/deploy/check-auth", summary="Nginx auth_request endpoint — validates ps_session cookie")
 async def deploy_check_auth(request: Request):
