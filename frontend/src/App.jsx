@@ -329,6 +329,9 @@ export default function App() {
   const toggleTheme = (val) => {
     setTheme(val);
     localStorage.setItem('ps_theme', val);
+    document.querySelectorAll('iframe').forEach(f => {
+      f.contentWindow?.postMessage({ type: 'pl_theme', value: val }, '*');
+    });
   };
 
   useEffect(() => {
