@@ -881,6 +881,7 @@ export default function App() {
   const [emailSaving,        setEmailSaving]        = useState(false);
   const [monHoveredPt,       setMonHoveredPt]       = useState(null);   // { x, y, ms, ts, ok }
   const [expandedFailures,   setExpandedFailures]   = useState(new Set());
+  const [monChartOffset,     setMonChartOffset]     = useState(0);       // slots panned into the past
   const monitorPollRef = useRef(null);
 
   const DEFAULT_MONITOR_FORM = {
@@ -3288,54 +3289,76 @@ export default function App() {
                   const pL = 58, pR = 12, pT = 10, pB = 28;
                   const cW = SW - pL - pR, cH = SH - pT - pB;
 
-                  // Line chart
-                  const runsWMs = runs.filter(r => r.response_ms != null);
+                  // Slot-based charts — 24 equal-width columns, pannable
+                  const SLOTS = 24;
+                  const maxOff = Math.max(0, sortedRuns.length - SLOTS);
+                  const chartOff = Math.min(monChartOffset, maxOff);
+                  const sliceEnd = sortedRuns.length - chartOff;
+                  const sliceStart = Math.max(0, sliceEnd - SLOTS);
+                  const visRuns = sortedRuns.slice(sliceStart, sliceEnd);
+                  // Pad left with nulls so we always fill SLOTS columns
+                  const slots = Array.from({ length: SLOTS }, (_, i) => {
+                    const idx = i - (SLOTS - visRuns.length);
+                    return idx >= 0 ? visRuns[idx] : null;
+                  });
+                  const slotW = cW / SLOTS;
+                  const slotCX = i => pL + (i + 0.5) * slotW;
+                  const validSlots = slots.filter(r => r?.response_ms != null);
+
                   let lineSvg = null;
-                  if (runsWMs.length >= 2) {
-                    const ts  = runsWMs.map(r => new Date(r.started_at).getTime());
-                    const mn  = Math.min(...ts), mx = Math.max(...ts);
-                    const maxV = Math.max(...runsWMs.map(r => r.response_ms)) * 1.15 || 1;
-                    const cx  = tm => pL + ((tm - mn) / (mx - mn || 1)) * cW;
-                    const cy  = v  => pT + cH - (v / maxV) * cH;
-                    const pts = runsWMs.map(r => ({
-                      x: cx(new Date(r.started_at).getTime()), y: cy(r.response_ms),
-                      ms: r.response_ms, ok: r.status === 'ok',
-                      ts: r.started_at?.slice(0, 19).replace('T', ' '),
-                    }));
-                    // Smooth bezier curve
-                    const smoothD = pts.map((p, i) => {
-                      if (i === 0) return `M${p.x.toFixed(1)},${p.y.toFixed(1)}`;
-                      const prev = pts[i - 1];
-                      const cpx = ((prev.x + p.x) / 2).toFixed(1);
-                      return `C${cpx},${prev.y.toFixed(1)} ${cpx},${p.y.toFixed(1)} ${p.x.toFixed(1)},${p.y.toFixed(1)}`;
-                    }).join(' ');
-                    const ap  = `${smoothD} L${pts[pts.length - 1].x.toFixed(1)},${(pT + cH).toFixed(1)} L${pL},${(pT + cH).toFixed(1)} Z`;
-                    const nY  = 5;
-                    const yTks = Array.from({ length: nY }, (_, i) => ({ v: maxV * i / (nY - 1), y: cy(maxV * i / (nY - 1)) }));
-                    const nX  = Math.min(5, runsWMs.length);
-                    const xTks = Array.from({ length: nX }, (_, i) => {
-                      const r = runsWMs[Math.round(i * (runsWMs.length - 1) / (nX - 1 || 1))];
-                      const d = new Date(r.started_at);
-                      return { x: cx(d.getTime()), lbl: `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}` };
+                  if (validSlots.length >= 1) {
+                    const maxV = Math.max(...validSlots.map(r => r.response_ms)) * 1.15 || 1;
+                    const cy = v => pT + cH - (v / maxV) * cH;
+                    // Polyline path — start a new segment after any null/missing slot
+                    let pathD = '';
+                    let penDown = false;
+                    slots.forEach((r, i) => {
+                      if (!r || r.response_ms == null) { penDown = false; return; }
+                      const x = slotCX(i).toFixed(1), y = cy(r.response_ms).toFixed(1);
+                      pathD += penDown ? ` L${x},${y}` : ` M${x},${y}`;
+                      penDown = true;
                     });
-                    // SLO threshold line
+                    // Y-axis ticks
+                    const nY = 5;
+                    const yTks = Array.from({ length: nY }, (_, i) => ({ v: maxV * i / (nY - 1), y: cy(maxV * i / (nY - 1)) }));
+                    // X-axis: time label every 4 slots, aligned from the right
+                    const xLabels = [];
+                    for (let i = SLOTS - 1; i >= 0; i -= 4) {
+                      const r = slots[i]; if (!r) continue;
+                      const d = new Date(r.started_at);
+                      xLabels.push({ x: slotCX(i), lbl: `${d.getHours() % 12 || 12}:${d.getMinutes().toString().padStart(2,'0')} ${d.getHours() >= 12 ? 'PM' : 'AM'}` });
+                    }
+                    // Date-change markers
+                    const dateMarkers = [];
+                    slots.forEach((r, i) => {
+                      if (!r) return;
+                      const prev = slots.slice(0, i).reverse().find(s => s);
+                      if (!prev || new Date(prev.started_at).toDateString() !== new Date(r.started_at).toDateString()) {
+                        const d = new Date(r.started_at);
+                        dateMarkers.push({ x: slotCX(i), lbl: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) });
+                      }
+                    });
+                    // SLO threshold
                     const threshV = selMon?.max_response_ms;
                     const threshY = (threshV && threshV <= maxV / 1.15) ? cy(threshV) : null;
-                    // Tooltip geometry
+                    // Tooltip
                     const hp = monHoveredPt;
                     const ttW = 132, ttH = 42;
                     const ttX = hp ? Math.min(hp.x + 10, SW - pR - ttW) : 0;
                     const ttY = hp ? Math.max(hp.y - ttH - 8, pT + 2) : 0;
+
                     lineSvg = (
                       <svg width={SW} height={SH} viewBox={`0 0 ${SW} ${SH}`} style={{ display: 'block', width: '100%' }}
                         onMouseLeave={() => setMonHoveredPt(null)}>
                         <defs>
-                          <linearGradient id="mLGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.22" />
-                            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
-                          </linearGradient>
                           <clipPath id="mClip"><rect x={pL} y={pT} width={cW} height={cH + 2} /></clipPath>
                         </defs>
+                        {/* Alternating column backgrounds */}
+                        {slots.map((r, i) => r ? (
+                          <rect key={i} x={(pL + i * slotW).toFixed(1)} y={pT} width={slotW.toFixed(1)} height={cH}
+                            fill={i % 2 === 0 ? t.borderLight : 'none'} opacity="0.25" />
+                        ) : null)}
+                        {/* Y-axis gridlines + labels */}
                         {yTks.map((tk, i) => (
                           <g key={i}>
                             <line x1={pL} y1={tk.y.toFixed(1)} x2={SW - pR} y2={tk.y.toFixed(1)} stroke={t.borderLight} strokeWidth="1" strokeDasharray="3,4" />
@@ -3343,24 +3366,39 @@ export default function App() {
                           </g>
                         ))}
                         <line x1={pL} y1={pT} x2={pL} y2={pT + cH} stroke={t.borderLight} strokeWidth="1" />
+                        {/* SLO threshold */}
                         {threshY !== null && (
                           <g>
                             <line x1={pL} y1={threshY.toFixed(1)} x2={SW - pR} y2={threshY.toFixed(1)} stroke="#f59e0b" strokeWidth="1" strokeDasharray="5,3" opacity="0.75" />
                             <text x={SW - pR - 2} y={threshY - 3} textAnchor="end" fontSize="8" fill="#f59e0b" opacity="0.9">SLO</text>
                           </g>
                         )}
-                        <path d={ap} fill="url(#mLGrad)" clipPath="url(#mClip)" />
-                        <path d={smoothD} fill="none" stroke="#3b82f6" strokeWidth="1.5" clipPath="url(#mClip)" />
-                        {pts.map((p, i) => (
-                          <circle key={i} cx={p.x.toFixed(1)} cy={p.y.toFixed(1)}
-                            r={monHoveredPt?.ts === p.ts ? 5 : 3}
-                            fill={p.ok ? '#3b82f6' : '#ef4444'}
-                            stroke={p.ok ? t.bg : '#ef444488'}
-                            strokeWidth={p.ok ? 1.5 : 2}
-                            style={{ cursor: 'crosshair' }}
-                            onMouseEnter={() => setMonHoveredPt({ x: p.x, y: p.y, ms: p.ms, ok: p.ok, ts: p.ts })} />
+                        {/* Connecting line */}
+                        <path d={pathD.trim()} fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#mClip)" />
+                        {/* Open-circle data points (white fill + colored stroke, like reference screenshot) */}
+                        {slots.map((r, i) => {
+                          if (!r || r.response_ms == null) return null;
+                          const x = slotCX(i), y = cy(r.response_ms);
+                          const isHov = monHoveredPt?.ts === r.started_at?.slice(0, 19).replace('T', ' ');
+                          return (
+                            <circle key={i} cx={x.toFixed(1)} cy={y.toFixed(1)}
+                              r={isHov ? 5 : 4}
+                              fill={t.bgPanel}
+                              stroke={r.status === 'ok' ? '#3b82f6' : '#ef4444'}
+                              strokeWidth="2"
+                              style={{ cursor: 'crosshair' }}
+                              onMouseEnter={() => setMonHoveredPt({ x, y, ms: r.response_ms, ok: r.status === 'ok', ts: r.started_at?.slice(0, 19).replace('T', ' ') })} />
+                          );
+                        })}
+                        {/* Time labels (every 4 slots) */}
+                        {xLabels.map((lbl, i) => (
+                          <text key={i} x={lbl.x.toFixed(1)} y={SH - 15} textAnchor="middle" fontSize="8" fill={t.textDim}>{lbl.lbl}</text>
                         ))}
-                        {xTks.map((tk, i) => <text key={i} x={tk.x.toFixed(1)} y={SH - 4} textAnchor="middle" fontSize="9" fill={t.textDim}>{tk.lbl}</text>)}
+                        {/* Date-change markers */}
+                        {dateMarkers.map((dm, i) => (
+                          <text key={i} x={dm.x.toFixed(1)} y={SH - 4} textAnchor="middle" fontSize="8" fontWeight="600" fill={t.textMuted}>{dm.lbl}</text>
+                        ))}
+                        {/* Hover tooltip */}
                         {hp && (
                           <g style={{ pointerEvents: 'none' }}>
                             <line x1={hp.x.toFixed(1)} y1={pT} x2={hp.x.toFixed(1)} y2={(pT + cH).toFixed(1)} stroke={t.borderLight} strokeWidth="1" strokeDasharray="2,3" />
@@ -3373,18 +3411,16 @@ export default function App() {
                     );
                   }
 
-                  // Bar chart
+                  // Slot-based bar chart (aligned with line chart above)
                   let barSvg = null;
-                  if (runs.length > 0) {
-                    const bTs  = runs.map(r => new Date(r.started_at).getTime());
-                    const bMn  = Math.min(...bTs), bMx = Math.max(...bTs);
-                    const bRng = bMx - bMn || 1;
-                    const bW   = Math.max(3, Math.min(14, cW / runs.length * 0.75));
-                    const bH   = barSH - 18;
+                  if (visRuns.length > 0) {
+                    const bH = barSH - 18;
+                    const bW = Math.max(4, slotW * 0.65);
                     barSvg = (
                       <svg width={SW} height={barSH} viewBox={`0 0 ${SW} ${barSH}`} style={{ display: 'block', width: '100%' }}>
-                        {runs.map((r, i) => {
-                          const bx  = pL + ((new Date(r.started_at).getTime() - bMn) / bRng) * cW;
+                        {slots.map((r, i) => {
+                          if (!r) return null;
+                          const bx = slotCX(i);
                           const clr = r.status === 'ok' ? '#10b981' : r.status === 'ko' ? '#ef4444' : '#f59e0b';
                           return <rect key={i} x={(bx - bW / 2).toFixed(1)} y="2" width={bW.toFixed(1)} height={bH} rx="2" fill={clr} opacity="0.85" />;
                         })}
@@ -3441,25 +3477,33 @@ export default function App() {
                         <div style={{ padding: '40px 0', textAlign: 'center', color: t.textDim, fontSize: 13 }}>No runs yet. Click ▶ Run Now to execute immediately.</div>
                       )}
 
-                      {/* Response Time chart */}
-                      {runsWMs.length >= 2 && (
+                      {/* Response Time chart + Results bar — slot-based, pannable */}
+                      {validSlots.length >= 1 && (
                         <div style={{ marginBottom: 16 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Response Time</div>
-                          <div style={{ background: t.bgPanel, border: `1px solid ${t.borderLight}`, borderRadius: 8, padding: '10px 10px 4px', overflow: 'hidden' }}>{lineSvg}</div>
-                        </div>
-                      )}
-
-                      {/* Results bar chart */}
-                      {runs.length > 0 && (
-                        <div style={{ marginBottom: 16 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Results</div>
-                            <div style={{ display: 'flex', gap: 12, fontSize: 10, color: t.textDim }}>
-                              <span><span style={{ color: '#10b981', marginRight: 4 }}>●</span>Passed ({okCnt})</span>
-                              <span><span style={{ color: '#ef4444', marginRight: 4 }}>●</span>Failed ({failCnt})</span>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Response Time</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              {sortedRuns.length > SLOTS && (
+                                <span style={{ fontSize: 10, color: t.textDim }}>
+                                  {sliceStart + 1}–{sliceEnd} / {sortedRuns.length}
+                                </span>
+                              )}
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button onClick={() => setMonChartOffset(o => Math.min(o + SLOTS, maxOff))} disabled={chartOff >= maxOff}
+                                  style={{ padding: '2px 8px', borderRadius: 4, border: `1px solid ${t.borderLight}`, background: 'none', color: chartOff >= maxOff ? t.textDim : t.text, cursor: chartOff >= maxOff ? 'default' : 'pointer', fontSize: 12 }}>◀</button>
+                                <button onClick={() => setMonChartOffset(o => Math.max(o - SLOTS, 0))} disabled={chartOff === 0}
+                                  style={{ padding: '2px 8px', borderRadius: 4, border: `1px solid ${t.borderLight}`, background: 'none', color: chartOff === 0 ? t.textDim : t.text, cursor: chartOff === 0 ? 'default' : 'pointer', fontSize: 12 }}>▶</button>
+                              </div>
+                              <div style={{ display: 'flex', gap: 10, fontSize: 10, color: t.textDim }}>
+                                <span><span style={{ color: '#10b981', marginRight: 3 }}>●</span>Passed ({okCnt})</span>
+                                <span><span style={{ color: '#ef4444', marginRight: 3 }}>●</span>Failed ({failCnt})</span>
+                              </div>
                             </div>
                           </div>
-                          <div style={{ background: t.bgPanel, border: `1px solid ${t.borderLight}`, borderRadius: 8, padding: '10px 10px 4px', overflow: 'hidden' }}>{barSvg}</div>
+                          <div style={{ background: t.bgPanel, border: `1px solid ${t.borderLight}`, borderRadius: 8, padding: '10px 10px 2px', overflow: 'hidden' }}>
+                            {lineSvg}
+                            {barSvg}
+                          </div>
                         </div>
                       )}
 
@@ -3476,8 +3520,19 @@ export default function App() {
                                 return next;
                               });
                               const failedChecks = (r.checks || []).filter(c => !c.passed);
+                              const isTruncated = r.response_preview?.length >= 500;
                               const prettyPayload = r.response_preview
-                                ? (() => { try { return JSON.stringify(JSON.parse(r.response_preview), null, 2); } catch { return r.response_preview; } })()
+                                ? (() => {
+                                    try {
+                                      return JSON.stringify(JSON.parse(r.response_preview), null, 2);
+                                    } catch {
+                                      // Truncated JSON — insert newlines at property boundaries for readability
+                                      return r.response_preview
+                                        .replace(/,\s*(?="[^"]*"\s*:)/g, ',\n')
+                                        .replace(/,\s*(?=\{)/g, ',\n')
+                                        .replace(/^\{/, '{\n');
+                                    }
+                                  })()
                                 : null;
                               return (
                                 <div key={r.id} style={{ borderBottom: `1px solid ${t.borderLight}` }}>
@@ -3489,20 +3544,26 @@ export default function App() {
                                     <span style={{ marginLeft: 'auto', color: t.textDim, fontSize: 10 }}>{isExpanded ? '▲' : '▼'}</span>
                                   </div>
                                   {isExpanded && (
-                                    <div style={{ padding: '8px 14px 12px', background: t.bgPanel, borderTop: `1px solid ${t.borderLight}` }}>
+                                    <div style={{ padding: '10px 14px 14px', background: t.bgPanel, borderTop: `1px solid ${t.borderLight}` }}>
                                       {failedChecks.length > 0 && (
-                                        <div style={{ marginBottom: prettyPayload ? 8 : 0 }}>
+                                        <div style={{ marginBottom: 10 }}>
                                           {failedChecks.map((c, i) => (
-                                            <div key={i} style={{ fontSize: 11, color: t.danger, fontFamily: 'monospace', marginBottom: 2 }}>
+                                            <div key={i} style={{ fontSize: 11, color: t.danger, fontFamily: 'monospace', marginBottom: 3 }}>
                                               ✗ {c.check}: expected {c.expected}, got {c.actual}
                                             </div>
                                           ))}
                                         </div>
                                       )}
                                       {prettyPayload ? (
-                                        <pre style={{ margin: 0, fontSize: 10, color: t.textDim, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflowY: 'auto', background: t.bg, border: `1px solid ${t.borderLight}`, borderRadius: 4, padding: '6px 8px' }}>
-                                          {prettyPayload}
-                                        </pre>
+                                        <div>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                            <span style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em' }}>Response Payload</span>
+                                            {isTruncated && <span style={{ fontSize: 10, color: t.textDim, fontStyle: 'italic' }}>truncated at 500 chars</span>}
+                                          </div>
+                                          <pre style={{ margin: 0, fontSize: 11, color: t.text, fontFamily: '"SFMono-Regular", "Consolas", monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'anywhere', maxHeight: 220, overflowY: 'auto', background: `${t.bg}cc`, border: `1px solid ${t.borderLight}`, borderRadius: 6, padding: '10px 12px', lineHeight: 1.5 }}>
+                                            {prettyPayload}
+                                          </pre>
+                                        </div>
                                       ) : (
                                         <span style={{ fontSize: 11, color: t.textDim }}>No response body captured.</span>
                                       )}
