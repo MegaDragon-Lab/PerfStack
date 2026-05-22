@@ -879,6 +879,8 @@ export default function App() {
   const [monitorFormOpen,    setMonitorFormOpen]    = useState(false);
   const [monitorDashView,    setMonitorDashView]    = useState("dashboard"); // "dashboard" | "edit"
   const [emailSaving,        setEmailSaving]        = useState(false);
+  const [monHoveredPt,       setMonHoveredPt]       = useState(null);   // { x, y, ms, ts, ok }
+  const [expandedFailures,   setExpandedFailures]   = useState(new Set());
   const monitorPollRef = useRef(null);
 
   const DEFAULT_MONITOR_FORM = {
@@ -3271,7 +3273,9 @@ export default function App() {
                   const okCnt   = runs.filter(r => r.status === 'ok').length;
                   const failCnt = runs.length - okCnt;
                   const rate    = runs.length ? Math.round(okCnt / runs.length * 100) : null;
-                  const isHlthy = selMon?.last_status === 'ok';
+                  const isHlthy = sortedRuns.length > 0
+                    ? sortedRuns[sortedRuns.length - 1].status === 'ok'
+                    : selMon?.last_status === 'ok';
 
                   const respVals = runs.filter(r => r.response_ms != null).map(r => r.response_ms);
                   const avgMs = respVals.length ? Math.round(respVals.reduce((a, b) => a + b, 0) / respVals.length) : null;
@@ -3293,9 +3297,19 @@ export default function App() {
                     const maxV = Math.max(...runsWMs.map(r => r.response_ms)) * 1.15 || 1;
                     const cx  = tm => pL + ((tm - mn) / (mx - mn || 1)) * cW;
                     const cy  = v  => pT + cH - (v / maxV) * cH;
-                    const pts = runsWMs.map(r => ({ x: cx(new Date(r.started_at).getTime()), y: cy(r.response_ms), ok: r.status === 'ok' }));
-                    const lp  = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-                    const ap  = `${lp} L${pts[pts.length - 1].x.toFixed(1)},${(pT + cH).toFixed(1)} L${pL},${(pT + cH).toFixed(1)} Z`;
+                    const pts = runsWMs.map(r => ({
+                      x: cx(new Date(r.started_at).getTime()), y: cy(r.response_ms),
+                      ms: r.response_ms, ok: r.status === 'ok',
+                      ts: r.started_at?.slice(0, 19).replace('T', ' '),
+                    }));
+                    // Smooth bezier curve
+                    const smoothD = pts.map((p, i) => {
+                      if (i === 0) return `M${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+                      const prev = pts[i - 1];
+                      const cpx = ((prev.x + p.x) / 2).toFixed(1);
+                      return `C${cpx},${prev.y.toFixed(1)} ${cpx},${p.y.toFixed(1)} ${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+                    }).join(' ');
+                    const ap  = `${smoothD} L${pts[pts.length - 1].x.toFixed(1)},${(pT + cH).toFixed(1)} L${pL},${(pT + cH).toFixed(1)} Z`;
                     const nY  = 5;
                     const yTks = Array.from({ length: nY }, (_, i) => ({ v: maxV * i / (nY - 1), y: cy(maxV * i / (nY - 1)) }));
                     const nX  = Math.min(5, runsWMs.length);
@@ -3304,11 +3318,20 @@ export default function App() {
                       const d = new Date(r.started_at);
                       return { x: cx(d.getTime()), lbl: `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}` };
                     });
+                    // SLO threshold line
+                    const threshV = selMon?.max_response_ms;
+                    const threshY = (threshV && threshV <= maxV / 1.15) ? cy(threshV) : null;
+                    // Tooltip geometry
+                    const hp = monHoveredPt;
+                    const ttW = 132, ttH = 42;
+                    const ttX = hp ? Math.min(hp.x + 10, SW - pR - ttW) : 0;
+                    const ttY = hp ? Math.max(hp.y - ttH - 8, pT + 2) : 0;
                     lineSvg = (
-                      <svg width={SW} height={SH} viewBox={`0 0 ${SW} ${SH}`} style={{ display: 'block', width: '100%' }}>
+                      <svg width={SW} height={SH} viewBox={`0 0 ${SW} ${SH}`} style={{ display: 'block', width: '100%' }}
+                        onMouseLeave={() => setMonHoveredPt(null)}>
                         <defs>
                           <linearGradient id="mLGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.18" />
+                            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.22" />
                             <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
                           </linearGradient>
                           <clipPath id="mClip"><rect x={pL} y={pT} width={cW} height={cH + 2} /></clipPath>
@@ -3320,10 +3343,32 @@ export default function App() {
                           </g>
                         ))}
                         <line x1={pL} y1={pT} x2={pL} y2={pT + cH} stroke={t.borderLight} strokeWidth="1" />
+                        {threshY !== null && (
+                          <g>
+                            <line x1={pL} y1={threshY.toFixed(1)} x2={SW - pR} y2={threshY.toFixed(1)} stroke="#f59e0b" strokeWidth="1" strokeDasharray="5,3" opacity="0.75" />
+                            <text x={SW - pR - 2} y={threshY - 3} textAnchor="end" fontSize="8" fill="#f59e0b" opacity="0.9">SLO</text>
+                          </g>
+                        )}
                         <path d={ap} fill="url(#mLGrad)" clipPath="url(#mClip)" />
-                        <path d={lp} fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#mClip)" />
-                        {pts.map((p, i) => <circle key={i} cx={p.x.toFixed(1)} cy={p.y.toFixed(1)} r="3" fill={p.ok ? '#3b82f6' : '#ef4444'} stroke={t.bg} strokeWidth="1.5" />)}
+                        <path d={smoothD} fill="none" stroke="#3b82f6" strokeWidth="1.5" clipPath="url(#mClip)" />
+                        {pts.map((p, i) => (
+                          <circle key={i} cx={p.x.toFixed(1)} cy={p.y.toFixed(1)}
+                            r={monHoveredPt?.ts === p.ts ? 5 : 3}
+                            fill={p.ok ? '#3b82f6' : '#ef4444'}
+                            stroke={p.ok ? t.bg : '#ef444488'}
+                            strokeWidth={p.ok ? 1.5 : 2}
+                            style={{ cursor: 'crosshair' }}
+                            onMouseEnter={() => setMonHoveredPt({ x: p.x, y: p.y, ms: p.ms, ok: p.ok, ts: p.ts })} />
+                        ))}
                         {xTks.map((tk, i) => <text key={i} x={tk.x.toFixed(1)} y={SH - 4} textAnchor="middle" fontSize="9" fill={t.textDim}>{tk.lbl}</text>)}
+                        {hp && (
+                          <g style={{ pointerEvents: 'none' }}>
+                            <line x1={hp.x.toFixed(1)} y1={pT} x2={hp.x.toFixed(1)} y2={(pT + cH).toFixed(1)} stroke={t.borderLight} strokeWidth="1" strokeDasharray="2,3" />
+                            <rect x={ttX} y={ttY} width={ttW} height={ttH} rx="4" fill={t.bgPanel} stroke={t.borderLight} strokeWidth="1" />
+                            <text x={ttX + 7} y={ttY + 14} fontSize="9" fill={t.textDim}>{hp.ts}</text>
+                            <text x={ttX + 7} y={ttY + 30} fontSize="11" fontWeight="700" fill={hp.ok ? '#3b82f6' : '#ef4444'}>{fmtMs(hp.ms)}{hp.ok ? '' : ' · FAIL'}</text>
+                          </g>
+                        )}
                       </svg>
                     );
                   }
@@ -3423,14 +3468,49 @@ export default function App() {
                         <div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Recent Failures</div>
                           <div style={{ border: `1px solid ${t.borderLight}`, borderRadius: 8, overflow: 'hidden' }}>
-                            {runs.filter(r => r.status !== 'ok').slice(-5).reverse().map(r => (
-                              <div key={r.id} style={{ display: 'flex', gap: 12, padding: '8px 14px', borderBottom: `1px solid ${t.borderLight}`, fontSize: 12, alignItems: 'center' }}>
-                                <span className={`mon-pill ${r.status}`}>{r.status}</span>
-                                <span style={{ color: t.textDim, fontFamily: 'monospace', fontSize: 11 }}>{r.started_at?.slice(0, 19).replace('T', ' ')}</span>
-                                <span style={{ color: t.textDim }}>{r.http_status ? `HTTP ${r.http_status}` : ''}</span>
-                                {r.error && <span style={{ color: t.danger, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{r.error}</span>}
-                              </div>
-                            ))}
+                            {runs.filter(r => r.status !== 'ok').slice(-5).reverse().map(r => {
+                              const isExpanded = expandedFailures.has(r.id);
+                              const toggleExpand = () => setExpandedFailures(prev => {
+                                const next = new Set(prev);
+                                isExpanded ? next.delete(r.id) : next.add(r.id);
+                                return next;
+                              });
+                              const failedChecks = (r.checks || []).filter(c => !c.passed);
+                              const prettyPayload = r.response_preview
+                                ? (() => { try { return JSON.stringify(JSON.parse(r.response_preview), null, 2); } catch { return r.response_preview; } })()
+                                : null;
+                              return (
+                                <div key={r.id} style={{ borderBottom: `1px solid ${t.borderLight}` }}>
+                                  <div onClick={toggleExpand} style={{ display: 'flex', gap: 12, padding: '8px 14px', fontSize: 12, alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                                    <span className={`mon-pill ${r.status}`}>{r.status}</span>
+                                    <span style={{ color: t.textDim, fontFamily: 'monospace', fontSize: 11 }}>{r.started_at?.slice(0, 19).replace('T', ' ')}</span>
+                                    <span style={{ color: t.textDim }}>{r.http_status ? `HTTP ${r.http_status}` : ''}</span>
+                                    {r.error && <span style={{ color: t.danger, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{r.error}</span>}
+                                    <span style={{ marginLeft: 'auto', color: t.textDim, fontSize: 10 }}>{isExpanded ? '▲' : '▼'}</span>
+                                  </div>
+                                  {isExpanded && (
+                                    <div style={{ padding: '8px 14px 12px', background: t.bgPanel, borderTop: `1px solid ${t.borderLight}` }}>
+                                      {failedChecks.length > 0 && (
+                                        <div style={{ marginBottom: prettyPayload ? 8 : 0 }}>
+                                          {failedChecks.map((c, i) => (
+                                            <div key={i} style={{ fontSize: 11, color: t.danger, fontFamily: 'monospace', marginBottom: 2 }}>
+                                              ✗ {c.check}: expected {c.expected}, got {c.actual}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                      {prettyPayload ? (
+                                        <pre style={{ margin: 0, fontSize: 10, color: t.textDim, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflowY: 'auto', background: t.bg, border: `1px solid ${t.borderLight}`, borderRadius: 4, padding: '6px 8px' }}>
+                                          {prettyPayload}
+                                        </pre>
+                                      ) : (
+                                        <span style={{ fontSize: 11, color: t.textDim }}>No response body captured.</span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
