@@ -2258,6 +2258,7 @@ async def create_deploy_app(req: NewAppRequest):
     app_entry = {
         "name": name,
         "repo": name,
+        "description": req.description,
         "image": f"{LOCAL_REGISTRY}/apps/{name}:latest",
         "port": 8080,
         "replicas": 1,
@@ -2286,6 +2287,20 @@ async def get_deploy_app(name: str, request: Request):
     if not app_entry:
         raise HTTPException(status_code=404, detail=f"App '{name}' not found")
     return _fix_app_urls(app_entry, host)
+
+
+class UpdateDescriptionRequest(BaseModel):
+    description: str = ""
+
+@app.patch("/deploy/apps/{name}/description", summary="Update description for a DeployStack app")
+async def update_deploy_app_description(name: str, req: UpdateDescriptionRequest):
+    apps = _read_apps()
+    app_entry = next((a for a in apps if a.get("name") == name), None)
+    if not app_entry:
+        raise HTTPException(status_code=404, detail=f"App '{name}' not found")
+    app_entry["description"] = req.description
+    _write_apps(apps)
+    return {"app": name, "description": app_entry["description"]}
 
 
 @app.post("/deploy/apps/{name}/toggle-auth", summary="Toggle auth_required for a DeployStack app")

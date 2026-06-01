@@ -1977,13 +1977,13 @@ export default function App() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20, marginBottom: 48 }}>
                 <div
                   onClick={() => setActiveTab("load")}
-                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
+                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s, transform .2s, box-shadow .2s', display: 'flex', flexDirection: 'column' }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = '#c73000'; e.currentTarget.style.transform = 'translateY(-6px)'; e.currentTarget.style.boxShadow = '0 15px 40px rgba(0,0,0,0.12)'; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
                 >
                   <div style={{ fontSize: 28, marginBottom: 12 }}>⚡</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 10 }}>PerfStack</div>
-                  <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
+                  <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc', flex: 1 }}>
                     {['k6-based load testing', 'Parallel execution (pods)', 'Multiple scenarios (Load, Spike, Stress, Soak)', 'IAM auth + HTML reports'].map(b => (
                       <li key={b} style={{ fontSize: 12, color: t.textDim, lineHeight: 1.7 }}>{b}</li>
                     ))}
@@ -1992,13 +1992,13 @@ export default function App() {
                 </div>
                 <div
                   onClick={() => setActiveTab("monitoring")}
-                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
+                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s, transform .2s, box-shadow .2s', display: 'flex', flexDirection: 'column' }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.transform = 'translateY(-6px)'; e.currentTarget.style.boxShadow = '0 15px 40px rgba(0,0,0,0.12)'; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
                 >
                   <div style={{ fontSize: 28, marginBottom: 12 }}>🔍</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 10 }}>MonitorStack</div>
-                  <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
+                  <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc', flex: 1 }}>
                     {['Scheduled health checks', 'HTTP status & response time', 'Payload field verification', 'Email alerts on failure'].map(b => (
                       <li key={b} style={{ fontSize: 12, color: t.textDim, lineHeight: 1.7 }}>{b}</li>
                     ))}
@@ -2007,13 +2007,13 @@ export default function App() {
                 </div>
                 <div
                   onClick={() => { setActiveTab("deploy"); refreshDeployApps(); }}
-                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
+                  style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '24px 28px', cursor: 'pointer', transition: 'border-color .15s, transform .2s, box-shadow .2s', display: 'flex', flexDirection: 'column' }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = '#22c55e'; e.currentTarget.style.transform = 'translateY(-6px)'; e.currentTarget.style.boxShadow = '0 15px 40px rgba(0,0,0,0.12)'; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
                 >
                   <div style={{ fontSize: 28, marginBottom: 12 }}>🚀</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 10 }}>DeployStack</div>
-                  <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
+                  <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc', flex: 1 }}>
                     {['Push to integrated Gitea', 'Auto-build Docker image', 'Kubernetes namespace per app', 'Live at /apps/{name}'].map(b => (
                       <li key={b} style={{ fontSize: 12, color: t.textDim, lineHeight: 1.7 }}>{b}</li>
                     ))}
@@ -2031,11 +2031,12 @@ export default function App() {
                       a.embed_in_frame ? (
                         <div key={a.name} role="button" tabIndex={0}
                           onClick={() => { setEmbedUrl(a.url); setActiveTab("embed"); }}
-                          style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '20px 22px', textDecoration: 'none', display: 'block', cursor: 'pointer', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
+                          style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '20px 22px', textDecoration: 'none', display: 'flex', flexDirection: 'column', cursor: 'pointer', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
                           onMouseEnter={e => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 10px 28px rgba(0,0,0,0.10)'; }}
                           onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: t.text, marginBottom: 8 }}>{a.name}</div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: t.text, marginBottom: 6 }}>{a.name}</div>
+                          {a.description && <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 10, lineHeight: 1.5, flex: 1 }}>{a.description}</div>}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, marginTop: a.description ? 0 : 8 }}>
                             <span style={{ width: 7, height: 7, borderRadius: '50%', background: a.status === 'running' ? '#22c55e' : '#f59e0b', flexShrink: 0 }} />
                             <span style={{ fontSize: 10, fontWeight: 700, color: a.status === 'running' ? '#22c55e' : '#f59e0b', letterSpacing: '.06em', textTransform: 'uppercase' }}>{a.status === 'running' ? 'Running' : 'Stopped'}</span>
                           </div>
@@ -2043,11 +2044,12 @@ export default function App() {
                         </div>
                       ) : (
                         <a key={a.name} href={a.url} target="_blank" rel="noreferrer"
-                          style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '20px 22px', textDecoration: 'none', display: 'block', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
+                          style={{ background: t.bgPanel, border: `1px solid ${t.border}`, borderRadius: 10, padding: '20px 22px', textDecoration: 'none', display: 'flex', flexDirection: 'column', transition: 'border-color .15s, transform .2s, box-shadow .2s' }}
                           onMouseEnter={e => { e.currentTarget.style.borderColor = '#22c55e'; e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 10px 28px rgba(0,0,0,0.10)'; }}
                           onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: t.text, marginBottom: 8 }}>{a.name}</div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: t.text, marginBottom: 6 }}>{a.name}</div>
+                          {a.description && <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 10, lineHeight: 1.5, flex: 1 }}>{a.description}</div>}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, marginTop: a.description ? 0 : 8 }}>
                             <span style={{ width: 7, height: 7, borderRadius: '50%', background: a.status === 'running' ? '#22c55e' : '#f59e0b', flexShrink: 0 }} />
                             <span style={{ fontSize: 10, fontWeight: 700, color: a.status === 'running' ? '#22c55e' : '#f59e0b', letterSpacing: '.06em', textTransform: 'uppercase' }}>{a.status === 'running' ? 'Running' : 'Stopped'}</span>
                           </div>
@@ -4083,6 +4085,35 @@ export default function App() {
                           <code style={{ fontSize: 12, color: t.text }}>{app.url}</code>
                         </div>
                       )}
+                    </div>
+
+                    {/* Description */}
+                    <div className="ds-panel">
+                      <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 8 }}>Description</div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input
+                          defaultValue={app.description || ""}
+                          key={app.name}
+                          id={`desc-${app.name}`}
+                          placeholder="Short description shown on the home page"
+                          style={{ flex: 1, background: t.bgInput, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: '6px 10px', color: t.text, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                          onFocus={e => e.currentTarget.style.borderColor = t.inputFocus}
+                          onBlur={e => e.currentTarget.style.borderColor = t.inputBorder}
+                        />
+                        <button
+                          onClick={async () => {
+                            const val = document.getElementById(`desc-${app.name}`).value;
+                            await fetch(`${API_BASE}/api/deploy/apps/${app.name}/description`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ description: val }),
+                            });
+                            refreshDeployApps();
+                            loadDeployDetail(app.name);
+                          }}
+                          style={{ padding: '6px 14px', background: t.accentBg, border: 'none', borderRadius: 6, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
+                        >Save</button>
+                      </div>
                     </div>
 
                     {/* Auth toggle */}
