@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -160,7 +160,7 @@ function SettingsMenu({ theme, onSelect, t }) {
               <div style={{ color: t.text, fontWeight: 700, fontSize: '0.92rem', letterSpacing: '0.02em', lineHeight: 1.2 }}>GSA Platform Suite</div>
             </div>
             <div style={{ background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: '0.63rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.06em', flexShrink: 0 }}>
-              v3.4.2
+              v3.4.3
             </div>
           </div>
 
@@ -193,7 +193,7 @@ function SettingsMenu({ theme, onSelect, t }) {
           <div style={{ padding: '14px 18px', borderBottom: `1px solid ${t.borderLight}` }}>
             <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', color: t.textDim, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Release Info</div>
             {[
-              { label: 'Version',  value: '3.4.2' },
+              { label: 'Version',  value: '3.4.3' },
               { label: 'Released', value: 'May 13, 2026' },
               { label: 'Stack',    value: 'k6 · Grafana · k3d' },
             ].map(({ label, value }) => (
@@ -309,6 +309,25 @@ const METHOD_COLORS = {
 };
 
 // ── Main App ─────────────────────────────────────────────────────────────────
+
+function PasswordField({ value }) {
+  const [visible, setVisible] = React.useState(false);
+  if (!value) return <span style={{ fontSize: 11, fontStyle: 'italic', color: '#64748b' }}>not available — set a new one</span>;
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0f172a',
+      border: '1px solid #334155', borderRadius: 4, padding: '2px 6px 2px 8px' }}>
+      <code style={{ fontSize: 12, fontFamily: 'monospace', letterSpacing: '.05em',
+        color: '#f1f5f9', userSelect: visible ? 'text' : 'none' }}>
+        {visible ? value : '•'.repeat(value.length)}
+      </code>
+      <button onClick={() => setVisible(v => !v)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
+          color: '#64748b', padding: '0 2px', lineHeight: 1 }}>
+        {visible ? '🙈' : '👁'}
+      </button>
+    </div>
+  );
+}
 
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('ps_theme') || 'light');
@@ -905,7 +924,8 @@ export default function App() {
   const [deployPods,       setDeployPods]        = useState([]);
   const [newAppName,       setNewAppName]        = useState("");
   const [newAppDesc,       setNewAppDesc]        = useState("");
-  const [newAppAuth,       setNewAppAuth]        = useState(false);
+  const [newAppAuthMode,   setNewAppAuthMode]    = useState("none");
+  const [newAppPassword,   setNewAppPassword]    = useState("");
   const [newAppShowHome,   setNewAppShowHome]    = useState(false);
   const [newAppEmbed,      setNewAppEmbed]       = useState(false);
   const [deployCreating,   setDeployCreating]    = useState(false);
@@ -940,12 +960,12 @@ export default function App() {
       const r = await fetch(`${API_BASE}/api/deploy/apps`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newAppName.trim(), description: newAppDesc.trim(), auth_required: newAppAuth, show_in_home: newAppShowHome, embed_in_frame: newAppEmbed }),
+        body: JSON.stringify({ name: newAppName.trim(), description: newAppDesc.trim(), auth_mode: newAppAuthMode, app_password: newAppPassword, show_in_home: newAppShowHome, embed_in_frame: newAppEmbed }),
       });
       if (!r.ok) { const e = await r.json(); alert(e.detail || "Error"); return; }
       const app = await r.json();
       setDeployShowNew(false);
-      setNewAppName(""); setNewAppDesc(""); setNewAppAuth(false); setNewAppShowHome(false);
+      setNewAppName(""); setNewAppDesc(""); setNewAppAuthMode("none"); setNewAppPassword(""); setNewAppShowHome(false);
       refreshDeployApps();
       setSelectedDeploy(app.name);
     } catch (e) { alert(String(e)); }
@@ -1966,7 +1986,7 @@ export default function App() {
                   <div>
                     <div style={{ fontSize: 40, fontWeight: 800, color: t.text, letterSpacing: '.01em', lineHeight: 1.1 }}>GSA Platform Suite</div>
                   </div>
-                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.4.2</span>
+                  <span style={{ marginLeft: 'auto', background: 'rgba(199,48,0,0.12)', border: '1px solid rgba(199,48,0,0.35)', color: '#e05a20', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: '.06em', flexShrink: 0 }}>v3.4.3</span>
                 </div>
                 <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.7, maxWidth: 620 }}>
                   A unified platform giving FICO GSA Team full autonomy to deploy ideas, tools, and applications over shared infrastructure.
@@ -2072,6 +2092,7 @@ export default function App() {
                 </button>
                 {releaseOpen && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderLeft: `2px solid ${t.borderLight}`, paddingLeft: 20 }}>
                   {[
+                    { version: 'v3.4.3', date: '2026-06-02', notes: ['DeployStack — three-mode authentication per app: None (public), DMS/Okta (bookmarklet), or Password (shared access password)', 'Password auth uses bcrypt hashing + HMAC-signed session cookie (8 h TTL) — no extra service required', 'New POST /deploy/apps/{name}/set-auth-mode endpoint replaces toggle-auth for full mode control; toggle-auth kept for backward compatibility', 'Login page for password-protected apps served by the backend (Jinja2 HTML, dark theme, toggle password visibility)', 'Auth mode selector in DeployStack UI — radio-button panel replaces binary DMS checkbox in both new-app form and app detail panel'] },
                     { version: 'v3.4.2', date: '2026-05-13', notes: ['DeployStack RBAC fix — kubernetes client v31 compatibility (V1Subject → RbacV1Subject); deployed apps with ClusterRole/ClusterRoleBinding now apply correctly', 'Expanded gsa-platform-suite-deployer ClusterRole — k6-runner-sa can now delegate permissions for endpoints, nodes, events, replicasets, statefulsets, daemonsets, and metrics.k8s.io resources', 'Deploy scripts (mac + ec2) now apply app RBAC directly via kubectl after restart — eliminates timing dependency on Gitea readiness', 'Restart endpoint fetches and applies rbac.yaml from Gitea — RBAC survives pod restarts without requiring a full git push'] },
                     { version: 'v3.4.1', date: '2026-05-06', notes: ['Execution panel redesign — large VU / Duration KPI display, 2-column sliders + insights card, horizontal timeline with VU count per phase', 'Configurable RT Threshold from PerfStack UI — set p(95) response time check per test (default 2 000 ms)', 'Configurable upload size limit per DeployStack app via GSA-Platform-Suite.yaml (max_body_size, default 50 MB) — fixes 413 Request Entity Too Large', 'Dry Run: improved error handling — non-JSON backend responses now show a clear message instead of raw SyntaxError', 'k6 runner pod resources right-sized — requests reduced 10× to match real observed usage (~14 m CPU, ~30 Mi RAM)', 'Default runner pods reduced from 4 to 2 to lower scheduling overhead on small clusters'] },
                     { version: 'v3.4.0', date: '2026-04-28', notes: ['Role-Based Access Control (RBAC) — roles admin / perf_team / readonly control which modules and deployed apps each user can access', 'RBAC driven by rbac.yaml (persistent volume) — update without redeploying; zero-downtime reload via reload_rbac.sh', 'nginx auth_request app check now enforced — was silently skipped due to wrong header (X-Original-URI → X-Original-URL)', '/auth/me returns role and modules fields; tabs rendered conditionally per user role', 'Role badge displayed in header; auto-redirect to home if active tab is not in user\'s allowed modules', 'GET /api/rbac and PUT /api/rbac endpoints (admin only) for live config management'] },
@@ -2087,9 +2108,9 @@ export default function App() {
                     { version: 'v2.0.0', date: '2026-04-07', notes: ['Multi-service sidebar with folder grouping', 'Custom scenario builder', 'IAM OAuth2 token integration'] },
                   ].map(r => (
                     <div key={r.version} style={{ marginBottom: 24, position: 'relative' }}>
-                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v3.4.2' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
+                      <div style={{ position: 'absolute', left: -26, top: 4, width: 8, height: 8, borderRadius: '50%', background: r.version === 'v3.4.3' ? '#c73000' : t.borderLight, border: `2px solid ${t.bg}` }} />
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v3.4.2' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: r.version === 'v3.4.3' ? '#c73000' : t.text, fontFamily: 'monospace' }}>{r.version}</span>
                         <span style={{ fontSize: 11, color: t.textDim, fontFamily: 'monospace' }}>{r.date}</span>
                       </div>
                       <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
@@ -3985,11 +4006,32 @@ export default function App() {
                         <label>Description (optional)</label>
                         <input value={newAppDesc} onChange={e => setNewAppDesc(e.target.value)} placeholder="Short description" />
                       </div>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
-                        <input type="checkbox" checked={newAppAuth} onChange={e => setNewAppAuth(e.target.checked)}
-                          style={{ width: 15, height: 15, accentColor: '#22c55e', cursor: 'pointer' }} />
-                        <span style={{ fontSize: 13, color: t.text }}>Require DMS authentication to access this app</span>
-                      </label>
+                      <div className="ds-field">
+                        <label>Authentication</label>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {[
+                            { value: 'none',     label: 'None',       color: t.textDim },
+                            { value: 'dms',      label: 'DMS (Okta)', color: '#3b82f6' },
+                            { value: 'password', label: 'Password',   color: '#f59e0b' },
+                          ].map(opt => (
+                            <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none',
+                              padding: '5px 12px', borderRadius: 6, border: `1px solid ${newAppAuthMode === opt.value ? opt.color : t.border}`,
+                              background: newAppAuthMode === opt.value ? `${opt.color}18` : 'transparent', transition: 'all .15s' }}>
+                              <input type="radio" name="newAppAuthMode" value={opt.value}
+                                checked={newAppAuthMode === opt.value}
+                                onChange={() => { setNewAppAuthMode(opt.value); setNewAppPassword(""); }}
+                                style={{ accentColor: opt.color }} />
+                              <span style={{ fontSize: 13, color: newAppAuthMode === opt.value ? opt.color : t.textMuted, fontWeight: newAppAuthMode === opt.value ? 600 : 400 }}>{opt.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {newAppAuthMode === 'password' && (
+                          <input type="password" value={newAppPassword} onChange={e => setNewAppPassword(e.target.value)}
+                            placeholder="Access password" autoComplete="new-password"
+                            style={{ marginTop: 8, width: '100%', padding: '8px 10px', borderRadius: 6,
+                              border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 13 }} />
+                        )}
+                      </div>
                       <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
                         <input type="checkbox" checked={newAppShowHome} onChange={e => setNewAppShowHome(e.target.checked)}
                           style={{ width: 15, height: 15, accentColor: '#c73000', cursor: 'pointer' }} />
@@ -4005,7 +4047,7 @@ export default function App() {
                           style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: deployCreating ? .6 : 1 }}>
                           {deployCreating ? 'Creating…' : 'Create Repo & Register'}
                         </button>
-                        <button onClick={() => { setDeployShowNew(false); setNewAppAuth(false); setNewAppShowHome(false); setNewAppEmbed(false); }}
+                        <button onClick={() => { setDeployShowNew(false); setNewAppAuthMode("none"); setNewAppPassword(""); setNewAppShowHome(false); setNewAppEmbed(false); }}
                           style={{ padding: '8px 16px', background: 'transparent', color: t.textDim, border: `1px solid ${t.border}`, borderRadius: 6, fontSize: 13, cursor: 'pointer' }}>
                           Cancel
                         </button>
@@ -4116,24 +4158,78 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Auth toggle */}
-                    <div className="ds-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Require DMS Authentication</div>
-                        <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>Only users logged in with the bookmarklet can access this app</div>
+                    {/* Auth mode selector */}
+                    <div className="ds-panel">
+                      <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 4 }}>Authentication</div>
+                      <div style={{ fontSize: 11, color: t.textDim, marginBottom: 12 }}>Controls who can access this app</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {[
+                          { value: 'none',     label: 'None',       desc: 'Public access',         color: t.textDim },
+                          { value: 'dms',      label: 'DMS (Okta)', desc: 'Bookmarklet login',      color: '#3b82f6' },
+                          { value: 'password', label: 'Password',   desc: 'Shared access password', color: '#f59e0b' },
+                        ].map(opt => {
+                          const current = app.auth_mode || (app.auth_required ? 'dms' : 'none');
+                          const active = current === opt.value;
+                          return (
+                            <button key={opt.value}
+                              onClick={async () => {
+                                if (active) return;
+                                if (opt.value === 'password') {
+                                  const pw = window.prompt(`Set access password for "${app.name}":`, '');
+                                  if (!pw) return;
+                                  await fetch(`${API_BASE}/api/deploy/apps/${app.name}/set-auth-mode`, {
+                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ auth_mode: 'password', app_password: pw }),
+                                  });
+                                } else {
+                                  await fetch(`${API_BASE}/api/deploy/apps/${app.name}/set-auth-mode`, {
+                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ auth_mode: opt.value, app_password: '' }),
+                                  });
+                                }
+                                refreshDeployApps();
+                                loadDeployDetail(app.name);
+                              }}
+                              style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2,
+                                padding: '8px 14px', borderRadius: 6, cursor: active ? 'default' : 'pointer',
+                                border: `1px solid ${active ? opt.color : t.border}`,
+                                background: active ? `${opt.color}18` : 'transparent', transition: 'all .15s' }}>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: active ? opt.color : t.textMuted }}>{opt.label}</span>
+                              <span style={{ fontSize: 11, color: t.textDim }}>{opt.desc}</span>
+                            </button>
+                          );
+                        })}
                       </div>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
-                        <input type="checkbox" checked={!!app.auth_required}
-                          onChange={async () => {
-                            await fetch(`${API_BASE}/api/deploy/apps/${app.name}/toggle-auth`, { method: 'POST' });
-                            refreshDeployApps();
-                            loadDeployDetail(app.name);
-                          }}
-                          style={{ width: 15, height: 15, accentColor: '#22c55e', cursor: 'pointer' }} />
-                        <span style={{ fontSize: 12, color: app.auth_required ? '#22c55e' : t.textDim, fontWeight: 600 }}>
-                          {app.auth_required ? 'Enabled' : 'Disabled'}
-                        </span>
-                      </label>
+                      {(app.auth_mode || (app.auth_required ? 'dms' : 'none')) === 'password' && (
+                        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>Current password:</span>
+                            <PasswordField value={app.password_plain} />
+                          </div>
+                          {app.password_set_at && (
+                            <span style={{ fontSize: 11, color: t.textDim }}>
+                              Set on {new Date(app.password_set_at).toLocaleString()}
+                            </span>
+                          )}
+                          <div>
+                            <button
+                              onClick={async () => {
+                                const pw = window.prompt(`New password for "${app.name}":`, '');
+                                if (!pw) return;
+                                await fetch(`${API_BASE}/api/deploy/apps/${app.name}/set-auth-mode`, {
+                                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ auth_mode: 'password', app_password: pw }),
+                                });
+                                refreshDeployApps();
+                                loadDeployDetail(app.name);
+                              }}
+                              style={{ fontSize: 11, padding: '3px 10px', borderRadius: 4, border: `1px solid ${t.border}`,
+                                background: 'transparent', color: t.textMuted, cursor: 'pointer' }}>
+                              Change password
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Show in home toggle */}

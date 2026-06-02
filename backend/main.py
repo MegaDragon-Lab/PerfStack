@@ -391,6 +391,32 @@ async def deploy_check_auth(request: Request):
     app automatically via the auth-response-headers ingress annotation.
     The app just reads these headers — no session logic needed.
     """
+    # Derive the app name from X-Original-URL so we know which auth_mode to apply
+    original_url = request.headers.get("X-Original-URL", "")
+    path = urlparse(original_url).path if original_url else ""
+    parts = path.split("/apps/")
+    app_name = parts[1].split("/")[0] if len(parts) > 1 else ""
+
+    # Look up auth_mode for this app (default "dms" for backward compat with auth_required=True)
+    apps_list = _read_apps()
+    app_entry = next((a for a in apps_list if a.get("name") == app_name), None)
+    if app_entry is not None:
+        auth_mode = app_entry.get("auth_mode", "dms" if app_entry.get("auth_required") else "none")
+    else:
+        auth_mode = "dms"   # unknown app — fall back to DMS gate
+
+    # ── No auth ──────────────────────────────────────────────────────────────
+    if auth_mode == "none":
+        return JSONResponse(status_code=200, content={"status": "ok"})
+
+    # ── Password auth ─────────────────────────────────────────────────────────
+    if auth_mode == "password":
+        token = request.cookies.get(f"app_session_{app_name}", "")
+        if app_entry and _verify_app_session_token(app_name, token, app_entry):
+            return JSONResponse(status_code=200, content={"status": "ok"})
+        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+
+    # ── DMS / Okta auth (default) ─────────────────────────────────────────────
     ps_session = request.cookies.get("ps_session")
     if not ps_session:
         return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
@@ -399,14 +425,8 @@ async def deploy_check_auth(request: Request):
         return JSONResponse(status_code=401, content={"detail": "Session expired"})
     s = sessions[ps_session]
     uid = s.get("uid", "")
-    # nginx auth_request sends X-Original-URL (full URL), not X-Original-URI
-    original_url = request.headers.get("X-Original-URL", "")
-    path = urlparse(original_url).path if original_url else ""
-    parts = path.split("/apps/")
-    if len(parts) > 1:
-        app_name = parts[1].split("/")[0]
-        if app_name and not can_access_app(uid, app_name):
-            return JSONResponse(status_code=403, content={"detail": "App access denied"})
+    if app_name and not can_access_app(uid, app_name):
+        return JSONResponse(status_code=403, content={"detail": "App access denied"})
     return JSONResponse(
         status_code=200,
         content={"status": "ok"},
@@ -417,6 +437,130 @@ async def deploy_check_auth(request: Request):
             "X-User-Token": s.get("token", ""),
         },
     )
+
+
+# ── Password-auth helpers ─────────────────────────────────────────────────────
+
+def _hash_app_password(password: str) -> str:
+    import bcrypt
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
+
+
+def _verify_app_session_token(app_name: str, token: str, app_entry: dict) -> bool:
+    import hmac as _hmac, hashlib, time
+    if not token:
+        return False
+    try:
+        payload, sig = token.rsplit(".", 1)
+        _, exp_str = payload.rsplit(":", 1)
+        if int(exp_str) < int(time.time()):
+            return False
+        secret = (app_entry.get("app_secret") or os.getenv("INTERNAL_API_KEY", "fallback")).encode()
+        expected = _hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
+        return _hmac.compare_digest(expected, sig)
+    except Exception:
+        return False
+
+
+_APP_LOGIN_HTML = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ app_name }} — Login</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           display: flex; align-items: center; justify-content: center;
+           min-height: 100vh; background: #0f172a; color: #f1f5f9; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+            padding: 2rem; width: 100%; max-width: 360px; }
+    h2 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+    .sub { font-size: 12px; color: #94a3b8; margin-bottom: 24px; }
+    label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 6px; }
+    .pw-wrap { position: relative; }
+    input[type=password], input[type=text] {
+      width: 100%; padding: 9px 36px 9px 10px; border-radius: 6px;
+      border: 1px solid #475569; background: #0f172a; color: #f1f5f9;
+      font-size: 14px; outline: none; }
+    input:focus { border-color: #3b82f6; }
+    .toggle-pw { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+                 background: none; border: none; cursor: pointer; color: #94a3b8; font-size: 15px; }
+    .err { color: #f87171; font-size: 12px; margin: 10px 0 0; min-height: 18px; }
+    button[type=submit] { margin-top: 18px; width: 100%; padding: 9px;
+      background: #3b82f6; color: #fff; border: none; border-radius: 6px;
+      font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+    button[type=submit]:hover { opacity: .85; }
+    .brand { margin-top: 20px; text-align: center; font-size: 11px; color: #475569; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>{{ app_name }}</h2>
+    <p class="sub">Enter the access password to continue</p>
+    <form method="post">
+      <label for="pw">Password</label>
+      <div class="pw-wrap">
+        <input id="pw" type="password" name="password" autofocus autocomplete="current-password">
+        <button type="button" class="toggle-pw" onclick="
+          var i=document.getElementById('pw');
+          i.type=i.type==='password'?'text':'password';
+          this.textContent=i.type==='password'?'👁':'🙈';">👁</button>
+      </div>
+      <input type="hidden" name="rd" value="{{ rd }}">
+      {% if error %}<p class="err">{{ error }}</p>{% endif %}
+      <button type="submit">Access App</button>
+    </form>
+    <p class="brand">GSA Platform Suite</p>
+  </div>
+</body>
+</html>"""
+
+
+@app.get("/deploy/apps/{name}/login", summary="Password-auth login page for a deployed app")
+async def app_login_page(name: str, rd: str = "/"):
+    from fastapi.responses import HTMLResponse
+    from jinja2 import Template
+    apps_list = _read_apps()
+    app_entry = next((a for a in apps_list if a.get("name") == name), None)
+    if not app_entry or app_entry.get("auth_mode") != "password":
+        raise HTTPException(status_code=404)
+    return HTMLResponse(Template(_APP_LOGIN_HTML).render(app_name=name, rd=rd, error=""))
+
+
+@app.post("/deploy/apps/{name}/login", summary="Password-auth login submit")
+async def app_login_submit(name: str, request: Request):
+    from fastapi.responses import HTMLResponse, RedirectResponse
+    from jinja2 import Template
+    import bcrypt, hmac as _hmac, hashlib, time
+
+    form = await request.form()
+    password = form.get("password", "")
+    rd = form.get("rd", f"/apps/{name}/")
+
+    apps_list = _read_apps()
+    app_entry = next((a for a in apps_list if a.get("name") == name), None)
+    if not app_entry or app_entry.get("auth_mode") != "password":
+        raise HTTPException(status_code=404)
+
+    stored_hash = app_entry.get("password_hash", "").encode()
+    valid = bool(stored_hash) and bcrypt.checkpw(password.encode(), stored_hash)
+    if not valid:
+        html = Template(_APP_LOGIN_HTML).render(app_name=name, rd=rd, error="Incorrect password")
+        return HTMLResponse(html, status_code=401)
+
+    # Sign a session token valid for 8 hours
+    secret = (app_entry.get("app_secret") or os.getenv("INTERNAL_API_KEY", "fallback")).encode()
+    payload = f"{name}:{int(time.time()) + 28800}"
+    sig = _hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
+    token = f"{payload}.{sig}"
+
+    response = RedirectResponse(url=rd, status_code=303)
+    response.set_cookie(
+        f"app_session_{name}", token,
+        httponly=True, samesite="lax", max_age=28800,
+    )
+    return response
 
 
 # ── RBAC management endpoints ─────────────────────────────────────────────────
@@ -1296,7 +1440,7 @@ def _build_report_html(
   <thead><tr><th>Name</th><th class="num">Passes</th><th class="num">Fails</th></tr></thead>
   <tbody>{checks_html}</tbody></table></div>'''}
 
-  <div class="footer">GSA Platform Suite v3.4.2 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
+  <div class="footer">GSA Platform Suite v3.4.3 &nbsp;·&nbsp; {gen_time} &nbsp;·&nbsp; epc_owner@fico.com</div>
 </div>
 {lazy_js}
 </body>
@@ -1718,9 +1862,16 @@ class BuildEntry(BaseModel):
 class NewAppRequest(BaseModel):
     name: str
     description: str = ""
-    auth_required: bool = False
+    auth_required: bool = False   # legacy — kept for API compat; prefer auth_mode
+    auth_mode: str = "none"       # "none" | "dms" | "password"
+    app_password: str = ""        # only used when auth_mode == "password"
     show_in_home: bool = False
     embed_in_frame: bool = False
+
+
+class SetAuthModeRequest(BaseModel):
+    auth_mode: str        # "none" | "dms" | "password"
+    app_password: str = ""
 
 def _slugify(name: str) -> str:
     """Convert an app name to a DNS-safe slug."""
@@ -1911,7 +2062,12 @@ def _resolve_env_vars(env_vars: list, target_ns: str) -> list:
     return resolved
 
 # ── Deploy app to its own namespace ──────────────────────────────────────────
-def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list, auth_required: bool = False, max_body_size: str = "50m", volumes: list = None, memory: str = "256Mi", rbac_manifests: list = None):
+def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env_vars: list, auth_mode = None, max_body_size: str = "50m", volumes: list = None, memory: str = "256Mi", rbac_manifests: list = None):
+    # Accept legacy bool (True → "dms") for callers not yet updated
+    if auth_mode is True:
+        auth_mode = "dms"
+    elif auth_mode is False or auth_mode is None:
+        auth_mode = "none"
     """Create (or replace) Namespace + Deployment + Service + Ingress for an app."""
     ns = f"app-{app_name}"
     core = _core_v1()
@@ -2085,12 +2241,17 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
         "nginx.ingress.kubernetes.io/proxy-read-timeout": "60",
         "nginx.ingress.kubernetes.io/proxy-body-size": max_body_size,
     }
-    if auth_required:
+    if auth_mode != "none":
         ingress_annotations["nginx.ingress.kubernetes.io/auth-url"] = \
             "http://backend.perfstack.svc.cluster.local:8000/deploy/check-auth"
-        # Redirect unauthenticated users to the login page; nginx appends ?rd=<original-url>
-        ingress_annotations["nginx.ingress.kubernetes.io/auth-signin"] = \
-            f"http://{PUBLIC_HOST}/app-login"
+        if auth_mode == "password":
+            # Password login page served by the backend itself
+            ingress_annotations["nginx.ingress.kubernetes.io/auth-signin"] = \
+                f"http://{PUBLIC_HOST}/api/deploy/apps/{app_name}/login"
+        else:
+            # DMS/Okta — redirect to the platform login page
+            ingress_annotations["nginx.ingress.kubernetes.io/auth-signin"] = \
+                f"http://{PUBLIC_HOST}/app-login"
         # Forward user-identity headers from check-auth response to the upstream app
         ingress_annotations["nginx.ingress.kubernetes.io/auth-response-headers"] = \
             "X-User-Id,X-User-CN,X-User-Org,X-User-Token"
@@ -2155,11 +2316,11 @@ async def _watch_build_and_deploy(app_name: str, build_id: str, image_tag: str,
     try:
         apps_list = _read_apps()
         app_entry = next((a for a in apps_list if a.get("name") == app_name), {})
-        auth_required = app_entry.get("auth_required", False)
+        auth_mode = app_entry.get("auth_mode", "dms" if app_entry.get("auth_required") else "none")
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: _deploy_app_k8s(
             app_name, image_tag, cfg.get("port", 8080),
-            cfg.get("replicas", 1), cfg.get("env", []), auth_required,
+            cfg.get("replicas", 1), cfg.get("env", []), auth_mode,
             cfg.get("max_body_size", "50m"), cfg.get("volumes", []),
             cfg.get("memory", "256Mi"), cfg.get("rbac_manifests", []),
         ))
@@ -2255,6 +2416,17 @@ async def create_deploy_app(req: NewAppRequest):
             }
         )
 
+    # Resolve auth_mode — honour legacy auth_required flag if auth_mode not set
+    auth_mode = req.auth_mode
+    if auth_mode == "none" and req.auth_required:
+        auth_mode = "dms"
+
+    password_hash = ""
+    password_plain = ""
+    if auth_mode == "password" and req.app_password:
+        password_hash = _hash_app_password(req.app_password)
+        password_plain = req.app_password
+
     app_entry = {
         "name": name,
         "repo": name,
@@ -2268,7 +2440,11 @@ async def create_deploy_app(req: NewAppRequest):
         "last_deployed": "",
         "url": f"http://{PUBLIC_HOST}/apps/{name}",
         "error": "",
-        "auth_required": req.auth_required,
+        "auth_required": auth_mode != "none",   # kept for compat
+        "auth_mode": auth_mode,
+        "password_hash": password_hash,
+        "password_plain": password_plain,
+        "password_set_at": _now_iso() if password_plain else "",
         "show_in_home": req.show_in_home,
         "embed_in_frame": req.embed_in_frame,
         "gitea_url": f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}",
@@ -2303,17 +2479,20 @@ async def update_deploy_app_description(name: str, req: UpdateDescriptionRequest
     return {"app": name, "description": app_entry["description"]}
 
 
-@app.post("/deploy/apps/{name}/toggle-auth", summary="Toggle auth_required for a DeployStack app")
+@app.post("/deploy/apps/{name}/toggle-auth", summary="Toggle auth_required (legacy — use set-auth-mode)")
 async def toggle_deploy_app_auth(name: str):
     apps = _read_apps()
     app_entry = next((a for a in apps if a.get("name") == name), None)
     if not app_entry:
         raise HTTPException(status_code=404, detail=f"App '{name}' not found")
 
-    app_entry["auth_required"] = not app_entry.get("auth_required", False)
+    # Toggle between "none" and "dms" for backward compat
+    current = app_entry.get("auth_mode", "dms" if app_entry.get("auth_required") else "none")
+    new_mode = "none" if current != "none" else "dms"
+    app_entry["auth_mode"] = new_mode
+    app_entry["auth_required"] = new_mode != "none"
     _write_apps(apps)
 
-    # Re-deploy with updated ingress annotations (no rebuild needed)
     image_tag = f"{CLUSTER_REGISTRY}/apps/{name}:latest"
     try:
         loop = asyncio.get_event_loop()
@@ -2322,7 +2501,7 @@ async def toggle_deploy_app_auth(name: str):
             app_entry.get("port", 8080),
             app_entry.get("replicas", 1),
             app_entry.get("env", []),
-            app_entry["auth_required"],
+            new_mode,
             app_entry.get("max_body_size", "50m"),
             app_entry.get("volumes", []),
             app_entry.get("memory", "256Mi"),
@@ -2330,7 +2509,50 @@ async def toggle_deploy_app_auth(name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"app": name, "auth_required": app_entry["auth_required"]}
+    return {"app": name, "auth_mode": new_mode, "auth_required": app_entry["auth_required"]}
+
+
+@app.post("/deploy/apps/{name}/set-auth-mode", summary="Set auth mode for a DeployStack app")
+async def set_deploy_app_auth_mode(name: str, req: SetAuthModeRequest):
+    if req.auth_mode not in ("none", "dms", "password"):
+        raise HTTPException(status_code=400, detail="auth_mode must be 'none', 'dms', or 'password'")
+    if req.auth_mode == "password" and not req.app_password:
+        raise HTTPException(status_code=400, detail="app_password is required when auth_mode is 'password'")
+
+    apps = _read_apps()
+    app_entry = next((a for a in apps if a.get("name") == name), None)
+    if not app_entry:
+        raise HTTPException(status_code=404, detail=f"App '{name}' not found")
+
+    app_entry["auth_mode"] = req.auth_mode
+    app_entry["auth_required"] = req.auth_mode != "none"
+    if req.auth_mode == "password":
+        app_entry["password_hash"] = _hash_app_password(req.app_password)
+        app_entry["password_plain"] = req.app_password
+        app_entry["password_set_at"] = _now_iso()
+    else:
+        app_entry["password_hash"] = ""
+        app_entry["password_plain"] = ""
+        app_entry["password_set_at"] = ""
+    _write_apps(apps)
+
+    image_tag = f"{CLUSTER_REGISTRY}/apps/{name}:latest"
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: _deploy_app_k8s(
+            name, image_tag,
+            app_entry.get("port", 8080),
+            app_entry.get("replicas", 1),
+            app_entry.get("env", []),
+            req.auth_mode,
+            app_entry.get("max_body_size", "50m"),
+            app_entry.get("volumes", []),
+            app_entry.get("memory", "256Mi"),
+        ))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"app": name, "auth_mode": req.auth_mode}
 
 
 @app.post("/deploy/apps/{name}/toggle-home", summary="Toggle show_in_home for a DeployStack app")
@@ -2391,7 +2613,7 @@ async def restart_deploy_app(name: str):
     port          = app_entry.get("port", 8080)
     replicas      = app_entry.get("replicas", 1)
     env_vars      = app_entry.get("env", [])
-    auth_required = app_entry.get("auth_required", False)
+    auth_mode = app_entry.get("auth_mode", "dms" if app_entry.get("auth_required") else "none")
 
     # Fetch rbac.yaml from Gitea so RBAC is re-applied on restart
     rbac_manifests = []
@@ -2411,7 +2633,7 @@ async def restart_deploy_app(name: str):
 
     try:
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars, auth_required, app_entry.get("max_body_size", "50m"), app_entry.get("volumes", []), app_entry.get("memory", "256Mi"), rbac_manifests))
+        await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars, auth_mode, app_entry.get("max_body_size", "50m"), app_entry.get("volumes", []), app_entry.get("memory", "256Mi"), rbac_manifests))
         _update_app_status(name, "running",
                            last_deployed=_now_iso(),
                            url=f"http://{PUBLIC_HOST}/apps/{name}")
