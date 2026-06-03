@@ -228,14 +228,15 @@ ok "k6 image pushed to registry"
 echo ""
 
 # ── Public hostname (ALB takes priority over EC2 auto-detect) ────────────────
-# Set ALB_HOST to your ALB DNS name to override EC2 metadata detection.
-# Example: ALB_HOST="my-alb-123456.us-east-2.elb.amazonaws.com"
-ALB_HOST="${ALB_HOST:-}"
+# Set ALB_HOST to override EC2 metadata detection.
+# Example: ALB_HOST="gsa.fico.com"  PUBLIC_SCHEME="https"
+ALB_HOST="${ALB_HOST:-gsa.fico.com}"
+PUBLIC_SCHEME="${PUBLIC_SCHEME:-https}"
 
 log "Detecting public hostname..."
 if [ -n "$ALB_HOST" ]; then
   PUBLIC_HOST="$ALB_HOST"
-  ok "Public host (ALB): ${PUBLIC_HOST}"
+  ok "Public host: ${PUBLIC_HOST} (scheme: ${PUBLIC_SCHEME})"
 else
   IMDS_TOKEN=$(curl -sf --max-time 3 -X PUT "http://169.254.169.254/latest/api/token" \
     -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)
@@ -291,7 +292,7 @@ kube apply -f k8s/influxdb.yaml           >/dev/null
 kube apply -f k8s/grafana-config.yaml     >/dev/null
 kube apply -f k8s/grafana.yaml            >/dev/null
 kube apply -f k8s/backend.yaml            >/dev/null
-kube set env deployment/backend -n $NS PUBLIC_HOST="${PUBLIC_HOST}" >/dev/null
+kube set env deployment/backend -n $NS PUBLIC_HOST="${PUBLIC_HOST}" PUBLIC_SCHEME="${PUBLIC_SCHEME}" >/dev/null
 kube apply -f k8s/frontend.yaml           >/dev/null
 kube apply -f k8s/gitea-namespace.yaml    >/dev/null
 kube apply -f k8s/gitea-pvc.yaml          >/dev/null

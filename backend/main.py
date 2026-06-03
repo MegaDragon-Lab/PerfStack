@@ -211,6 +211,7 @@ LOCAL_REGISTRY     = "localhost:5001"          # host-side push (via Docker sock
 CLUSTER_REGISTRY   = "k3d-perfstack-registry:5000"  # in-cluster pull reference
 WEBHOOK_SECRET     = "perfstack-deploy-secret"
 PUBLIC_HOST        = os.getenv("PUBLIC_HOST", "localhost")
+PUBLIC_SCHEME      = os.getenv("PUBLIC_SCHEME", "http")
 BUILDS_CONTEXT_DIR = DATA_DIR / "builds"
 
 
@@ -682,7 +683,7 @@ async def health():
 async def get_config():
     return {
         "public_host": PUBLIC_HOST,
-        "gitea_url": f"http://{PUBLIC_HOST}/gitea",
+        "gitea_url": f"{PUBLIC_SCHEME}://{PUBLIC_HOST}/gitea",
     }
 
 
@@ -2247,11 +2248,11 @@ def _deploy_app_k8s(app_name: str, image_tag: str, port: int, replicas: int, env
         if auth_mode == "password":
             # Password login page served by the backend itself
             ingress_annotations["nginx.ingress.kubernetes.io/auth-signin"] = \
-                f"http://{PUBLIC_HOST}/api/deploy/apps/{app_name}/login"
+                f"{PUBLIC_SCHEME}://{PUBLIC_HOST}/api/deploy/apps/{app_name}/login"
         else:
             # DMS/Okta — redirect to the platform login page
             ingress_annotations["nginx.ingress.kubernetes.io/auth-signin"] = \
-                f"http://{PUBLIC_HOST}/app-login"
+                f"{PUBLIC_SCHEME}://{PUBLIC_HOST}/app-login"
         # Forward user-identity headers from check-auth response to the upstream app
         ingress_annotations["nginx.ingress.kubernetes.io/auth-response-headers"] = \
             "X-User-Id,X-User-CN,X-User-Org,X-User-Token"
@@ -2327,7 +2328,7 @@ async def _watch_build_and_deploy(app_name: str, build_id: str, image_tag: str,
         now = _now_iso()
         _update_app_status(app_name, "running",
                            last_deployed=now,
-                           url=f"http://{PUBLIC_HOST}/apps/{app_name}",
+                           url=f"{PUBLIC_SCHEME}://{PUBLIC_HOST}/apps/{app_name}",
                            port=cfg.get("port", 8080),
                            replicas=cfg.get("replicas", 1),
                            env=cfg.get("env", []))
@@ -2357,14 +2358,15 @@ def _update_build_status(build_id: str, status: str):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-def _fix_app_urls(app: dict, host: str | None = None) -> dict:
-    """Rewrite stored URLs using the request host (ALB/EC2) or PUBLIC_HOST fallback."""
+def _fix_app_urls(app: dict, host: str | None = None, scheme: str | None = None) -> dict:
+    """Rewrite stored URLs using the request host/scheme or PUBLIC_HOST/PUBLIC_SCHEME fallback."""
     h = host or PUBLIC_HOST
+    s = scheme or PUBLIC_SCHEME
     name = app.get("name", "")
     repo = app.get("repo", name)
-    app["url"]        = f"http://{h}/apps/{name}"
-    app["gitea_url"]  = f"http://{h}/gitea/{GITEA_ADMIN_USER}/{repo}"
-    app["clone_url"]  = f"http://{h}/gitea/{GITEA_ADMIN_USER}/{repo}.git"
+    app["url"]        = f"{s}://{h}/apps/{name}"
+    app["gitea_url"]  = f"{s}://{h}/gitea/{GITEA_ADMIN_USER}/{repo}"
+    app["clone_url"]  = f"{s}://{h}/gitea/{GITEA_ADMIN_USER}/{repo}.git"
     return app
 
 
@@ -2372,10 +2374,15 @@ def _request_host(request: Request) -> str:
     return request.headers.get("x-forwarded-host") or request.headers.get("host") or PUBLIC_HOST
 
 
+def _request_scheme(request: Request) -> str:
+    return request.headers.get("x-forwarded-proto") or PUBLIC_SCHEME
+
+
 @app.get("/deploy/apps", summary="List all DeployStack apps")
 async def list_deploy_apps(request: Request):
     host = _request_host(request)
-    return [_fix_app_urls(a, host) for a in _read_apps()]
+    scheme = _request_scheme(request)
+    return [_fix_app_urls(a, host, scheme) for a in _read_apps()]
 
 
 @app.post("/deploy/apps", summary="Create a new app and its Gitea repo")
@@ -2438,7 +2445,7 @@ async def create_deploy_app(req: NewAppRequest):
         "status": "pending",
         "build_job": "",
         "last_deployed": "",
-        "url": f"http://{PUBLIC_HOST}/apps/{name}",
+        "url": f"{PUBLIC_SCHEME}://{PUBLIC_HOST}/apps/{name}",
         "error": "",
         "auth_required": auth_mode != "none",   # kept for compat
         "auth_mode": auth_mode,
@@ -2447,8 +2454,8 @@ async def create_deploy_app(req: NewAppRequest):
         "password_set_at": _now_iso() if password_plain else "",
         "show_in_home": req.show_in_home,
         "embed_in_frame": req.embed_in_frame,
-        "gitea_url": f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}",
-        "clone_url": f"http://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}.git",
+        "gitea_url": f"{PUBLIC_SCHEME}://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}",
+        "clone_url": f"{PUBLIC_SCHEME}://{PUBLIC_HOST}/gitea/{GITEA_ADMIN_USER}/{name}.git",
     }
     apps.append(app_entry)
     _write_apps(apps)
@@ -2458,11 +2465,12 @@ async def create_deploy_app(req: NewAppRequest):
 @app.get("/deploy/apps/{name}", summary="Get app status")
 async def get_deploy_app(name: str, request: Request):
     host = _request_host(request)
+    scheme = _request_scheme(request)
     apps = _read_apps()
     app_entry = next((a for a in apps if a.get("name") == name), None)
     if not app_entry:
         raise HTTPException(status_code=404, detail=f"App '{name}' not found")
-    return _fix_app_urls(app_entry, host)
+    return _fix_app_urls(app_entry, host, scheme)
 
 
 class UpdateDescriptionRequest(BaseModel):
@@ -2636,7 +2644,7 @@ async def restart_deploy_app(name: str):
         await loop.run_in_executor(None, lambda: _deploy_app_k8s(name, image_tag, port, replicas, env_vars, auth_mode, app_entry.get("max_body_size", "50m"), app_entry.get("volumes", []), app_entry.get("memory", "256Mi"), rbac_manifests))
         _update_app_status(name, "running",
                            last_deployed=_now_iso(),
-                           url=f"http://{PUBLIC_HOST}/apps/{name}")
+                           url=f"{PUBLIC_SCHEME}://{PUBLIC_HOST}/apps/{name}")
     except Exception as e:
         _update_app_status(name, "failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
