@@ -329,7 +329,7 @@ async def dms_login(uid: str, cn: str, o: str, token: str = "", token_exp: str =
                             "created_at": now, "last_seen": now}
     _write_sessions(sessions)
     response = RedirectResponse(url="/", status_code=302)
-    response.set_cookie("ps_session", session_id, httponly=True, samesite="lax", max_age=SESSION_MAX_AGE)
+    response.set_cookie("ps_session", session_id, httponly=True, samesite="lax", max_age=SESSION_MAX_AGE, secure=True)
     return response
 
 @app.get("/auth/me", summary="Return current user or 401")
@@ -559,7 +559,7 @@ async def app_login_submit(name: str, request: Request):
     response = RedirectResponse(url=rd, status_code=303)
     response.set_cookie(
         f"app_session_{name}", token,
-        httponly=True, samesite="lax", max_age=28800,
+        httponly=True, samesite="lax", max_age=28800, secure=True,
     )
     return response
 
